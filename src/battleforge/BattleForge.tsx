@@ -447,6 +447,33 @@ export default function BattleForge() {
     setTimeout(() => setPhase("results"), 1500);
   }, []);
 
+  // Safety timeout — if a battle gets stuck (units never engage, sim
+  // never resolves), force a winner by attrition after 60 seconds.
+  // Picks the team with more remaining HP %; draws on tie.
+  useEffect(() => {
+    if (phase !== "battle") return;
+    const t = setTimeout(() => {
+      // Read latest HP from state at trigger time via the closures —
+      // these will reflect the most recent setAHp/setBHp values.
+      const aPct = aHp / (aMax || 1);
+      const bPct = bHp / (bMax || 1);
+      const winner: "A" | "B" | "draw" =
+        Math.abs(aPct - bPct) < 0.01 ? "draw" : aPct > bPct ? "A" : "B";
+      handleBattleEnd({
+        winner,
+        teamAName: teamA[0]?.def?.name || "Team A",
+        teamBName: teamB[0]?.def?.name || "Team B",
+        teamASurvivors: Math.round((aHp / (aMax || 1)) * teamA.reduce((s, sl) => s + sl.count, 0)),
+        teamBSurvivors: Math.round((bHp / (bMax || 1)) * teamB.reduce((s, sl) => s + sl.count, 0)),
+        mvp: null,
+        durationMs: 60_000,
+        totalKills: 0,
+      });
+    }, 60_000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
   const handleRecordingReady = useCallback((frames: UnitFrameData[][], interval: number, totalTicks: number) => {
     setReplayFrames(frames);
     setReplayInterval(interval);
@@ -775,7 +802,11 @@ export default function BattleForge() {
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        {/* Canvas — explicit min height so flexbox can't collapse it to
+            zero on awkward viewport heights. Without this, the iso
+            projection renders into a 0px-tall strip and the battle runs
+            invisibly. */}
+        <div className="flex-1 relative" style={{ minHeight: 480, height: "min(72vh, 760px)" }}>
           <BattleCanvas
             teamA={teamASlots}
             teamB={teamBSlots}
@@ -983,7 +1014,11 @@ export default function BattleForge() {
     return (
       <div className="min-h-screen flex flex-col" style={{ background: "#050208", paddingTop: "max(env(safe-area-inset-top,0px),0px)" }}>
         {/* Canvas */}
-        <div className="flex-1 relative" style={{ minHeight: 0 }}>
+        {/* Canvas — explicit min height so flexbox can't collapse it to
+            zero on awkward viewport heights. Without this, the iso
+            projection renders into a 0px-tall strip and the battle runs
+            invisibly. */}
+        <div className="flex-1 relative" style={{ minHeight: 480, height: "min(72vh, 760px)" }}>
           <BattleCanvas
             teamA={teamASlots}
             teamB={teamBSlots}
