@@ -22,3 +22,5 @@ TOOLS.md
 USER.md
 MEMORY.md
 workspace-state.json
+.vercel
+.env*
