@@ -17,7 +17,7 @@ import { useMemo } from "react";
 
 // Version label rendered in the Landing footer. Bump this and
 // package.json in lockstep when shipping a release.
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.9.1";
 
 export function Landing() {
   const navigate = useNavigate();
