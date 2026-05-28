@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Berry Arcade" />
+    <meta name="theme-color" content="#0a0d13" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Bebas+Neue&family=Oswald:wght@400;500;600;700&family=Anton&family=Russo+One&family=Cinzel:wght@400;600;700&family=EB+Garamond:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <title>Berry Kid's Arcade</title>
+  </head>
+  <body>
+    <!-- Pre-render fallback so a slow JS load doesn't show a blank page.
+         Replaced by React as soon as the bundle hydrates. If JS never
+         loads (stale service worker, network blackhole, build mismatch)
+         we surface a "tap to recover" button after 8 seconds so the
+         user can clear caches and reload instead of staring at a blank
+         screen. -->
+    <div id="root">
+      <div id="boot-fallback" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#0a0d13 0%,#05070b 100%);color:#ffd54a;font-family:'Bebas Neue',system-ui,sans-serif;letter-spacing:0.15em;flex-direction:column;gap:12px;padding:24px;text-align:center">
+        <div style="font-size:36px">⚾🏈⚔️</div>
+        <div style="font-size:18px">BERRY KID'S ARCADE</div>
+        <div id="boot-msg" style="font-size:12px;color:#9aa6bf;letter-spacing:0.3em">LOADING…</div>
+        <div id="boot-recover" style="display:none;margin-top:20px;max-width:340px">
+          <div style="font-size:12px;color:#9aa6bf;letter-spacing:0;font-family:system-ui,sans-serif;line-height:1.5;margin-bottom:14px">Took longer than expected. This usually means an old version is cached. Tap below to clear and reload.</div>
+          <button onclick="(async function(){try{if('serviceWorker' in navigator){var regs=await navigator.serviceWorker.getRegistrations();await Promise.all(regs.map(function(r){return r.unregister();}));}if('caches' in window){var ks=await caches.keys();await Promise.all(ks.map(function(k){return caches.delete(k);}));}}catch(e){console.warn('recovery failed',e);}location.href='/?bust='+Date.now();})()" style="padding:12px 22px;border-radius:12px;border:none;background:#ffd54a;color:#0a0d13;font-family:'Bebas Neue',system-ui,sans-serif;letter-spacing:0.15em;font-size:13px;cursor:pointer;min-height:48px;min-width:200px">CLEAR CACHE &amp; RELOAD</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      // 8s timeout — if React hasn't replaced the fallback by then,
+      // show the recover button so the user isn't stuck.
+      setTimeout(function(){
+        var el = document.getElementById('boot-fallback');
+        if (el && el.parentElement && el.parentElement.id === 'root') {
+          var msg = document.getElementById('boot-msg');
+          var recover = document.getElementById('boot-recover');
+          if (msg) msg.textContent = 'STUCK?';
+          if (recover) recover.style.display = 'block';
+        }
+      }, 8000);
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,338 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
+  --safe-right: env(safe-area-inset-right);
+  --min-tap: 44px;
+}
+
+/* iOS: prevent auto-zoom on inputs by forcing 16px minimum text size */
+input, select, textarea, button {
+  font-size: 16px; /* CRITICAL: iOS will auto-zoom inputs <16px */
+  font-family: inherit;
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* But allow specific small text on UI labels — these are NOT inputs */
+input[type="checkbox"], input[type="radio"], input[type="range"] {
+  -webkit-appearance: auto; appearance: auto; font-size: inherit;
+}
+
+html, body, #root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 20% -10%, #16213a 0%, transparent 60%),
+              radial-gradient(900px 700px at 110% 0%, #2a1530 0%, transparent 60%),
+              linear-gradient(180deg, #05070b, #0a0d13);
+  color: #e8edf5;
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+button { font-family: inherit; touch-action: manipulation; }
+
+/* Pressable */
+.pressable {
+  transition: transform 130ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+.pressable:active { transform: scale(0.96); }
+
+/* Disable hover styles on touch devices — they get stuck after tap */
+@media (hover: none) {
+  .hover\:bg-white\/5:hover,
+  .hover\:bg-white\/3:hover,
+  .hover\:text-white:hover,
+  .hover\:border-accent\/30:hover,
+  .hover\:border-accent\/40:hover {
+    background-color: revert !important;
+    color: revert !important;
+    border-color: revert !important;
+  }
+}
+
+/* When a modal is mounted, this class on body locks background scroll */
+body.modal-open {
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 999px; }
+
+/* No tap highlight on iOS */
+* { -webkit-tap-highlight-color: rgba(0,0,0,0); }
+
+/* Safe area helpers */
+.safe-top { padding-top: max(env(safe-area-inset-top), 0px); }
+.safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+
+/* Custom utility */
+.glass {
+  background: linear-gradient(180deg, rgba(28,36,51,0.7), rgba(15,20,28,0.8));
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.shimmer {
+  background: linear-gradient(110deg, rgba(255,255,255,0.04) 8%, rgba(255,255,255,0.08) 18%, rgba(255,255,255,0.04) 33%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+@keyframes shimmer { to { background-position-x: -200%; } }
+
+/* Selection */
+::selection { background: rgba(255,179,2,0.35); color: #fff; }
+
+/* Touch target floor — applies on all touch-capable devices */
+@media (pointer: coarse), (hover: none) {
+  button, a[role="button"], .touch-target,
+  [role="button"], summary {
+    min-height: var(--min-tap);
+    min-width: var(--min-tap);
+  }
+  /* Larger comfortable tap padding for nav links */
+  nav a, nav button {
+    min-height: var(--min-tap);
+  }
+}
+
+/* Focus ring — visible for keyboard, calm for touch */
+:focus-visible {
+  outline: 2px solid #ffb302;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+button:focus-visible, a:focus-visible {
+  box-shadow: 0 0 0 3px rgba(255,179,2,0.3);
+}
+
+/* Reduce motion when user prefers */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* For game feed entrance */
+.feed-line { animation: feed-in 260ms ease-out; }
+@keyframes feed-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Light theme */
+html.theme-light body {
+  background: linear-gradient(180deg, #f4f6fb, #e9ecf3);
+  color: #1a2233;
+}
+html.theme-light .glass { background: rgba(255,255,255,0.9); border-color: rgba(0,0,0,0.06); color: #1a2233; }
+
+/* Tablet-friendly larger base font */
+@media (min-width: 768px) and (max-width: 1023px) {
+  html { font-size: 17px; }
+}
+
+/* Card stack depth */
+.card-elevated {
+  box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 8px 28px -8px rgba(0,0,0,0.55);
+}
+
+/* Sticky context header offset */
+.section-divider {
+  background: linear-gradient(90deg, transparent, rgba(255,179,2,0.25), transparent);
+  height: 1px;
+}
+
+/* Headline reveal animation */
+.reveal { animation: reveal 540ms cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ─── Drill hero animations (loop the actual motion) ─── */
+.drill-hero-hit .hit-batter { animation: hero-hit-body 2.4s ease-in-out infinite; transform-origin: 200px 175px; }
+.drill-hero-hit .hit-bat { animation: hero-hit-bat 2.4s ease-in-out infinite; }
+@keyframes hero-hit-body { 0%, 50%, 100% { transform: translate(200px,135px) rotate(0deg); } 65% { transform: translate(200px,135px) rotate(12deg); } 80% { transform: translate(200px,135px) rotate(20deg); } }
+@keyframes hero-hit-bat { 0%, 50%, 100% { transform: rotate(0deg); } 65% { transform: rotate(-90deg); } 80% { transform: rotate(-150deg); } }
+
+.drill-hero-pitch .pitch-leg { animation: hero-pitch-leg 2s ease-in-out infinite; transform-origin: 0px 0px; }
+.drill-hero-pitch .pitch-arm { animation: hero-pitch-arm 2s ease-in-out infinite; transform-origin: -10px -10px; }
+@keyframes hero-pitch-leg { 0%, 50%, 100% { transform: rotate(0deg) translateY(0); } 25% { transform: rotate(-30deg) translateY(-6px); } 65% { transform: rotate(15deg) translate(8px, -2px); } }
+@keyframes hero-pitch-arm { 0%, 50%, 100% { transform: rotate(0deg); } 25% { transform: rotate(-40deg); } 65% { transform: rotate(50deg); } }
+
+/* ─── Premium batter/pitcher sprite animations ─── */
+/* Batter idle: subtle weight shift */
+.batter-idle .batter-torso { animation: batter-breathe 3s ease-in-out infinite; transform-origin: 100px 175px; }
+.batter-idle .batter-head { animation: batter-breathe 3s ease-in-out infinite; transform-origin: 100px 78px; }
+.batter-idle .batter-bat { animation: batter-bat-idle 3s ease-in-out infinite; }
+@keyframes batter-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+@keyframes batter-bat-idle { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-3deg); } }
+
+/* Batter swing — full barrel through the zone */
+.batter-swing .batter-bat { animation: batter-swing-arc 0.65s ease-out forwards; }
+.batter-swing .batter-arms { animation: batter-arms-swing 0.65s ease-out forwards; transform-origin: 100px 110px; }
+.batter-swing .batter-torso { animation: batter-torso-rotate 0.65s ease-out forwards; transform-origin: 100px 175px; }
+.batter-swing .batter-legs { animation: batter-legs-pivot 0.65s ease-out forwards; }
+@keyframes batter-swing-arc { 0% { transform: rotate(0deg); } 30% { transform: rotate(-20deg); } 100% { transform: rotate(160deg); } }
+@keyframes batter-arms-swing { 0% { transform: rotate(0deg); } 100% { transform: rotate(60deg); } }
+@keyframes batter-torso-rotate { 0% { transform: rotate(0deg); } 100% { transform: rotate(25deg); } }
+@keyframes batter-legs-pivot { 0% { transform: translateX(0); } 100% { transform: translateX(-4px); } }
+
+/* Batter whiff: off-balance follow-through */
+.batter-whiff .batter-bat { animation: batter-whiff-bat 0.7s ease-out forwards; }
+.batter-whiff .batter-torso { animation: batter-whiff-torso 0.7s ease-out forwards; transform-origin: 100px 175px; }
+@keyframes batter-whiff-bat { 0% { transform: rotate(0deg); } 100% { transform: rotate(200deg) translateY(20px); } }
+@keyframes batter-whiff-torso { 0% { transform: rotate(0deg); } 100% { transform: rotate(40deg) translateY(8px); } }
+
+/* Batter homer celebration: bat flip */
+.batter-homer .batter-bat { animation: batter-bat-flip 1.5s ease-out forwards; }
+.batter-homer .batter-arms { animation: batter-arms-celebrate 1.5s ease-out forwards; transform-origin: 100px 110px; }
+.batter-homer .homer-effects { animation: homer-pulse 1.5s ease-out infinite; transform-origin: 100px 140px; }
+@keyframes batter-bat-flip { 0% { transform: rotate(0deg) translate(0,0); } 100% { transform: rotate(360deg) translate(30px, -60px); opacity: 0.5; } }
+@keyframes batter-arms-celebrate { 0% { transform: rotate(0deg); } 50% { transform: rotate(30deg) translateY(-10px); } 100% { transform: rotate(15deg) translateY(-15px); } }
+@keyframes homer-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
+
+/* Batter take: watch ball go by */
+.batter-take .batter-head { animation: head-track 0.8s ease-out forwards; transform-origin: 100px 78px; }
+@keyframes head-track { 0% { transform: rotate(0deg); } 100% { transform: rotate(-15deg); } }
+
+/* ─── Pitcher ─── */
+/* Idle: subtle rock */
+.pitcher-idle .pitcher-torso { animation: pitcher-breathe 4s ease-in-out infinite; transform-origin: 100px 175px; }
+.pitcher-idle .pitcher-glove-arm { animation: pitcher-breathe 4s ease-in-out infinite; }
+@keyframes pitcher-breathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.5px); } }
+
+/* Windup: leg lift + arm coil */
+.pitcher-windup .pitcher-stride-leg { animation: leg-lift 1s ease-in-out forwards; }
+.pitcher-windup .pitcher-throwing-arm { animation: arm-coil 1s ease-in-out forwards; transform-origin: 100px 105px; }
+.pitcher-windup .pitcher-torso { animation: pitcher-coil 1s ease-in-out forwards; transform-origin: 100px 175px; }
+@keyframes leg-lift { 0% { transform: rotate(0deg); } 100% { transform: rotate(-65deg) translateY(-30px); } }
+@keyframes arm-coil { 0% { transform: rotate(0deg); } 100% { transform: rotate(-25deg) translateX(-10px); } }
+@keyframes pitcher-coil { 0% { transform: rotate(0deg); } 100% { transform: rotate(-8deg); } }
+
+/* Release: arm whip */
+.pitcher-release .pitcher-throwing-arm { animation: arm-whip 0.4s ease-out forwards; transform-origin: 100px 105px; }
+.pitcher-release .pitcher-stride-leg { animation: leg-plant 0.4s ease-out forwards; }
+.pitcher-release .pitcher-torso { animation: pitcher-uncoil 0.4s ease-out forwards; transform-origin: 100px 175px; }
+@keyframes arm-whip { 0% { transform: rotate(-25deg); } 100% { transform: rotate(45deg) translate(-15px, 30px); } }
+@keyframes leg-plant { 0% { transform: rotate(-65deg) translateY(-30px); } 100% { transform: rotate(20deg) translateX(15px); } }
+@keyframes pitcher-uncoil { 0% { transform: rotate(-8deg); } 100% { transform: rotate(15deg); } }
+
+/* Follow-through */
+.pitcher-followthrough .pitcher-throwing-arm { animation: arm-finish 0.6s ease-out forwards; transform-origin: 100px 105px; }
+.pitcher-followthrough .pitcher-torso { animation: pitcher-finish-torso 0.6s ease-out forwards; transform-origin: 100px 175px; }
+@keyframes arm-finish { 0% { transform: rotate(45deg); } 100% { transform: rotate(90deg) translateY(50px); } }
+@keyframes pitcher-finish-torso { 0% { transform: rotate(15deg); } 100% { transform: rotate(25deg) translateX(8px); } }
+
+/* Holographic foil shine on the baseball card */
+.perspective-card { perspective: 1400px; }
+.holo-shine::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: holo-sweep 6s ease-in-out infinite;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+@keyframes holo-sweep {
+  0%, 8% { transform: translateX(-100%); opacity: 0; }
+  12% { opacity: 0.7; }
+  35% { transform: translateX(100%); opacity: 0.7; }
+  40%, 100% { transform: translateX(100%); opacity: 0; }
+}
+/* Rainbow holographic background tint */
+.holo-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(from 90deg at 50% 50%,
+    rgba(255,0,128,0.08), rgba(0,255,255,0.08), rgba(255,255,0,0.08),
+    rgba(0,255,128,0.08), rgba(128,0,255,0.08), rgba(255,0,128,0.08));
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* Stick figure drill animations */
+.stick-figure { transform-origin: 100px 80px; }
+.stick-swing .bat { transform-origin: 115px 65px; animation: bat-swing 1.6s ease-in-out infinite; }
+.stick-swing .arm-right { transform-origin: 100px 55px; animation: arm-swing 1.6s ease-in-out infinite; }
+.stick-swing .leg-right { transform-origin: 100px 80px; animation: leg-pivot 1.6s ease-in-out infinite; }
+@keyframes bat-swing {
+  0% { transform: rotate(-45deg); }
+  40% { transform: rotate(-45deg); }
+  60% { transform: rotate(60deg); }
+  100% { transform: rotate(-45deg); }
+}
+@keyframes arm-swing {
+  0%, 40% { transform: rotate(0deg); }
+  60% { transform: rotate(40deg); }
+  100% { transform: rotate(0deg); }
+}
+@keyframes leg-pivot {
+  0%, 40% { transform: rotate(0deg); }
+  60% { transform: rotate(15deg); }
+  100% { transform: rotate(0deg); }
+}
+.stick-pitch .arm-right { transform-origin: 100px 55px; animation: arm-pitch 1.4s ease-in-out infinite; }
+.stick-pitch .leg-left { transform-origin: 100px 80px; animation: leg-lift 1.4s ease-in-out infinite; }
+.stick-pitch .ball { animation: ball-go 1.4s ease-in-out infinite; }
+@keyframes arm-pitch {
+  0% { transform: rotate(-90deg); }
+  50% { transform: rotate(0deg); }
+  100% { transform: rotate(-90deg); }
+}
+@keyframes leg-lift {
+  0% { transform: rotate(0deg) translateY(0); }
+  30% { transform: rotate(-30deg) translateY(-8px); }
+  60% { transform: rotate(20deg) translateY(0); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+@keyframes ball-go {
+  0%, 30% { transform: translate(0, 0); opacity: 1; }
+  50% { transform: translate(-15px, 0); opacity: 1; }
+  60%, 100% { transform: translate(-60px, -20px); opacity: 0; }
+}
+.stick-cond .leg-left,
+.stick-cond .leg-right { transform-origin: 100px 80px; animation: cond-jump 1s ease-in-out infinite; }
+@keyframes cond-jump {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* Skip nav link is invisible but reachable by keyboard */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+}
+.skip-link:focus {
+  left: 8px;
+  top: 8px;
+  z-index: 9999;
+  background: #ffb302;
+  color: #0a0d13;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
