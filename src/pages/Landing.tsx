@@ -13,6 +13,7 @@ import { useOlympus } from "../olympus/store";
 import { useMogul, listMogulStudios } from "../mogul/store";
 import { useCosmic } from "../cosmic/store";
 import { useTemporal } from "../temporal/store";
+import { useDungeon } from "../dungeon/state/store";
 import { useMemo } from "react";
 
 // Version label rendered in the Landing footer. Bump this and
@@ -42,6 +43,9 @@ export function Landing() {
   const loadCosmic = useCosmic(s => s.load);
   const temporalSaves = useTemporal(s => s.saves);
   const loadTemporal = useTemporal(s => s.load);
+  const dungeonHeroes = useDungeon(s => s.heroes);
+  const dungeonHydrated = useDungeon(s => s.hydrated);
+  const hydrateDungeon = useDungeon(s => s.hydrate);
 
   useEffect(() => {
     // Hydrate every game's store so the cards show real status. Each
@@ -52,6 +56,7 @@ export function Landing() {
     try { if (!mogulHydrated) loadMogul(); } catch (e) { console.warn("[Landing] mogul load failed", e); }
     try { loadCosmic(); } catch (e) { console.warn("[Landing] cosmic load failed", e); }
     try { loadTemporal(); } catch (e) { console.warn("[Landing] temporal load failed", e); }
+    try { if (!dungeonHydrated) hydrateDungeon(); } catch (e) { console.warn("[Landing] dungeon load failed", e); }
     try {
       listSavedLeagues()
         .then(saves => setBaseballSaveCount(saves.length))
@@ -101,6 +106,12 @@ export function Landing() {
     : temporalSaves.length > 0
       ? `${temporalSaves.length} saved agent${temporalSaves.length === 1 ? "" : "s"}`
       : "Recruit an agent";
+  const dungeonTopHero = dungeonHeroes[0];
+  const dungeonStatus = dungeonTopHero
+    ? `${dungeonTopHero.name} · L${dungeonTopHero.level} · ${dungeonTopHero.totals.runs} runs`
+    : dungeonHeroes.length > 0
+      ? `${dungeonHeroes.length} saved heroes`
+      : "Forge a hero, descend 10 floors";
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [keyStatus, setKeyStatus] = useState({ ant: hasAnthropicKey(), oai: hasOpenAIKey() });
@@ -200,7 +211,7 @@ export function Landing() {
             className="text-sm sm:text-base mt-4 max-w-lg mx-auto leading-relaxed"
             style={{ color: "#b5c0d4" }}
           >
-            Nine worlds, one playroom. Pick anything — they all save independently.
+            Ten worlds, one playroom. Pick anything — they all save independently.
           </motion.p>
         </motion.header>
 
@@ -303,6 +314,17 @@ export function Landing() {
             bg="linear-gradient(135deg, rgba(45,18,80,0.95), rgba(10,6,18,0.85))"
             onClick={() => navigate("/potion-lab")}
             delay={0.61}
+          />
+          <GameCard
+            emoji="🗡️"
+            name="Dungeon Crawler"
+            subtitle="Descend, loot, conquer"
+            description="Ten procedurally-generated floors. Three classes. Turn-based combat, rare loot, and a Dungeon Lord at the bottom. Minecraft Dungeons meets Diablo."
+            status={dungeonStatus}
+            accent="#fb923c"
+            bg="linear-gradient(135deg, rgba(60,15,8,0.95), rgba(20,8,18,0.85))"
+            onClick={() => navigate("/dungeon")}
+            delay={0.68}
           />
         </div>
 

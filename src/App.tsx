@@ -130,6 +130,8 @@ import PotionLabHub from "./potionlab/pages/PotionLabHub";
 import PotionLabCauldron from "./potionlab/pages/Cauldron";
 import PotionLabGrimoire from "./potionlab/pages/Grimoire";
 import PotionLabShelf from "./potionlab/pages/PotionShelf";
+// Dungeon Crawler — 10th game (Minecraft Dungeons + Diablo hybrid).
+import { DungeonHub, DungeonSelect, DungeonRun } from "./dungeon";
 import { useStore } from "./store";
 import { CommandBar } from "./components/CommandBar";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -312,6 +314,10 @@ function Router() {
         <Route path="/potion-lab/cauldron" element={<R><PotionLabCauldron /></R>} />
         <Route path="/potion-lab/grimoire" element={<R><PotionLabGrimoire /></R>} />
         <Route path="/potion-lab/shelf" element={<R><PotionLabShelf /></R>} />
+        {/* Dungeon Crawler — 10th game */}
+        <Route path="/dungeon" element={<R><DungeonHub /></R>} />
+        <Route path="/dungeon/select" element={<R><DungeonSelect /></R>} />
+        <Route path="/dungeon/run" element={<R><DungeonRun /></R>} />
         <Route path="/olympus/party" element={<R><OlympusParty /></R>} />
         {/* Olympus mode — separate routing tree, own theme + chrome */}
         <Route path="/olympus" element={<R><OlympusShell /></R>}>
