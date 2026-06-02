@@ -4,6 +4,7 @@ import type { Scorecard } from "../scorekeeper/types";
 import type { FootballLeague } from "../football/types";
 import type { Hero, Adventure } from "../olympus/types";
 import type { Studio as MogulStudio } from "../mogul/types";
+import type { Hero as DungeonHero, DungeonRun } from "../dungeon/types";
 
 export interface SavedLeague {
   id: string;
@@ -40,6 +41,8 @@ class DynastyDB extends Dexie {
   olympusHeroes!: Table<Hero, string>;
   olympusAdventures!: Table<Adventure, string>;
   mogulStudios!: Table<SavedMogulStudio, string>;
+  dungeonHeroes!: Table<DungeonHero, string>;
+  dungeonRuns!: Table<DungeonRun, string>;
 
   constructor() {
     super("HenryDiamondDynasty");
@@ -74,6 +77,17 @@ class DynastyDB extends Dexie {
       olympusHeroes: "id, name, modifiedAt, archived",
       olympusAdventures: "id, heroId, startedAt, status",
       mogulStudios: "id, name, modifiedAt"
+    });
+    this.version(6).stores({
+      leagues: "id, name, modifiedAt",
+      meta: "key",
+      scorecards: "id, mode, modifiedAt, completed",
+      footballLeagues: "id, name, modifiedAt",
+      olympusHeroes: "id, name, modifiedAt, archived",
+      olympusAdventures: "id, heroId, startedAt, status",
+      mogulStudios: "id, name, modifiedAt",
+      dungeonHeroes: "id, name, modifiedAt, classId",
+      dungeonRuns: "id, heroId, modifiedAt, status"
     });
   }
 }
@@ -261,6 +275,34 @@ export async function loadOlympusAdventure(id: string): Promise<Adventure | null
 }
 export async function listAdventuresForHero(heroId: string): Promise<Adventure[]> {
   return db.olympusAdventures.where("heroId").equals(heroId).reverse().sortBy("startedAt");
+}
+
+// ─── Dungeon crawler heroes + runs ───────────────────────────────────────
+export async function saveDungeonHero(hero: DungeonHero) {
+  hero.modifiedAt = Date.now();
+  await db.dungeonHeroes.put(hero);
+  try { localStorage.setItem("dd_dungeon_last_hero", hero.id); } catch {}
+}
+export async function loadDungeonHero(id: string): Promise<DungeonHero | null> {
+  return (await db.dungeonHeroes.get(id)) ?? null;
+}
+export async function listDungeonHeroes(): Promise<DungeonHero[]> {
+  return db.dungeonHeroes.orderBy("modifiedAt").reverse().toArray();
+}
+export async function deleteDungeonHero(id: string) {
+  await db.dungeonHeroes.delete(id);
+}
+export async function saveDungeonRun(run: DungeonRun) {
+  run.modifiedAt = Date.now();
+  await db.dungeonRuns.put(run);
+}
+export async function loadDungeonRunForHero(heroId: string): Promise<DungeonRun | null> {
+  const runs = await db.dungeonRuns.where("heroId").equals(heroId).toArray();
+  const active = runs.filter(r => r.status === "active").sort((a, b) => b.modifiedAt - a.modifiedAt);
+  return active[0] ?? null;
+}
+export async function deleteDungeonRun(id: string) {
+  await db.dungeonRuns.delete(id);
 }
 
 /** Auto-snapshot current league with a year-marker name. Returns new save id. */
