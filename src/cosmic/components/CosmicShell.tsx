@@ -6,6 +6,7 @@ import { ArrowLeft, Settings as SettingsIcon } from "lucide-react";
 import { useState } from "react";
 import { ArcadeSettings } from "../../arcade/ArcadeSettings";
 import { hasAnthropicKey } from "../../arcade/keys";
+import { CosmicBackdrop } from "./CosmicBackdrop";
 
 const ACCENT = "#9be3ff";
 
@@ -23,9 +24,10 @@ export function CosmicShell({ title, subtitle, backTo = "/", rightSlot, children
   const keyConfigured = hasAnthropicKey();
 
   return (
-    <div className="min-h-screen flex flex-col" style={{
+    <div className="min-h-screen flex flex-col relative" style={{
       background: "radial-gradient(ellipse at top, #0c1830 0%, #050810 60%, #02040a 100%)",
     }}>
+      <CosmicBackdrop />
       <header className="sticky top-0 z-30 px-4 py-3 backdrop-blur border-b safe-top" style={{
         background: "linear-gradient(180deg, rgba(8,12,24,0.92), rgba(8,12,24,0.75))",
         borderBottomColor: `${ACCENT}33`,
@@ -59,7 +61,7 @@ export function CosmicShell({ title, subtitle, backTo = "/", rightSlot, children
         </div>
       </header>
 
-      <main className="flex-1 p-4 lg:p-6 overflow-y-auto safe-bottom max-w-5xl mx-auto w-full">
+      <main className="flex-1 p-4 lg:p-6 overflow-y-auto safe-bottom max-w-5xl mx-auto w-full relative" style={{ zIndex: 10 }}>
         {children}
       </main>
 

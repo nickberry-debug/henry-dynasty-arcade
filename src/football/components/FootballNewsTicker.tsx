@@ -49,15 +49,27 @@ export function FootballNewsTicker() {
       });
     }
 
-    // NEWS: recent newsLog items (drama, injuries, milestones). Plain
-    // strings for `category` since we mix in our own "Info" fallback
-    // that isn't in the football news category union.
-    const news: { id: string; emoji: string; text: string; category: string }[] = (league.newsLog ?? []).slice(0, 12).map(n => ({
-      id: n.id,
-      emoji: n.emoji ?? emojiForCategory(n.category),
-      text: n.headline,
-      category: n.category as string,
-    }));
+    // NEWS: storylines first (most "alive" content), then recent newsLog
+    // items. Plain strings for `category` since we mix in our own
+    // "Storyline" / "Info" buckets that aren't in the union.
+    const news: { id: string; emoji: string; text: string; category: string }[] = [];
+    const storylines = league.storylines?.active ?? [];
+    for (const s of storylines.slice().sort((a, b) => b.intensity - a.intensity).slice(0, 5)) {
+      news.push({
+        id: `ticker-${s.id}`,
+        emoji: s.emoji ?? "📰",
+        text: s.label + (s.intensity > 1 ? " " + "★".repeat(Math.min(3, s.intensity - 1)) : ""),
+        category: "Storyline",
+      });
+    }
+    for (const n of (league.newsLog ?? []).slice(0, 12)) {
+      news.push({
+        id: n.id,
+        emoji: n.emoji ?? emojiForCategory(n.category),
+        text: n.headline,
+        category: n.category as string,
+      });
+    }
     if (news.length === 0) {
       news.push({ id: "fb-ticker-info", emoji: "📅", text: `${league.season} Season · Week ${league.week}`, category: "Info" });
     }

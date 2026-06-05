@@ -12,11 +12,13 @@
 //   - Tap on the grid (no drag) → also sets the destination.
 //   - Tap an enemy ship → set fire target for the selected ship.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Missile, ShipState, Obstacle } from "../types";
 import { GRID_H, GRID_W, simulatePath, SUBTICKS } from "../engine";
 import { getShipClass } from "../ships";
 import { ShipSprite } from "./ShipSprite";
+
+const MINIMAP_PREF_KEY = "dd_cosmic_minimap_open_v1";
 
 const CELL = 36;
 // Visible viewport in cells. Tight enough that you have to scout for
@@ -334,12 +336,58 @@ function Minimap({ ships, obstacles, cameraX, cameraY, viewW, viewH }: {
   viewW: number;
   viewH: number;
 }) {
+  // Open/closed state persisted per player. Defaults closed so the minimap
+  // doesn't hog the corner during a turn — tap to expand for scouting.
+  const [open, setOpen] = useState<boolean>(() => {
+    try { return localStorage.getItem(MINIMAP_PREF_KEY) === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(MINIMAP_PREF_KEY, open ? "1" : "0"); } catch {}
+  }, [open]);
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Show minimap"
+        className="absolute pressable touch-target"
+        style={{
+          top: 8, right: 8, width: 40, height: 40, minWidth: 40, minHeight: 40,
+          borderRadius: 8, background: "rgba(2,6,14,0.85)",
+          border: "1px solid rgba(155,227,255,0.4)", color: "#9be3ff",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >
+        {/* tiny grid glyph */}
+        <svg width={18} height={18} viewBox="0 0 18 18" aria-hidden="true">
+          <rect x="1.5" y="1.5" width="15" height="15" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          <line x1="6.5" y1="2" x2="6.5" y2="16" stroke="currentColor" strokeWidth="1" />
+          <line x1="11.5" y1="2" x2="11.5" y2="16" stroke="currentColor" strokeWidth="1" />
+          <line x1="2" y1="6.5" x2="16" y2="6.5" stroke="currentColor" strokeWidth="1" />
+          <line x1="2" y1="11.5" x2="16" y2="11.5" stroke="currentColor" strokeWidth="1" />
+          <circle cx="9" cy="9" r="1.5" fill="#9be3ff" />
+        </svg>
+      </button>
+    );
+  }
   const mmW = 130, mmH = (130 * GRID_H) / GRID_W;
   const sx = mmW / GRID_W;
   const sy = mmH / GRID_H;
   return (
-    <div className="absolute pointer-events-none"
+    <div className="absolute"
       style={{ top: 8, right: 8, padding: 6, background: "rgba(2,6,14,0.85)", border: "1px solid rgba(155,227,255,0.3)", borderRadius: 6 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(false)}
+        aria-label="Hide minimap"
+        className="pressable"
+        style={{
+          position: "absolute", top: -8, right: -8, width: 22, height: 22,
+          borderRadius: 11, background: "#02060e", color: "#9be3ff",
+          border: "1px solid rgba(155,227,255,0.55)", fontSize: 13, lineHeight: 1,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}
+      >×</button>
       <svg width={mmW} height={mmH} style={{ display: "block" }}>
         <rect x={0} y={0} width={mmW} height={mmH} fill="#02060e" />
         {obstacles.filter(o => o.kind === "asteroid").map(o => (

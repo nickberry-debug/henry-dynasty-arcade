@@ -11,6 +11,7 @@ import { StrikeZoneGrid } from "../components/StrikeZoneGrid";
 import { SpeedGun } from "../components/SpeedGun";
 import { startLiveGame, resolvePitchInput, resolveSwingInput, endLiveGame, type LiveGameState, type Difficulty } from "../engine/liveGame";
 import { ArrowLeft, Trophy } from "lucide-react";
+import { getActiveProfileId, recordGameSession } from "../profiles/store";
 
 const PITCH_TYPES = ["4-Seam","2-Seam","Changeup","Curve","Slider","Other"];
 
@@ -119,7 +120,23 @@ export default function LiveGame() {
     setPendingTap(null);
     setState({ ...state });
   };
-  const finalize = () => { endLiveGame(state); setState({ ...state }); };
+  const finalize = () => {
+    endLiveGame(state);
+    // Family stats — credit the active profile for the live-game session.
+    const pid = getActiveProfileId();
+    if (pid) {
+      const userTeamId = league.userTeamId ?? state.homeTeamId;
+      const isHome = userTeamId === state.homeTeamId;
+      const userScore = isHome ? state.score.home : state.score.away;
+      const oppScore = isHome ? state.score.away : state.score.home;
+      recordGameSession(pid, "baseball", {
+        sessions: 1,
+        wins: userScore > oppScore ? 1 : 0,
+        losses: userScore < oppScore ? 1 : 0,
+      });
+    }
+    setState({ ...state });
+  };
   const newGame = () => { setState(null); localStorage.removeItem("dd_live_game"); };
 
   const lastPlays = state.plays.slice(-4).reverse();

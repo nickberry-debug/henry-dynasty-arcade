@@ -24,6 +24,7 @@ import type {
   CharacterDef, MapConfig, BattleUnit, Particle, BattleResult, BattleLogEntry, VFXEvent, UnitFrameData, MapFeature,
 } from "./types";
 import { createUnit, tickSimulation, getMVP, WORLD_W, WORLD_H } from "./simulation";
+import { playSfx } from "../art";
 import {
   TILE_W, TILE_H, TILE_WORLD, worldToScreen, depthKey, facingFromVelocity, facingToward,
   type IsoView, type Facing,
@@ -591,23 +592,74 @@ export default function BattleCanvas({
     onLogEntry({ tick: 0, text: `⚔️ Battle begins on ${map.name}`, type: "start" });
 
     // ── Camera ──────────────────────────────────────────────────────────────
-    // We center the iso diamond in the canvas. Zoom scales to fit width.
+    // Close-up follow camera. Tracks the centroid of all currently-alive
+    // units (weighted by HP fraction so dying combatants don't drag the
+    // camera back as hard) and zooms inversely to the LARGEST combatant in
+    // play. So a normal humanoid duel fills the screen at ~3.5x zoom, but
+    // when a colossal kaiju is on the field the view pulls back to ~1.8x
+    // so it still fits. Smooth-lerped per frame so movement feels cinematic.
+    const SIZE_MUL: Record<string, number> = {
+      tiny: 0.6, small: 0.85, medium: 1.0, large: 1.25, huge: 1.6, colossal: 2.0,
+    };
+    let camCx = WORLD_W / 2;
+    let camCy = WORLD_H / 2;
+    let camZoom = 2.2;
+    let camInitialized = false;
+
     function makeView(): IsoView {
       const w = canvas.clientWidth || cssW || 800;
       const h = canvas.clientHeight || cssH || 500;
-      // Diamond width in screen pixels at zoom 1:
-      const diamondW = (TILES_X + TILES_Y) * (TILE_W * 0.5);
-      const diamondH = (TILES_X + TILES_Y) * (TILE_H * 0.5);
-      const zoom = Math.min(
-        (w - 32) / diamondW,
-        (h - 96) / diamondH,
-        2.2, // cap so sprites stay readable
-      );
-      // World (0,0) projects to the top of the diamond - offset so the
-      // diamond is centered.
-      const originX = w * 0.5 + (TILES_Y * 0.5) * (TILE_W * 0.5) * zoom;
-      const originY = h * 0.5 - (TILES_X + TILES_Y) * 0.5 * (TILE_H * 0.5) * zoom + TILE_H * 0.5 * zoom;
-      return { originX, originY, zoom };
+
+      // Compute target centroid + target zoom from currently alive units.
+      let targetCx = WORLD_W / 2;
+      let targetCy = WORLD_H / 2;
+      let targetZoom = camZoom;
+      const alive = units.filter(u => u.state === "alive");
+      if (alive.length > 0) {
+        let weightedX = 0, weightedY = 0, weightSum = 0;
+        let maxMul = 0.6;
+        let cx0 = 0, cy0 = 0;
+        for (const u of alive) { cx0 += u.x; cy0 += u.y; }
+        cx0 /= alive.length; cy0 /= alive.length;
+        let maxDist2 = 0;
+        for (const u of alive) {
+          const wgt = Math.max(0.2, u.hp / Math.max(1, u.maxHp));
+          weightedX += u.x * wgt; weightedY += u.y * wgt; weightSum += wgt;
+          const m = SIZE_MUL[u.size] ?? 1.0;
+          if (m > maxMul) maxMul = m;
+          const dx = u.x - cx0, dy = u.y - cy0;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > maxDist2) maxDist2 = d2;
+        }
+        targetCx = weightedX / weightSum;
+        targetCy = weightedY / weightSum;
+        // Base zoom: medium fighter -> 3.6, colossal -> 1.8.
+        let z = 3.6 / maxMul;
+        // Pull back when combatants are spread far apart so the whole
+        // fight stays in frame. Spread > 220 world units dampens linearly.
+        const spread = Math.sqrt(maxDist2);
+        if (spread > 220) z *= Math.max(0.55, 220 / spread);
+        // Also fit zoom to canvas — never tighter than the canvas can hold
+        // ~280 world units across the short axis.
+        const minZ = Math.min(w, h) / 480;
+        targetZoom = Math.max(minZ, Math.min(4.5, z));
+      }
+
+      if (!camInitialized) {
+        camCx = targetCx; camCy = targetCy; camZoom = targetZoom;
+        camInitialized = true;
+      } else {
+        camCx += (targetCx - camCx) * 0.07;
+        camCy += (targetCy - camCy) * 0.07;
+        camZoom += (targetZoom - camZoom) * 0.05;
+      }
+
+      // Project (camCx, camCy) to canvas center.
+      const tx = camCx / TILE_WORLD;
+      const ty = camCy / TILE_WORLD;
+      const originX = w * 0.5 - (tx - ty) * (TILE_W * 0.5) * camZoom;
+      const originY = h * 0.5 - (tx + ty) * (TILE_H * 0.5) * camZoom;
+      return { originX, originY, zoom: camZoom };
     }
 
     // ── Main loop ───────────────────────────────────────────────────────────
@@ -653,6 +705,14 @@ export default function BattleCanvas({
             visuals[i].facingHoldTicks--;
           }
           u.hp = fd.hp; u.maxHp = fd.maxHp;
+          // K.O. detection — state just flipped to dying
+          if (u.state !== "dying" && fd.state === "dying") {
+            playSfx("playerHurt", { volume: 0.45, pitch: 0.7 + Math.random() * 0.2 });
+          }
+          // Rage mode just activated
+          if (!u.rageMode && fd.rageMode) {
+            playSfx("powerUp", { volume: 0.5 });
+          }
           u.state = fd.state;
           u.flashTimer = fd.flashTimer;
           u.attackCooldown = fd.attackCooldown;
@@ -661,6 +721,11 @@ export default function BattleCanvas({
           // Trigger attack anim when cooldown just reset (high → low)
           if (visuals[i].lastAttackCd > fd.attackCooldown + 5) {
             visuals[i].attackTimer = 12;
+            // Random sfx per swing; rate-limit by skipping ~85% so it
+            // doesn't clatter with many units.
+            if (Math.random() < 0.15) {
+              playSfx("impactMetal", { volume: 0.3, pitch: 0.9 + Math.random() * 0.3 });
+            }
           }
           visuals[i].lastAttackCd = fd.attackCooldown;
         }
@@ -763,9 +828,13 @@ export default function BattleCanvas({
           }
           onStats(aHp, totalMaxA, bHp, totalMaxB);
 
-          // End condition
-          const aAlive = units.some(u => u.team === "A" && u.state !== "dead");
-          const bAlive = units.some(u => u.team === "B" && u.state !== "dead");
+          // End condition — strict team elimination. A side is "still
+          // fighting" only when they have at least one ACTIVELY alive unit;
+          // a unit mid-death-animation doesn't count, so the battle ends
+          // cleanly as soon as one team's last fighter falls instead of
+          // dragging on while bodies are flying.
+          const aAlive = units.some(u => u.team === "A" && u.state === "alive");
+          const bAlive = units.some(u => u.team === "B" && u.state === "alive");
           if (!battleEnded && (!aAlive || !bAlive)) {
             battleEnded = true;
             const winner: "A" | "B" | "draw" = aAlive && !bAlive ? "A" : bAlive && !aAlive ? "B" : "draw";
@@ -887,8 +956,17 @@ export default function BattleCanvas({
           const u = units[item.unitIdx];
           const vp = visualPos[item.unitIdx];
           const { sx, sy } = worldToScreen(vp.vx, vp.vy, view);
-          const r = (u.radius * 0.35) * view.zoom;
-          ctx.fillStyle = "rgba(0,0,0,0.42)";
+          // Heavier grounding shadow — bigger, darker, slightly under the
+          // sprite — so fighters feel like they have actual weight on the
+          // ground instead of floating against the tiles.
+          const r = (u.radius * 0.45) * view.zoom;
+          // Soft outer halo
+          ctx.fillStyle = "rgba(0,0,0,0.25)";
+          ctx.beginPath();
+          ctx.ellipse(sx, sy + 1, Math.max(6, r * 1.85), Math.max(3, r * 0.9), 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Core shadow
+          ctx.fillStyle = "rgba(0,0,0,0.55)";
           ctx.beginPath();
           ctx.ellipse(sx, sy, Math.max(4, r * 1.4), Math.max(2, r * 0.65), 0, 0, Math.PI * 2);
           ctx.fill();
@@ -942,10 +1020,13 @@ export default function BattleCanvas({
           }
 
           // Sprite scaling factor: size class → sprite pixel scale.
+          // Multiplied by COMBAT_SCALE so fighters feel weightier on screen
+          // (the previous 1.0-base read too small against the iso tiles).
           const sizeMul: Record<string, number> = {
             tiny: 0.6, small: 0.85, medium: 1.0, large: 1.25, huge: 1.6, colossal: 2.0,
           };
-          const scale = (sizeMul[u.size] || 1.0) * view.zoom;
+          const COMBAT_SCALE = 1.35;
+          const scale = (sizeMul[u.size] || 1.0) * COMBAT_SCALE * view.zoom;
           const drawW = SPRITE_W * scale;
           const drawH = SPRITE_H * scale;
           // Anchor: sprite's feet (ANCHOR_X, ANCHOR_Y) should align with (sx, sy)
@@ -1009,6 +1090,35 @@ export default function BattleCanvas({
           drawVFX(ctx, v, view);
         }
       }
+
+      // Particles — the sim already populates this array (spawnImpact,
+      // spawnDeath, spawnSpecial) but the previous renderer never drew
+      // them. Drawing them adds a lot of free visual juice: sparks on
+      // every hit, stars on KOs, colored debris from specials.
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        const { sx, sy } = worldToScreen(p.x, p.y, view);
+        const alpha = Math.max(0, Math.min(1, p.life / Math.max(1, p.maxLife)));
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = p.color;
+        if (p.type === "star") {
+          // Draw a tiny + sprite to read as a sparkle.
+          const r = (p.radius ?? 2) * view.zoom * 0.9;
+          ctx.fillRect(sx - r, sy - 1, r * 2, 2);
+          ctx.fillRect(sx - 1, sy - r, 2, r * 2);
+        } else {
+          ctx.beginPath();
+          ctx.arc(sx, sy, Math.max(1, (p.radius ?? 2) * view.zoom * 0.75), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Advance physics
+        p.vy += 0.08;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life--;
+        if (p.life <= 0) particles.splice(i, 1);
+      }
+      ctx.globalAlpha = 1;
 
       // VFX lifetime tick
       for (let i = vfx.length - 1; i >= 0; i--) {

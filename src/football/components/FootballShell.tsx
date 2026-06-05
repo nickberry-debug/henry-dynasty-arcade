@@ -30,7 +30,16 @@ const TABS: TabDef[] = [
     to: "/football/league",
     label: "League",
     icon: Trophy,
-    matches: (p) => p === "/football/league" || p.startsWith("/football/standings") || p.startsWith("/football/teams") || p.startsWith("/football/freeagency"),
+    matches: (p) =>
+      p === "/football/league"
+      || p.startsWith("/football/standings")
+      || p.startsWith("/football/teams")
+      || p.startsWith("/football/freeagency")
+      || p.startsWith("/football/stats")
+      || p.startsWith("/football/news")
+      || p.startsWith("/football/history")
+      || p.startsWith("/football/draft-class")
+      || p.startsWith("/football/player/"),
   },
   {
     to: "/football/save",

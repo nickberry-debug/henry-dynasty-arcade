@@ -7,12 +7,22 @@ import { motion } from "framer-motion";
 import { Mic, MicOff, Trophy, Pause, Play, AlertTriangle } from "lucide-react";
 import { WordplayShell } from "../components/WordplayShell";
 import { loadHighScore, recordHighScore, useHistory } from "../ai";
+import { profileKey } from "../../profiles/store";
 
 const ACCENT = "#A78BFA";
 const GRADIENT = "linear-gradient(135deg, rgba(167,139,250,0.30), rgba(30,16,50,0.95))";
 
-type Sensitivity = "easy" | "medium" | "hard";
-const THRESHOLDS: Record<Sensitivity, number> = { easy: 38, medium: 22, hard: 12 };
+// Quiet Game is permanently Hard. The mic noise threshold (0-100 from
+// the analyser) was previously selected via 3 difficulty levels:
+//   easy=38, medium=22, hard=12   (lower = stricter)
+// Now there is no difficulty selector — instead the player tunes the
+// core variable (the threshold itself) directly via a slider, defaulting
+// to the old "hard" value of 12. Range 5 (very strict) to 40 (loose),
+// persisted per profile.
+const DEFAULT_THRESHOLD = 12;     // Hard
+const THRESHOLD_MIN = 5;
+const THRESHOLD_MAX = 40;
+const STORE_KEY = "dd_quietgame_sensitivity_v1";
 
 interface SessionLog { id: string; durationMs: number; ts: number }
 
@@ -29,7 +39,18 @@ function todayKey(): string {
 }
 
 export default function QuietGame() {
-  const [sensitivity, setSensitivity] = useState<Sensitivity>("medium");
+  // Threshold = the core variable Hard exposes. Players tune it via the
+  // slider (lower = stricter, ~tiny breath; higher = loose, ~normal talk).
+  const [threshold, setThreshold] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem(profileKey(STORE_KEY));
+      const n = raw ? parseInt(raw, 10) : NaN;
+      return Number.isFinite(n) && n >= THRESHOLD_MIN && n <= THRESHOLD_MAX ? n : DEFAULT_THRESHOLD;
+    } catch { return DEFAULT_THRESHOLD; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(profileKey(STORE_KEY), String(threshold)); } catch { /* ignore */ }
+  }, [threshold]);
   const [listening, setListening] = useState(false);
   const [paused, setPaused] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
@@ -48,6 +69,12 @@ export default function QuietGame() {
   const pausedAccumRef = useRef<number>(0);
   const pauseStartRef = useRef<number>(0);
   const bustedRef = useRef(false);
+  // Mirror reactive state into refs so the rAF loop reads live values,
+  // not the closure snapshot it captured when start() ran.
+  const pausedRef = useRef(false);
+  const thresholdRef = useRef<number>(DEFAULT_THRESHOLD);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => { thresholdRef.current = threshold; }, [threshold]);
 
   useEffect(() => {
     setAllTimeBest(loadHighScore("quiet_game", "all_time"));
@@ -79,28 +106,49 @@ export default function QuietGame() {
       streamRef.current = stream;
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       ctxRef.current = ctx;
+      // iOS Safari (and some Chrome configs) start the context in
+      // "suspended" state — frequency data is all zeros until resumed,
+      // which silently makes the streak unbustable.
+      if (ctx.state === "suspended") {
+        try { await ctx.resume(); } catch { /* ignore */ }
+      }
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.4;
       source.connect(analyser);
       analyserRef.current = analyser;
       setListening(true);
       setPaused(false);
+      pausedRef.current = false;
       setPermissionDenied(false);
       startTimeRef.current = performance.now();
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const freqArray = new Uint8Array(analyser.frequencyBinCount);
+      const timeArray = new Uint8Array(analyser.fftSize);
       const tick = () => {
         if (!analyserRef.current) return;
-        analyserRef.current.getByteFrequencyData(dataArray);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
-        const avg = sum / dataArray.length;
-        setLastVolume(avg);
-        if (!paused) {
+        // RMS in the time domain → reliable "ambient volume" even on
+        // iOS where high-band FFT bins drag the average to ~0. Scale
+        // to roughly 0-100 for human-readable thresholds.
+        analyserRef.current.getByteTimeDomainData(timeArray);
+        let sq = 0;
+        for (let i = 0; i < timeArray.length; i++) {
+          const v = (timeArray[i] - 128) / 128;
+          sq += v * v;
+        }
+        const rms = Math.sqrt(sq / timeArray.length);
+        // Also peek at FFT peak for the visualization fallback.
+        analyserRef.current.getByteFrequencyData(freqArray);
+        let peak = 0;
+        for (let i = 0; i < freqArray.length; i++) if (freqArray[i] > peak) peak = freqArray[i];
+        // Effective level: weight RMS heavily (real loudness), peak adds responsiveness.
+        const level = Math.min(100, rms * 220 + peak * 0.05);
+        setLastVolume(level);
+        if (!pausedRef.current) {
           const now = performance.now();
           const elapsed = now - startTimeRef.current - pausedAccumRef.current;
           setStreakMs(elapsed);
-          if (avg > THRESHOLDS[sensitivity] && !bustedRef.current) {
+          if (level > thresholdRef.current && !bustedRef.current) {
             bustedRef.current = true;
             const finalMs = elapsed;
             setBusted(true);
@@ -161,13 +209,13 @@ export default function QuietGame() {
     }
   }
 
-  const overThreshold = lastVolume > THRESHOLDS[sensitivity];
+  const overThreshold = lastVolume > threshold;
 
   return (
     <WordplayShell title="Quiet Game" emoji="🤫" accent={ACCENT} gradient={GRADIENT}>
       <div className="space-y-4">
         <p className="text-[12px] text-ink-200 leading-relaxed">
-          How long can everyone stay quiet? The mic listens for noise — when it hears anything louder than a whisper (your sensitivity), the streak ends.
+          How long can everyone stay quiet? The mic listens for noise — when it hears anything louder than the threshold you set below, the streak ends. Tougher than the old "medium" setting — the default is the strict Hard threshold; nudge the slider higher if you want more forgiveness.
           <span className="block mt-1 text-ink-300">No audio is recorded or saved.</span>
         </p>
 
@@ -197,12 +245,12 @@ export default function QuietGame() {
               <div className="text-[9px] tracking-widest text-ink-300 mb-1">VOLUME</div>
               <div className="h-2 rounded bg-black/40">
                 <div className="h-full rounded" style={{
-                  width: `${Math.min(100, (lastVolume / 80) * 100)}%`,
+                  width: `${Math.min(100, lastVolume)}%`,
                   background: overThreshold ? "#fca5a5" : ACCENT,
                   transition: "width 80ms linear",
                 }} />
               </div>
-              <div className="text-[9px] text-ink-300 mt-1">Threshold: {THRESHOLDS[sensitivity]}</div>
+              <div className="text-[9px] text-ink-300 mt-1">Threshold: {threshold}</div>
             </div>
           )}
         </motion.div>
@@ -239,27 +287,35 @@ export default function QuietGame() {
           )}
         </div>
 
-        {/* Sensitivity */}
+        {/* Sensitivity — single slider tuning the noise threshold. Lower
+         *  is stricter (closer to true silence). Default is the old
+         *  "hard" value of 12. Persisted per profile. */}
         <section className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <div className="text-[10px] tracking-[0.3em] font-display text-ink-200 mb-2">SENSITIVITY</div>
-          <div className="flex gap-1.5">
-            {(["easy", "medium", "hard"] as Sensitivity[]).map(s => (
-              <button key={s} onClick={() => setSensitivity(s)} disabled={listening}
-                className="flex-1 px-3 py-2 rounded-md text-[11px] font-display tracking-widest pressable touch-target disabled:opacity-50"
-                style={{
-                  background: sensitivity === s ? `${ACCENT}33` : "rgba(255,255,255,0.04)",
-                  color: sensitivity === s ? ACCENT : "#fff",
-                  border: `1px solid ${sensitivity === s ? ACCENT : "rgba(255,255,255,0.07)"}`,
-                  minHeight: 40,
-                }}>
-                {s.toUpperCase()}
-              </button>
-            ))}
+          <div className="flex items-baseline justify-between mb-2">
+            <div className="text-[10px] tracking-[0.3em] font-display text-ink-200">SENSITIVITY</div>
+            <div className="text-[10px] text-ink-300 font-mono">threshold {threshold}</div>
+          </div>
+          <input
+            type="range"
+            min={THRESHOLD_MIN}
+            max={THRESHOLD_MAX}
+            value={threshold}
+            onChange={e => setThreshold(parseInt(e.target.value, 10))}
+            disabled={listening}
+            aria-label="Noise sensitivity threshold (lower = stricter)"
+            className="w-full pressable touch-target disabled:opacity-50"
+            style={{ accentColor: ACCENT, minHeight: 40 }}
+          />
+          <div className="flex items-center justify-between text-[9px] text-ink-300 mt-1">
+            <span>Strict (5)</span>
+            <span>Default Hard ({DEFAULT_THRESHOLD})</span>
+            <span>Forgiving (40)</span>
           </div>
           <div className="text-[10px] text-ink-300 mt-2">
-            {sensitivity === "easy" && "Tolerates whispers — only triggers on loud sounds."}
-            {sensitivity === "medium" && "Triggers on normal talking."}
-            {sensitivity === "hard" && "Triggers on tiny sounds, even close breathing."}
+            {threshold <= 10 && "Triggers on tiny sounds — close breathing, paper rustle."}
+            {threshold > 10 && threshold <= 18 && "Triggers on whispers and quiet movement (default Hard)."}
+            {threshold > 18 && threshold <= 28 && "Triggers on normal talking."}
+            {threshold > 28 && "Tolerates conversation — only triggers on loud sounds."}
           </div>
         </section>
 

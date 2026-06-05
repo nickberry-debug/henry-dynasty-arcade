@@ -8,10 +8,15 @@ import type { Adventure } from "../types";
 import { CLASS_INFO, classInfoFor, getTier } from "../types";
 import { HeroSprite } from "../components/HeroSprite";
 import { CompanionSprite } from "../components/CompanionSprite";
+import { OlympusDivider } from "../components/OlympusDivider";
 import { getLine, getStage, EVOLUTION_LEVELS } from "../companions";
 import { BLESSINGS, blessingCount, readyForTitans } from "../blessings";
 import { MYTHIC_ARTIFACTS } from "../artifacts";
-import { ArrowLeft, Play, Archive, BookOpen, RotateCcw } from "lucide-react";
+import { ArrowLeft, Play, Archive, BookOpen, RotateCcw, Link2 } from "lucide-react";
+import { useCreature } from "../../creature/store";
+import { CreatureSprite } from "../../creature/CreatureSprite";
+import { getSpecies } from "../../creature/catalog";
+import { TYPE_INFO } from "../../creature/types";
 
 export default function HeroProfile() {
   const { id } = useParams<{ id: string }>();
@@ -57,11 +62,15 @@ export default function HeroProfile() {
         <Link to="/olympus" className="w-10 h-10 rounded-full flex items-center justify-center pressable touch-target" style={{ background: "rgba(218,165,32,0.1)", color: "#DAA520" }}>
           <ArrowLeft size={18} />
         </Link>
-        <div className="flex-1">
+        <div className="flex-1 text-center">
           <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: "#DAA520" }}>Hero Profile</div>
           <h1 className="font-display text-2xl tracking-[0.15em]" style={{ fontFamily: "'Cinzel', serif" }}>{hero.name.toUpperCase()}</h1>
           {hero.nickname && <div className="text-xs italic" style={{ color: "rgba(218,165,32,0.85)" }}>"{hero.nickname}"</div>}
+          <div className="max-w-xs mx-auto mt-2">
+            <OlympusDivider variant={3} />
+          </div>
         </div>
+        <div style={{ width: 40 }} aria-hidden="true" />
       </header>
 
       <div className="grid sm:grid-cols-[160px_1fr] gap-5">
@@ -112,6 +121,7 @@ export default function HeroProfile() {
       </div>
 
       <CompanionPanel hero={hero} />
+      <CreatureBondPanel heroId={hero.id} />
       <ArtifactsPanel hero={hero} />
       <BlessingsPanel hero={hero} />
       <Section title="Equipment Notes">
@@ -519,5 +529,47 @@ function ArtifactsPanel({ hero }: { hero: any }) {
         })}
       </div>
     </Section>
+  );
+}
+
+/** Cross-game panel — shows the Creature Keeper creature bonded to this
+ *  Olympus hero, if any. Renders nothing when no creature is linked. */
+function CreatureBondPanel({ heroId }: { heroId: string }) {
+  const navigate = useNavigate();
+  const c = useCreature();
+  const linked = c.save.archive.find(x => x.linkedHeroId === heroId);
+  if (!linked) return null;
+  const sp = getSpecies(linked.speciesId);
+  const t = sp ? TYPE_INFO[sp.type] : TYPE_INFO.stone;
+  return (
+    <section className="rounded-2xl p-4"
+      style={{
+        background: `linear-gradient(135deg, ${t.color}1f, rgba(15,27,45,0.6))`,
+        border: `1px solid ${t.color}66`,
+      }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Link2 size={14} style={{ color: "#DAA520" }} aria-hidden="true" />
+        <h3 className="font-display tracking-[0.2em] text-[12px]" style={{ color: "#DAA520" }}>
+          BONDED CREATURE
+        </h3>
+      </div>
+      <button onClick={() => navigate("/creature")}
+        className="w-full flex items-center gap-3 text-left pressable touch-target rounded-xl p-2"
+        style={{ background: "rgba(0,0,0,0.18)" }}
+        aria-label={`Open ${linked.nickname} in Creature Keeper`}>
+        <CreatureSprite creature={linked} size={56} />
+        <div className="flex-1 min-w-0">
+          <div className="font-display text-[15px]" style={{ color: "#fef3c7" }}>
+            {linked.nickname}
+          </div>
+          <div className="text-[11px] opacity-80" style={{ color: t.color }}>
+            {t.emoji} {sp?.stageNames[linked.stage]} · L{linked.level}
+          </div>
+          <div className="text-[10px] mt-0.5 opacity-65" style={{ color: "rgba(233,227,210,0.7)" }}>
+            Tap to visit them →
+          </div>
+        </div>
+      </button>
+    </section>
   );
 }

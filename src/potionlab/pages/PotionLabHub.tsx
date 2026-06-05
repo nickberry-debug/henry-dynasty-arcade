@@ -8,10 +8,13 @@ import { FlaskConical, BookOpen, Sparkles, Trophy } from "lucide-react";
 import { PotionLabShell, LAB_PURPLE, LAB_AMBER } from "../components/PotionLabShell";
 import { usePotionSave, RANK_TITLES, RANK_THRESHOLDS, rankFor } from "../store";
 import { ALL_RECIPES } from "../data/recipes";
+import { useActiveProfile } from "../../profiles/store";
 
 export default function PotionLabHub() {
   const navigate = useNavigate();
   const { state } = usePotionSave();
+  const profile = useActiveProfile();
+  const playerName = profile?.name ?? "friend";
   const rank = rankFor(state.discovered.length);
   const nextRankAt = RANK_THRESHOLDS[Math.min(rank + 1, RANK_THRESHOLDS.length - 1)];
   const pct = Math.min(100, Math.round((state.discovered.length / Math.max(1, nextRankAt)) * 100));
@@ -43,10 +46,10 @@ export default function PotionLabHub() {
               transition: "width 0.4s",
             }} role="progressbar" aria-valuenow={state.discovered.length} aria-valuemin={0} aria-valuemax={nextRankAt} aria-label="Brewmaster progress" />
           </div>
-          <div className="flex justify-between text-[10px] tracking-widest text-violet-200/70 mt-2">
+          <div className="flex flex-wrap justify-between text-[10px] tracking-widest text-violet-200/70 mt-2 gap-x-3">
             <span>{state.totalBrews} brews</span>
             <span>{state.shelf.length} bottled</span>
-            <span>{state.easterEggsSeen.length} easter eggs</span>
+            <span style={{ color: "#fde047" }}>✦ {(state.hiddenDiscoveries ?? []).length} <span className="opacity-60">/ ??</span> discoveries</span>
           </div>
         </section>
 
@@ -87,7 +90,7 @@ export default function PotionLabHub() {
             style={{ background: `linear-gradient(135deg, ${LAB_AMBER}22, rgba(10,6,18,0.9))`, border: `1px solid ${LAB_AMBER}66` }}>
             <div className="text-[10px] tracking-[0.3em] font-display mb-2" style={{ color: LAB_AMBER }}>WELCOME, APPRENTICE</div>
             <p className="text-[13px] text-violet-50 leading-relaxed mb-2">
-              Welcome to the lab, Beckett. The cauldron is hot. The shelf is empty. The grimoire knows a few starter recipes — and lots of secrets.
+              Welcome to the lab, {playerName}. The cauldron is hot. The shelf is empty. The grimoire knows a few starter recipes — and lots of secrets.
             </p>
             <p className="text-[13px] text-violet-100/90 leading-relaxed">
               Tap <strong>The Cauldron</strong> to brew. Combine 2 to 5 ingredients. Some combos make known potions; others might be secrets nobody has tried. The Brewmaster will narrate every attempt.

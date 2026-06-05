@@ -292,6 +292,10 @@ function DialogueOverlay({ npcName, era, missionContext, isCulprit, onClose, onC
   const [thinking, setThinking] = useState(false);
   const portrait = portraitDataUrl(npcPalette(npcName));
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Track mount so async dialogue requests that resolve after the user
+  // closes the overlay (or navigates away) don't fire stale setState.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   useModal({ onClose, containerRef: dialogRef });
 
   // First approach line — fire on open.
@@ -303,7 +307,7 @@ function DialogueOverlay({ npcName, era, missionContext, isCulprit, onClose, onC
         npcName, era, playerInput: "(approaches respectfully)",
         missionContext, recentLines: [], isCulprit,
       });
-      if (cancelled) return;
+      if (cancelled || !mountedRef.current) return;
       setLines([{ speaker: npcName, text: opener }]);
       onConverse(opener);
       speak(opener);
@@ -322,6 +326,7 @@ function DialogueOverlay({ npcName, era, missionContext, isCulprit, onClose, onC
       npcName, era, playerInput: userLine.text,
       missionContext, recentLines: [...lines, userLine], isCulprit,
     });
+    if (!mountedRef.current) return;
     setLines(prev => [...prev, { speaker: npcName, text: npcLine }]);
     onConverse(npcLine);
     speak(npcLine);

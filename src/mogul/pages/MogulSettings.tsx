@@ -32,7 +32,7 @@ export default function MogulSettings() {
         </div>
         <div className="text-[12px] text-ink-200 mb-3">
           API keys are managed <strong>arcade-wide</strong> — paste once on the
-          Landing page and Beckett Movie Studios uses them along with Olympus
+          Landing page and Movie Studios uses them along with Olympus
           and Wordplay Hub.
         </div>
 

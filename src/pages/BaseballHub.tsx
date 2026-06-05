@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { listLeagues } from "../db/dexie";
 import { ArcadeSettings } from "../arcade/ArcadeSettings";
 import { hasAnthropicKey } from "../arcade/keys";
+import { SportsEquipStrip } from "../components/SportsEquipStrip";
 
 export default function BaseballHub() {
   const league = useStore(s => s.league);
@@ -39,6 +40,7 @@ export default function BaseballHub() {
         <div className="flex-1">
           <div className="text-[10px] tracking-[0.3em] font-display text-ink-200">BERRY KID'S ARCADE</div>
           <div className="font-display text-2xl tracking-widest">⚾ BASEBALL</div>
+          <SportsEquipStrip sport="baseball" size={22} className="mt-1" />
         </div>
         <button
           onClick={() => setSettingsOpen(true)}

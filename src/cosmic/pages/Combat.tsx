@@ -20,12 +20,14 @@ import {
   planAiOrders, tickStep, SUBTICKS, type BattleStateLive, type Order,
 } from "../engine";
 import { MISSILE_TYPES, type MissileId, type Battle } from "../types";
+import { playSfx, unlockAudio } from "../../art";
 
 export default function Combat() {
   const { slotId, missionId } = useParams<{ slotId: string; missionId: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const load = useCosmic(s => s.load);
+  useEffect(() => { unlockAudio(); }, []);
   const saves = useCosmic(s => s.saves);
   const award = useCosmic(s => s.awardMission);
 
@@ -212,6 +214,8 @@ export default function Combat() {
         },
       };
       if (battle.result === "victory") {
+        playSfx("voYouWin", { volume: 0.9 });
+        playSfx("explosionBig", { volume: 0.5 });
         award(save.id, {
           missionId: mission.id,
           rankPoints: mission.rewardRank,
@@ -220,6 +224,8 @@ export default function Combat() {
           battle: battleRecord,
           wingmenDied,
         });
+      } else {
+        playSfx("voYouLose", { volume: 0.85 });
       }
     }
   };

@@ -10,6 +10,7 @@ import { ArrowLeft, Trophy, Zap, Swords, Settings as SettingsIcon } from "lucide
 import { useEffect, useState } from "react";
 import { ArcadeSettings } from "../../arcade/ArcadeSettings";
 import { hasAnthropicKey } from "../../arcade/keys";
+import { SportsEquipStrip } from "../../components/SportsEquipStrip";
 
 export default function FootballHub() {
   const league = useFootball(s => s.league);
@@ -40,6 +41,7 @@ export default function FootballHub() {
         <div className="flex-1">
           <div className="text-[10px] tracking-[0.3em] font-display text-ink-200">BERRY KID'S ARCADE</div>
           <div className="font-display text-2xl tracking-widest">🏈 FOOTBALL</div>
+          <SportsEquipStrip sport="football" size={22} className="mt-1" />
         </div>
         <button
           onClick={() => setSettingsOpen(true)}

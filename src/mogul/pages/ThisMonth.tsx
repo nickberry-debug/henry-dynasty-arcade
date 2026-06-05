@@ -5,6 +5,7 @@ import { advanceWeeks, advanceMonths, isBankrupt } from "../engine";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import { FastForward, SkipForward, Play, ArrowRight, AlertTriangle, Newspaper } from "lucide-react";
+import { playSfx, unlockAudio } from "../../art";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
@@ -16,14 +17,28 @@ export default function ThisMonth() {
   const tick = async (kind: "week" | "month" | "quarter") => {
     if (busy) return;
     setBusy(true);
+    unlockAudio();
     await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+    // Premieres trigger when a release lands this period — count releases
+    // before/after to detect a premiere-this-tick and play the moment.
+    const releasesBefore = studio.releases.length;
     try {
       await mutate(s => {
         if (kind === "week") advanceWeeks(s, 1);
         else if (kind === "month") advanceMonths(s, 1);
         else advanceMonths(s, 3);
       });
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+      // Premiere chime if any movie released this tick
+      const releasesAfter = useMogul.getState().studio?.releases.length ?? releasesBefore;
+      if (releasesAfter > releasesBefore) {
+        playSfx("crowdCheer", { volume: 0.6 });
+        playSfx("ding", { volume: 0.6, pitch: 1.3 });
+      } else {
+        playSfx("click", { volume: 0.35 });
+      }
+    }
   };
 
   const player = studio.player;

@@ -11,12 +11,14 @@ import { useTemporal } from "../store";
 import { getEra, getMission } from "../data/eras";
 import { generateRipple } from "../ai";
 import { speak } from "../../wordplay/voice";
+import { playSfx, unlockAudio } from "../../art";
 
 export default function Resolution() {
   const { slotId, missionId } = useParams<{ slotId: string; missionId: string }>();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const saves = useTemporal(s => s.saves);
+  useEffect(() => { unlockAudio(); }, []);
   const endMission = useTemporal(s => s.endMission);
   const load = useTemporal(s => s.load);
 
@@ -52,6 +54,7 @@ export default function Resolution() {
       });
       if (cancelled) return;
       setRipple(rippleResult);
+      playSfx(namedCorrectly ? "voYouWin" : "voYouLose", { volume: 0.85 });
       // Trophy reward: name of resolution + named-correctly path.
       const trophy = namedCorrectly ? { name: trophyName(era.id, mission.id), from: era.name } : undefined;
       endMission(save.id, {

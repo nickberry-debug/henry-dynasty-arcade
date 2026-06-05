@@ -3,6 +3,7 @@ import { getTeam, payroll } from "./league";
 import { generatePlayer } from "../generators/players";
 import { buildSchedule } from "../generators/schedule";
 import { pushNews } from "./season";
+import { rolloverBaseballStorylines } from "./storylines";
 import { runDevelopmentPass, runHoFVoting } from "./development";
 import { irnd, rand, uid, shuffle } from "../utils/rand";
 
@@ -205,6 +206,8 @@ export function startNewSeason(lg: League) {
   cpuFillRosters(lg);
 
   // 7) Reset team season records + schedule the new year
+  // Roll over shared-engine storylines (active → resolved) before the year flips.
+  try { rolloverBaseballStorylines(lg); } catch { /* non-critical */ }
   lg.year += 1;
   lg.schedule = buildSchedule(lg.teams, lg.settings.gameplay.scheduleLength);
   lg.day = 0;

@@ -3,7 +3,7 @@
 // Landing page. No more pasting the same key into Olympus, Mogul,
 // AND Wordplay separately.
 import { useEffect, useRef, useState } from "react";
-import { Key, X, Check, AlertTriangle, Sparkles, Mic } from "lucide-react";
+import { Key, X, Check, AlertTriangle, Sparkles, Mic, Volume2, VolumeX } from "lucide-react";
 import {
   setAnthropicKey, clearAnthropicKey, hasAnthropicKey,
   setOpenAIKey, clearOpenAIKey, hasOpenAIKey,
@@ -17,6 +17,7 @@ import {
   getToneInstruction, setToneInstruction,
   type OpenAIVoice, type OpenAIModel, type ToneContext,
 } from "../olympus/openaiTts";
+import { isMuted, setMuted, setVolume, getAudioState, playSfx } from "../art";
 
 interface Props { onClose: () => void }
 
@@ -34,6 +35,12 @@ export function ArcadeSettings({ onClose }: Props) {
   const [toneOlympus,  setToneOlympus]  = useState(getToneInstruction("olympus"));
   const [toneWordplay, setToneWordplay] = useState(getToneInstruction("wordplay"));
   const [toneTwentyq,  setToneTwentyq]  = useState(getToneInstruction("twentyq"));
+
+  // Game audio settings (drop-in from AudioLibrary).
+  const [audioMuted, setAudioMuted] = useState(isMuted());
+  const [masterVol, setMasterVol] = useState(getAudioState().master);
+  const [sfxVol, setSfxVol] = useState(getAudioState().sfx);
+  const [musicVol, setMusicVol] = useState(getAudioState().music);
 
   function saveVoice() {
     setOpenAITtsModel(model);
@@ -104,7 +111,7 @@ export function ArcadeSettings({ onClose }: Props) {
         <div className="px-4 py-4 space-y-5">
           <div className="text-[12px] text-ink-200 leading-relaxed">
             Paste your API keys here ONCE. Every game in the arcade uses them:
-            Olympus storyteller, Beckett Movie Studios news + reviews, Wordplay Hub
+            Olympus storyteller, Movie Studios news + reviews, Wordplay Hub
             content generation, and the premium narrator voice.
           </div>
 
@@ -305,6 +312,61 @@ export function ArcadeSettings({ onClose }: Props) {
               {savedFlash === "voice" && (
                 <span className="text-[11px] text-emerald-300 inline-flex items-center gap-1"><Check size={11} /> Voice saved.</span>
               )}
+            </div>
+          </section>
+
+          {/* Game audio — drives every playSfx/playMusic call from the
+           *  shared AudioLibrary. Persists to localStorage. */}
+          <section className="rounded-2xl p-3 mt-1"
+            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)" }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-display tracking-widest text-[12px] flex items-center gap-2" style={{ color: "#a78bfa" }}>
+                {audioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />} GAME AUDIO
+              </div>
+              <button
+                onClick={() => {
+                  const next = !audioMuted;
+                  setMuted(next);
+                  setAudioMuted(next);
+                  if (!next) playSfx("ding", { volume: 0.7 });
+                }}
+                className="px-3 py-1 rounded-full text-[10px] font-display tracking-widest pressable touch-target"
+                style={{
+                  background: audioMuted ? "rgba(248,113,113,0.18)" : "rgba(134,239,172,0.18)",
+                  border: `1px solid ${audioMuted ? "#f87171" : "#86efac"}`,
+                  color: audioMuted ? "#fca5a5" : "#86efac",
+                }}>
+                {audioMuted ? "MUTED" : "ON"}
+              </button>
+            </div>
+            <div className="space-y-2">
+              {[
+                { label: "Master",  key: "master" as const, val: masterVol, setLocal: setMasterVol, color: "#fde047" },
+                { label: "SFX",     key: "sfx"    as const, val: sfxVol,    setLocal: setSfxVol,    color: "#86efac" },
+                { label: "Music",   key: "music"  as const, val: musicVol,  setLocal: setMusicVol,  color: "#a78bfa" },
+              ].map(s => (
+                <div key={s.key} className="flex items-center gap-2">
+                  <span className="font-display text-[10px] w-14 tracking-widest" style={{ color: s.color }}>
+                    {s.label.toUpperCase()}
+                  </span>
+                  <input type="range" min={0} max={100} step={1}
+                    value={Math.round(s.val * 100)}
+                    disabled={audioMuted}
+                    onChange={e => {
+                      const v = parseInt(e.target.value, 10) / 100;
+                      s.setLocal(v); setVolume(s.key, v);
+                    }}
+                    onMouseUp={() => playSfx("ding", { volume: 0.5 })}
+                    className="flex-1"
+                    aria-label={`${s.label} volume`} />
+                  <span className="font-mono text-[10px] w-8 text-right" style={{ color: "#fef3c7" }}>
+                    {Math.round(s.val * 100)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="text-[10px] mt-2 opacity-70" style={{ color: "rgba(229,231,235,0.7)" }}>
+              Volume settings persist per device. Tap MUTED to flip — confirms with a chirp.
             </div>
           </section>
 

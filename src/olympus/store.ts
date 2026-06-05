@@ -7,6 +7,7 @@ import { immer } from "zustand/middleware/immer";
 import type { Adventure, BaseChestItem, BaseInventoryCategory, BondStory, EchoVerse, Hero, OlympusClass, Scene, SaveStatus } from "./types";
 import { generateBondStory, generateCityRumors, generateDream, generateEcho } from "./ai";
 import { getStage, xpForLevel, xpRewardFor, canEvolve, EVOLUTION_LEVELS } from "./companions";
+import { getActiveProfileId, recordGameSession } from "../profiles/store";
 import {
   saveOlympusHero, loadOlympusHero, listOlympusHeroes, deleteOlympusHero,
   saveOlympusAdventure, loadOlympusAdventure, listAdventuresForHero,
@@ -428,6 +429,16 @@ export const useOlympus = create<OlympusState>()(
       const adv = get().activeAdventure;
       if (!adv) return;
       const next = { ...adv, status: "completed" as const, completedAt: Date.now() };
+      // Family stats — one completed adventure = one win.
+      {
+        const pid = getActiveProfileId();
+        const hero = get().heroes.find(h => h.id === next.heroId);
+        if (pid) recordGameSession(pid, "olympus", {
+          sessions: 1,
+          wins: 1,
+          level: hero?.level ?? 0,
+        });
+      }
       await flushSave(async () => {
         await saveAdventureEverywhere(next);
         const hero = get().heroes.find(h => h.id === next.heroId);

@@ -53,7 +53,7 @@ export default function OlympusSettings() {
   return (
     <div className="max-w-2xl mx-auto pb-8 space-y-5">
       <header className="flex items-center gap-3">
-        <button onClick={() => navigate("/olympus")} className="w-10 h-10 rounded-full flex items-center justify-center pressable touch-target" style={{ background: "rgba(218,165,32,0.1)", color: "#DAA520" }}>
+        <button onClick={() => navigate(-1)} className="w-10 h-10 rounded-full flex items-center justify-center pressable touch-target" style={{ background: "rgba(218,165,32,0.1)", color: "#DAA520" }}>
           <ArrowLeft size={18} />
         </button>
         <div>
@@ -233,11 +233,24 @@ export default function OlympusSettings() {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, icon }: { title: string; children: React.ReactNode; icon?: string }) {
   return (
-    <section className="rounded-2xl p-4" style={{ background: "rgba(15,27,45,0.5)", border: "1px solid rgba(218,165,32,0.2)" }}>
-      <div className="text-[10px] uppercase tracking-[0.3em] font-display mb-2.5" style={{ color: "#DAA520" }}>{title}</div>
-      {children}
+    <section className="relative rounded-2xl p-4 overflow-hidden"
+      style={{
+        background: "linear-gradient(135deg, rgba(218,165,32,0.06), rgba(15,27,45,0.7))",
+        border: "1px solid rgba(218,165,32,0.40)",
+        boxShadow: "0 4px 14px -8px rgba(218,165,32,0.30), inset 0 0 0 1px rgba(218,165,32,0.08)",
+      }}>
+      <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full pointer-events-none opacity-15"
+        style={{ background: "radial-gradient(circle, rgba(218,165,32,0.6), transparent 70%)" }} aria-hidden="true" />
+      <div className="relative flex items-center gap-2 mb-2.5">
+        {icon && <span aria-hidden="true" className="text-base">{icon}</span>}
+        <div className="text-[10px] uppercase tracking-[0.3em] font-display"
+          style={{ color: "#DAA520", fontFamily: "'Cinzel', serif" }}>{title}</div>
+        <div className="flex-1 h-px ml-1"
+          style={{ background: "linear-gradient(90deg, rgba(218,165,32,0.4), transparent)" }} aria-hidden="true" />
+      </div>
+      <div className="relative">{children}</div>
     </section>
   );
 }

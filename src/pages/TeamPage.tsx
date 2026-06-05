@@ -295,14 +295,27 @@ function LineupTab({ team, roster, league, editable }: { team: Team; roster: Pla
       </div>
 
       <div className="space-y-1.5 mb-5">
-        {currentOrder.map((p, i) => (
-          <div key={p.id} className="flex items-center gap-2 px-2 py-2 rounded-xl bg-white/3 border border-white/5">
-            <div className="font-display text-lg text-accent w-7 text-center">{i + 1}</div>
-            <Link to={`/player/${p.id}`} className="flex items-center gap-2 flex-1 min-w-0 pressable">
-              <PlayerPortrait player={p} team={team} size={40} />
+        {currentOrder.map((p, i) => {
+          const tint = team?.primary || "#fbbf24";
+          return (
+          <div key={p.id} className="flex items-center gap-2 px-2.5 py-2 rounded-xl"
+            style={{
+              background: `linear-gradient(135deg, ${tint}14, rgba(255,255,255,0.03))`,
+              border: `1px solid ${tint}33`,
+              boxShadow: `0 2px 8px -4px ${tint}30`,
+            }}>
+            <div className="font-display text-lg w-7 text-center" style={{ color: tint }}>{i + 1}</div>
+            <Link to={`/player/${p.id}`} className="flex items-center gap-2.5 flex-1 min-w-0 pressable">
+              <PlayerPortrait player={p} team={team} size={44} />
               <div className="min-w-0 flex-1">
-                <div className="font-medium truncate">{p.name}</div>
-                <div className="text-[10px] text-ink-200">{p.position} · {p.bats}/{p.throws} · OVR <span className="font-mono" style={{ color: fmt.ratingColor(p.overall) }}>{p.overall}</span></div>
+                <div className="font-medium truncate text-[14px]">{p.name}</div>
+                <div className="text-[10px] text-ink-200 flex items-center gap-1.5 mt-0.5">
+                  <img src="/assets/kenney/sports/bat_wood.png" alt="" aria-hidden="true"
+                    style={{ width: 12, height: 12, opacity: 0.6, transform: "rotate(-20deg)" }} />
+                  <span>{p.position} · {p.bats}/{p.throws}</span>
+                  <span style={{ color: "#666" }}>·</span>
+                  <span>OVR <span className="font-mono" style={{ color: fmt.ratingColor(p.overall) }}>{p.overall}</span></span>
+                </div>
               </div>
             </Link>
             {editable && (
@@ -312,7 +325,8 @@ function LineupTab({ team, roster, league, editable }: { team: Team; roster: Pla
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <h3 className="font-head text-sm uppercase tracking-wider mb-2 text-ink-200">Bench / Sub In</h3>

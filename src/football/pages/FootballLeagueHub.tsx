@@ -5,7 +5,7 @@ import { useFootball } from "../store";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useMemo } from "react";
-import { ListOrdered, Users, CalendarDays, UserPlus, ScrollText, Trophy, ArrowRight } from "lucide-react";
+import { ListOrdered, Users, CalendarDays, UserPlus, ScrollText, Trophy, ArrowRight, BarChart3, Newspaper, BookOpen } from "lucide-react";
 
 export default function FootballLeagueHub() {
   const league = useFootball(s => s.league)!;
@@ -17,7 +17,7 @@ export default function FootballLeagueHub() {
   const userRank = userTeam ? standings.findIndex(s => s.id === userTeam.id) + 1 : null;
 
   const fa = league.phase === "freeagency";
-  const draft = league.phase === "draft";
+  const draftActive = league.phase === "draft" || (!!league.currentDraft && !league.currentDraft.completed);
   const playoffs = league.phase === "playoffs" || (league.playoffsBracket != null);
 
   return (
@@ -36,11 +36,14 @@ export default function FootballLeagueHub() {
         <SubTabCard to="/football/standings" icon={<ListOrdered size={20} />} label="Standings" body="Division &amp; conference order." tint="#FFB81C" />
         <SubTabCard to="/football/teams" icon={<Users size={20} />} label="Teams" body="Scout every roster." tint="#60a5fa" />
         <SubTabCard to="/football/schedule" icon={<CalendarDays size={20} />} label="Schedule" body="17-week slate." tint="#94a3b8" />
+        <SubTabCard to="/football/stats" icon={<BarChart3 size={20} />} label="Stats" body="Leaders by category." tint="#86efac" />
+        <SubTabCard to="/football/news" icon={<Newspaper size={20} />} label="News" body="Headlines + reactions." tint="#fcd34d" />
+        <SubTabCard to="/football/history" icon={<BookOpen size={20} />} label="History" body="Past champions &amp; HoF." tint="#a78bfa" />
         {fa && (
           <SubTabCard to="/football/freeagency" icon={<UserPlus size={20} />} label="Free Agency" body="The market is open." tint="#34d399" hot />
         )}
-        {draft && (
-          <SubTabCard to="/football" icon={<ScrollText size={20} />} label="Draft" body="Build the future." tint="#a78bfa" hot />
+        {draftActive && (
+          <SubTabCard to="/football/draft" icon={<ScrollText size={20} />} label="Draft" body="Make your picks." tint="#a78bfa" hot />
         )}
         {playoffs && (
           <SubTabCard to="/football" icon={<Trophy size={20} />} label="Playoffs" body="One-and-done bracket." tint="#fb7185" hot />

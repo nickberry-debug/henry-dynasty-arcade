@@ -7,15 +7,24 @@ import { create } from "zustand";
 import type { Save, Wingman, ShipClassId, MissileId, Era, Battle } from "./types";
 import { RANK_TIERS } from "./types";
 import { SHIP_CLASSES } from "./ships";
+import { profileKey, getActiveProfileId, recordGameSession } from "../profiles/store";
+import { setBlob as cloudSet } from "../sync/cloudBlob";
 
-const STORAGE_KEY = "dd_cosmic_saves";
+const BASE_KEY = "dd_cosmic_saves";
+const STORAGE_KEY = () => profileKey(BASE_KEY);
 const MAX_SLOTS = 3;
+
+function syncToCloud(saves: Save[]): void {
+  const pid = getActiveProfileId();
+  if (!pid) return;
+  try { cloudSet(pid, "cosmic_saves_v1", saves); } catch {}
+}
 
 const STARTER_LOADOUT: MissileId[] = ["pulse", "vulcan"];
 
 function loadAllSaves(): Save[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY());
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -26,7 +35,8 @@ function loadAllSaves(): Save[] {
 }
 
 function persist(saves: Save[]): void {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saves)); } catch {}
+  try { localStorage.setItem(STORAGE_KEY(), JSON.stringify(saves)); } catch {}
+  syncToCloud(saves);
 }
 
 const STARTER_CALLSIGNS = ["Maverick", "Goose", "Iceman", "Viper", "Slider", "Wolfman", "Hollywood", "Sundown"];
@@ -146,6 +156,18 @@ export const useCosmic = create<CosmicStore>((set, get) => ({
       };
     });
     persist(next);
+    // Family stats — credit a Cosmic win the moment a mission is awarded.
+    {
+      const pid = getActiveProfileId();
+      if (pid) {
+        const me = next.find(s => s.id === saveId);
+        recordGameSession(pid, "cosmic", {
+          sessions: 1,
+          wins: 1,
+          level: me?.rank ?? 0,
+        });
+      }
+    }
     return { saves: next };
   }),
   setCurrentShip: (saveId, classId) => set(state => {

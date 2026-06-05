@@ -2,9 +2,13 @@
 // search, category filters with drama subcategories, Memorable Moments archive.
 import { useStore } from "../store";
 import { useMemo, useState } from "react";
-import { Heart, Smile, Flame, Frown, Target as TargetIcon, Pin } from "lucide-react";
+import { Heart, Smile, Flame, Frown, Target as TargetIcon, Pin, Sparkles } from "lucide-react";
 import { pinAsMemorable, reactToEvent, ensureDramaState } from "../engine/drama";
 import type { NewsItem } from "../store/types";
+// Shared sports-engine — Baseball's storylines2 surfaces here the same
+// way Football's storylines surface on its News page. Both sports drive
+// the same module.
+import { STORYLINE_EMOJI, type Storyline } from "../sports-engine";
 
 const CATS = ["All", "Drama", "Trade", "Injury", "Milestone", "Game", "Award", "Draft", "FA", "Off-Field"] as const;
 
@@ -97,6 +101,38 @@ export default function News() {
               >{c}</button>
             ))}
           </div>
+
+          {/* Active storylines surface above the feed when viewing All. */}
+          {cat === "All" && !q.trim() && drama?.storylines2 && drama.storylines2.active.length > 0 && (
+            <section className="rounded-2xl p-4"
+              style={{ background: "linear-gradient(135deg, rgba(167,139,250,0.10), rgba(8,12,20,0.85))", border: "1px solid rgba(167,139,250,0.35)" }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles size={14} className="text-violet-300" />
+                <div className="text-[10px] tracking-[0.3em] font-display text-violet-200">STORYLINES · {drama.storylines2.active.length} ACTIVE</div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {(drama.storylines2.active as Storyline[])
+                  .slice()
+                  .sort((a: Storyline, b: Storyline) => b.intensity - a.intensity)
+                  .slice(0, 8)
+                  .map((s: Storyline) => (
+                  <div key={s.id} className="flex items-start gap-2 rounded-lg p-2"
+                    style={{ background: "rgba(0,0,0,0.30)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span className="text-lg shrink-0">{s.emoji ?? STORYLINE_EMOJI[s.kind]}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-display tracking-wide truncate" style={{ color: "#fef3c7" }}>{s.label}</div>
+                      {s.body && <div className="text-[10px] text-ink-200 mt-0.5 leading-snug">{s.body}</div>}
+                      {s.intensity > 1 && (
+                        <div className="text-[9px] mt-0.5" style={{ color: "#fde047" }}>
+                          {"★".repeat(Math.min(3, s.intensity - 1))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {storyOfDay && cat === "All" && !q.trim() && (
             <StoryOfDay item={storyOfDay} onReact={onReact} onPin={onPin} />

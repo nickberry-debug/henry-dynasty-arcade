@@ -18,6 +18,13 @@ const SIZE_SPEED: Record<string, number> = {
 
 const MOVEMENT_PACE = 0.68;
 const ATTACK_DAMAGE_PACE = 0.42;
+
+// Same size-class multipliers the renderer uses for sprite scale — kept
+// duplicated here so the sim can scale VFX by combatant size without
+// importing from the renderer module.
+const SIZE_MUL: Record<string, number> = {
+  tiny: 0.6, small: 0.85, medium: 1.0, large: 1.25, huge: 1.6, colossal: 2.0,
+};
 const SPECIAL_DAMAGE_PACE = 0.34;
 const INITIAL_SPECIAL_DELAY = 220;
 const DEATH_TIMER = 58;
@@ -166,6 +173,18 @@ export function tickSimulation(
       }
 
       spawnImpact(particles, nearest.x, nearest.y, u.team === "A" ? "#5599FF" : "#FF5555");
+      // Every hit pushes a tiny burst VFX so impacts visibly read at any
+      // zoom level (particles alone are easy to miss on a busy field).
+      // Scale by the bigger of the two combatants so giants land heavier.
+      const bigger = Math.max(SIZE_MUL[u.size] ?? 1, SIZE_MUL[nearest.size] ?? 1);
+      vfxQueue.push({
+        charId: u.defId,
+        x: nearest.x,
+        y: nearest.y,
+        effect: "burst",
+        color: u.team === "A" ? "#9ec7ff" : "#ff9e9e",
+        scale: 0.5 + bigger * 0.25,
+      });
 
       if (nearest.hp <= 0) {
         nearest.hp = 0;

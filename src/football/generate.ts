@@ -218,6 +218,9 @@ function generatePlayer(teamId: string, pos: FootballPosition, jersey: number, t
     teamId,
     retired: false,
     seasonStats: emptyStats(),
+    careerStats: [],
+    awards: [],
+    prevOvr: base,
     appearance: { skinTone: irnd(0, 7), hairStyle: irnd(0, 9), faceShape: irnd(0, 5), portraitSeed: Math.floor(rand() * 1e9) },
   };
 }

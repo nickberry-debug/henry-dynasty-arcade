@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useFootball } from "../store";
 import { ArrowLeft, X, CalendarDays, Trophy, Newspaper, UserPlus, ScrollText, ArrowRight } from "lucide-react";
 import type { FootballPlayer, FootballLeague, FootballTeam } from "../types";
+import { SportPortrait } from "../../components/SportPortrait";
 
 export function FootballTeams() {
   const lg = useFootball(s => s.league);
@@ -117,12 +118,21 @@ export function FootballTeamPage() {
                   <button
                     key={p.id}
                     onClick={() => setOpenPlayer(p)}
-                    className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/3 hover:bg-white/8 text-sm pressable touch-target"
+                    className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm pressable touch-target"
+                    style={{
+                      background: `linear-gradient(135deg, ${t.primary}1a, rgba(255,255,255,0.03))`,
+                      border: `1px solid ${t.accent}33`,
+                    }}
                   >
-                    <span className="font-mono text-[10px] text-ink-300 w-5">{i === 0 ? "S1" : `B${i}`}</span>
-                    <span className="font-mono text-[10px] w-7 text-ink-300">#{p.jersey}</span>
-                    <span className="flex-1 truncate">{p.name}</span>
-                    {p.injury && <span className="text-[9px] px-1 py-0.5 rounded bg-red-500/30 text-red-200" title={p.injury.name}>IL</span>}
+                    <span className="font-mono text-[10px] w-5 font-display tracking-widest" style={{ color: i === 0 ? t.accent : "rgba(255,255,255,0.5)" }}>
+                      {i === 0 ? "S1" : `B${i}`}
+                    </span>
+                    <span className="font-mono text-[11px] w-9 rounded px-1.5 py-0.5 text-center"
+                      style={{ background: t.primary, color: t.accent, border: `1px solid ${t.accent}55` }}>
+                      #{p.jersey}
+                    </span>
+                    <span className="flex-1 truncate font-medium">{p.name}</span>
+                    {p.injury && <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/30 text-red-200" title={p.injury.name}>IL</span>}
                     <span className="text-[10px] text-ink-300">Age {p.age}</span>
                     <span className={`text-xs font-mono font-bold w-8 text-right ${p.overall >= 85 ? "text-emerald-300" : p.overall >= 75 ? "text-amber-300" : "text-ink-200"}`}>{p.overall}</span>
                   </button>
@@ -180,13 +190,14 @@ function FootballPlayerModal({ player, team, onClose }: { player: FootballPlayer
         style={{ background: "linear-gradient(180deg, #1A2526 0%, #0a0d13 100%)", border: "1px solid rgba(255,184,28,0.3)" }}
       >
         <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-3 border-b border-white/10" style={{ background: "rgba(26,37,38,0.95)" }}>
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center font-display text-sm" style={{ background: team.primary, color: team.accent }}>{team.abbr}</div>
+          <Link to={`/football/player/${player.id}`} onClick={onClose} className="flex items-center gap-3 min-w-0 pressable">
+            <SportPortrait player={player} team={team} size={56} sport="football" />
             <div className="min-w-0">
               <div className="font-display text-base truncate">{player.name}</div>
               <div className="text-[10px] text-ink-300 uppercase tracking-widest">#{player.jersey} · {player.position} · Age {player.age}</div>
+              <div className="text-[9px] mt-0.5 uppercase tracking-widest opacity-70" style={{ color: team.accent }}>{team.abbr}</div>
             </div>
-          </div>
+          </Link>
           <button onClick={onClose} className="p-2 rounded-lg bg-white/5 pressable touch-target"><X size={18} /></button>
         </div>
 

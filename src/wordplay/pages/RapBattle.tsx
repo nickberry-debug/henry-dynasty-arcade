@@ -214,13 +214,34 @@ Return JSON:
                 style={{ background: `${ACCENT}33`, border: `1px solid ${ACCENT}88`, color: ACCENT, minHeight: 44 }}>
                 {loading ? <Loader2 size={11} className="animate-spin" /> : "AI COUNTER"}
               </button>
-              {verses.filter(v => v.who === "user").length >= 1 && verses.filter(v => v.who === "ai").length >= 1 && (
-                <button onClick={judge} disabled={loading}
-                  className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-[11px] font-display tracking-widest pressable touch-target disabled:opacity-50"
-                  style={{ background: ACCENT, color: "#08151a", minHeight: 44 }}>
-                  <Trophy size={11} /> END BATTLE
-                </button>
-              )}
+              {/* End Battle is always visible — but disabled until both sides
+               *  have dropped at least one verse, with a clear hint so the
+               *  player isn't left wondering why nothing happens on tap. */}
+              {(() => {
+                const userVerses = verses.filter(v => v.who === "user").length;
+                const aiVerses = verses.filter(v => v.who === "ai").length;
+                const canJudge = userVerses >= 1 && aiVerses >= 1;
+                const hint = canJudge
+                  ? "Ready to crown a winner"
+                  : userVerses === 0 && aiVerses === 0
+                    ? "Drop a verse to start"
+                    : userVerses === 0
+                      ? "Your turn — drop a verse"
+                      : "Tap AI COUNTER for a comeback";
+                return (
+                  <button onClick={judge} disabled={loading || !canJudge}
+                    title={hint}
+                    className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-[11px] font-display tracking-widest pressable touch-target disabled:opacity-40"
+                    style={{
+                      background: canJudge ? ACCENT : "rgba(255,255,255,0.08)",
+                      color: canJudge ? "#08151a" : "rgba(255,255,255,0.55)",
+                      border: canJudge ? "none" : "1px dashed rgba(255,255,255,0.20)",
+                      minHeight: 44,
+                    }}>
+                    <Trophy size={11} /> {canJudge ? "END BATTLE" : hint.toUpperCase()}
+                  </button>
+                );
+              })()}
             </div>
           </section>
         )}

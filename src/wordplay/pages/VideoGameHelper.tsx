@@ -66,10 +66,14 @@ Never mention violence beyond game terms. Never give spoilers without warning.`,
       const userSaid = await conv.ask(prompt, 30);
       if (userSaid.trim()) {
         addLine("user", userSaid);
-        const newHistory: ChatLine[] = [{ role: "ai", text: prompt }, { role: "user", text: userSaid }];
         const aiReply = await sendToAI(userSaid, []);
         addLine("ai", aiReply);
         speak(aiReply);
+      } else {
+        // Mic blocked, no speech detected, or auto-timeout. Don't leave the
+        // user staring at a silent screen — surface a hint that they can
+        // type instead.
+        addLine("ai", "I didn't catch that — you can tap the mic again, or type your answer in the box below.");
       }
     } else {
       speak(prompt);
@@ -95,6 +99,9 @@ Never mention violence beyond game terms. Never give spoilers without warning.`,
         addLine("ai", reply2);
         speak(reply2);
       }
+      // If they didn't speak this round, just sit quietly — the conversation
+      // doesn't end, the text input is still right there. Adding a hint
+      // every silent turn would get noisy.
     }
   };
 

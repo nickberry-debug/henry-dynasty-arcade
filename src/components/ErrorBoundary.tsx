@@ -6,6 +6,26 @@ import { Component, ErrorInfo, ReactNode } from "react";
 interface Props { children: ReactNode }
 interface State { hasError: boolean; error?: Error; info?: ErrorInfo }
 
+/** Detect the stale-deploy chunk-mismatch error family. After a Vercel
+ *  deploy, an old SW can keep serving the previous index.html which
+ *  references chunk hashes that no longer exist. The browser fetches
+ *  the missing chunk, gets index.html back (SPA fallback), and refuses
+ *  to execute HTML as JS module. */
+function isStaleChunkError(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as { message?: string; name?: string };
+  const msg = String(e.message ?? "");
+  const name = String(e.name ?? "");
+  return (
+    name === "ChunkLoadError" ||
+    msg.includes("Failed to fetch dynamically imported module") ||
+    msg.includes("Importing a module script failed") ||
+    msg.includes("error loading dynamically imported module") ||
+    msg.includes("is not a valid JavaScript MIME type") ||
+    msg.includes("'text/html' is not a valid")
+  );
+}
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false };
 
@@ -26,6 +46,20 @@ export class ErrorBoundary extends Component<Props, State> {
       }));
     } catch {}
     this.setState({ info });
+    // Auto-recover from stale-deploy chunk errors. App.tsx's lazy loader
+    // catches most of these, but if one slips through (e.g. an inline
+    // dynamic import deep in a page), unregister the SW + clear caches
+    // and reload exactly once. The sessionStorage guard prevents loops.
+    if (isStaleChunkError(error)) {
+      const already = (() => {
+        try { return sessionStorage.getItem("dd_chunk_reload_attempted") === "1"; }
+        catch { return false; }
+      })();
+      if (!already) {
+        try { sessionStorage.setItem("dd_chunk_reload_attempted", "1"); } catch {}
+        this.reload();
+      }
+    }
   }
 
   reset = () => {
@@ -33,17 +67,68 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   reload = () => {
-    // Clear caches so the next load gets fresh code if a stale SW is
-    // serving a broken build.
-    try {
-      if ("caches" in window) {
-        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))).finally(() => location.reload());
-      } else {
-        location.reload();
-      }
-    } catch {
-      location.reload();
-    }
+    // Aggressive recovery for a stuck PWA: unregister every service worker
+    // AND clear every Cache Storage entry. Without the SW unregister, the
+    // same worker re-installs the broken cached assets on the next load.
+    const finish = () => {
+      try { location.reload(); } catch { /* ignore */ }
+    };
+    const clearCaches = async () => {
+      try {
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch { /* ignore */ }
+    };
+    const unregSw = async () => {
+      try {
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister().catch(() => false)));
+        }
+      } catch { /* ignore */ }
+    };
+    Promise.all([clearCaches(), unregSw()]).finally(finish);
+  };
+
+  // Last-resort: wipe localStorage too. Loses unsynced game progress on
+  // this device, but recovers from a corrupted persisted state that
+  // crashes every render. Only used when the basic Reload didn't help.
+  wipeAndReload = () => {
+    const finish = () => {
+      try { location.reload(); } catch { /* ignore */ }
+    };
+    const clear = async () => {
+      try { localStorage.clear(); } catch { /* ignore */ }
+      try { sessionStorage.clear(); } catch { /* ignore */ }
+      try {
+        if ("caches" in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+      } catch { /* ignore */ }
+      try {
+        if ("serviceWorker" in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister().catch(() => false)));
+        }
+      } catch { /* ignore */ }
+      // Try to wipe IndexedDB so a corrupted Dexie store can't keep
+      // crashing on re-hydrate. Best-effort — not all browsers support
+      // databases() listing.
+      try {
+        const anyIdb = indexedDB as unknown as { databases?: () => Promise<{ name?: string }[]> };
+        if (anyIdb.databases) {
+          const dbs = await anyIdb.databases();
+          await Promise.all(dbs.map(d => d.name ? new Promise<void>(res => {
+            const req = indexedDB.deleteDatabase(d.name!);
+            req.onsuccess = req.onerror = req.onblocked = () => res();
+          }) : Promise.resolve()));
+        }
+      } catch { /* ignore */ }
+    };
+    clear().finally(finish);
   };
 
   render() {
@@ -103,7 +188,13 @@ export class ErrorBoundary extends Component<Props, State> {
               RELOAD & CLEAR CACHE
             </button>
             <button
-              onClick={() => { location.href = "/play"; }}
+              onClick={() => {
+                // If the crash IS the arcade landing, /play just loops.
+                // Send the user to a static page (What's New) instead.
+                const here = location.pathname;
+                const safe = (here === "/" || here === "/play") ? "/whats-new" : "/play";
+                location.href = safe;
+              }}
               style={{
                 padding: "10px 20px", borderRadius: 12,
                 background: "rgba(218,165,32,0.12)",
@@ -113,7 +204,27 @@ export class ErrorBoundary extends Component<Props, State> {
                 cursor: "pointer", minHeight: 44,
               }}
             >
-              GO TO ARCADE
+              SAFE PAGE
+            </button>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <button
+              onClick={() => {
+                if (confirm("Wipe all local data on this device and start fresh? Cloud-synced saves stay safe; this only clears this device's cache.")) {
+                  this.wipeAndReload();
+                }
+              }}
+              style={{
+                padding: "8px 14px", borderRadius: 10,
+                background: "transparent",
+                border: "1px dashed rgba(255,139,139,0.4)",
+                color: "#ff8b8b",
+                fontFamily: "'Cinzel', serif", letterSpacing: "0.15em", fontSize: 11,
+                cursor: "pointer",
+              }}
+              title="Use this if Reload & Clear Cache didn't help — wipes local storage."
+            >
+              FRESH START (WIPE DEVICE)
             </button>
           </div>
         </div>

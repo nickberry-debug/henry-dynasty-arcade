@@ -1,8 +1,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { readFileSync } from "node:fs";
+
+// Read version from package.json — single source of truth. Build time is
+// stamped at config-load (so every dev + prod build gets a fresh value).
+const PKG = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8")) as { version: string };
+const BUILT_AT = new Date().toISOString();
 
 export default defineConfig({
+  define: {
+    // Strings injected at build time so the bundle picks them up without
+    // a runtime fetch. Vite requires JSON.stringify wrapping.
+    __APP_VERSION__: JSON.stringify(PKG.version),
+    __BUILT_AT__: JSON.stringify(BUILT_AT),
+  },
+  esbuild: {
+    keepNames: true,
+  },
   plugins: [
     react(),
     VitePWA({
@@ -25,7 +40,15 @@ export default defineConfig({
         ]
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        // Force a new SW to immediately take control of open tabs so a
+        // bad deploy doesn't strand devices on a broken cached build.
+        skipWaiting: true,
+        clientsClaim: true,
+        // Don't serve stale index.html — always go to the network first.
+        navigateFallback: "index.html",
+        navigateFallbackDenylist: [/^\/api\//],
+        cleanupOutdatedCaches: true,
       }
     })
   ],
@@ -35,7 +58,15 @@ export default defineConfig({
   },
   build: {
     target: "es2020",
-    sourcemap: false,
-    chunkSizeWarningLimit: 1500
+    sourcemap: true,
+    chunkSizeWarningLimit: 1500,
+    // Use terser so we can keep_fnames — readable error stacks for mobile
+    // users without DevTools. esbuild's minifier ignores keepNames in
+    // production builds; terser respects keep_fnames.
+    minify: "terser",
+    terserOptions: {
+      keep_fnames: true,
+      keep_classnames: true,
+    },
   }
 });

@@ -1,7 +1,7 @@
 // StatCast-style football game viewer. Drives the FootballField with the
 // pre-simulated Play stream. Pause/play/speed controls, big-play banners,
 // play-by-play feed, win-probability bar.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Pause, Play as PlayIcon, SkipForward, Volume2, VolumeX, Repeat } from "lucide-react";
@@ -9,6 +9,7 @@ import { useFootball } from "../store";
 import { simulateGame, applyResult } from "../sim";
 import type { FootballPlay } from "../types";
 import { FootballField } from "../components/FootballField";
+import { getActiveProfileId, recordGameSession } from "../../profiles/store";
 
 /** Safe back navigation — if history is empty (e.g. user deep-linked to
  *  this URL), fall back to the football hub instead of exiting the app. */
@@ -133,6 +134,29 @@ export default function FootballGameWatch() {
   const isFinal = idx >= plays.length;
   const score = lastPlay ? { home: lastPlay.scoreHome, away: lastPlay.scoreAway } : { home: 0, away: 0 };
   const winProb = useMemo(() => calcWinProb(lastPlay, plays.length, idx), [lastPlay, idx, plays.length]);
+
+  // Record one session for the active profile the moment the game goes
+  // final. The ref-flag guards against double-counting on re-renders.
+  const recordedRef = useRef(false);
+  useEffect(() => {
+    if (!isFinal || recordedRef.current) return;
+    const pid = getActiveProfileId();
+    if (!pid || !lg) return;
+    recordedRef.current = true;
+    const userId = lg.userTeamId;
+    if (!userId || (userId !== home.id && userId !== away.id)) {
+      recordGameSession(pid, "football", { sessions: 1 });
+      return;
+    }
+    const isHomeUser = userId === home.id;
+    const us = isHomeUser ? score.home : score.away;
+    const them = isHomeUser ? score.away : score.home;
+    recordGameSession(pid, "football", {
+      sessions: 1,
+      wins: us > them ? 1 : 0,
+      losses: us < them ? 1 : 0,
+    });
+  }, [isFinal, lg, home.id, away.id, score.home, score.away]);
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex items-center justify-center p-1 sm:p-3">

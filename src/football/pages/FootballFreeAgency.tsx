@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { useFootball } from "../store";
 import { signFreeAgent } from "../freeagency";
 import type { FootballPosition } from "../types";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, X, Check } from "lucide-react";
 
 const POS_FILTERS: Array<FootballPosition | "ALL"> = ["ALL", "QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S", "K", "P"];
 
@@ -16,6 +16,8 @@ export default function FootballFreeAgency() {
   const mutate = useFootball(s => s.mutate);
   const [filter, setFilter] = useState<FootballPosition | "ALL">("ALL");
   const [sortKey, setSortKey] = useState<"overall" | "age">("overall");
+  const [pendingSign, setPendingSign] = useState<{ id: string; name: string; ovr: number; pos: string } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   if (!lg) return <div className="p-8">No league</div>;
 
@@ -27,9 +29,14 @@ export default function FootballFreeAgency() {
     return pool.slice().sort((a, b) => sortKey === "overall" ? b.overall - a.overall : a.age - b.age);
   }, [lg.freeAgents, filter, sortKey]);
 
-  const sign = async (playerId: string) => {
-    if (!userTeam) return;
-    await mutate(lgs => { signFreeAgent(lgs, playerId, userTeam.id); });
+  const doSign = async () => {
+    if (!pendingSign || !userTeam) return;
+    const id = pendingSign.id;
+    const name = pendingSign.name;
+    setPendingSign(null);
+    await mutate(lgs => { signFreeAgent(lgs, id, userTeam.id); });
+    setToast(`✅ Signed ${name}`);
+    setTimeout(() => setToast(null), 2000);
   };
 
   return (
@@ -42,6 +49,12 @@ export default function FootballFreeAgency() {
           <div className="text-xs text-ink-200 mt-1">Sign players to {userTeam ? userTeam.city + " " + userTeam.name : "your team"}. CPU teams will snap up the best when the season starts.</div>
         </div>
       </header>
+
+      {toast && (
+        <div className="rounded-xl px-3 py-2 text-sm" style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.40)", color: "#86efac" }}>
+          {toast}
+        </div>
+      )}
 
       <div className="flex gap-2 overflow-x-auto pb-1">
         {POS_FILTERS.map(p => (
@@ -77,13 +90,46 @@ export default function FootballFreeAgency() {
               </div>
               <div className={`text-lg font-display w-10 text-center ${p.overall >= 85 ? "text-emerald-300" : p.overall >= 75 ? "text-amber-300" : "text-ink-200"}`}>{p.overall}</div>
               <button
-                onClick={() => sign(p.id)}
+                onClick={() => setPendingSign({ id: p.id, name: p.name, ovr: p.overall, pos: p.position })}
                 disabled={!userTeam}
                 className="px-3 py-1.5 rounded-lg text-xs font-display tracking-wider pressable touch-target disabled:opacity-40"
                 style={{ background: "#FFB81C", color: "#0a0d13" }}
               >Sign</button>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Confirm sign dialog — kid-friendly "yes/no" with player summary so
+       *  taps aren't undone by accident. */}
+      {pendingSign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)" }}
+          onClick={() => setPendingSign(null)}>
+          <div onClick={e => e.stopPropagation()}
+            className="max-w-sm w-full rounded-2xl p-5"
+            style={{ background: "rgba(15,8,22,0.97)", border: "1.5px solid #FFB81C" }}>
+            <div className="text-[10px] tracking-widest" style={{ color: "#FFB81C" }}>SIGN PLAYER</div>
+            <div className="font-display text-xl mt-1">{pendingSign.name}</div>
+            <div className="text-[12px] text-ink-200 mt-1">
+              {pendingSign.pos} · OVR {pendingSign.ovr} · joining {userTeam?.city ?? "your team"} {userTeam?.name ?? ""}
+            </div>
+            <div className="text-[11px] mt-3" style={{ color: "rgba(229,231,235,0.75)" }}>
+              They'll start at the bottom of the depth chart. You can release them later from the team page.
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setPendingSign(null)}
+                className="flex-1 px-3 py-2.5 rounded-xl text-sm font-display tracking-wider pressable touch-target"
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.18)", color: "#fef3c7" }}>
+                <X size={14} className="inline mr-1" /> Not yet
+              </button>
+              <button onClick={doSign}
+                className="flex-1 px-3 py-2.5 rounded-xl text-sm font-display tracking-wider pressable touch-target"
+                style={{ background: "#FFB81C", color: "#0a0d13" }}>
+                <Check size={14} className="inline mr-1" /> Yes, sign
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

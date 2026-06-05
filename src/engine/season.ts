@@ -5,6 +5,7 @@ import { INJURIES } from "../data/misc";
 import { rand, irnd, clamp, choice, uid } from "../utils/rand";
 import { checkPhaseTransitions } from "./phases";
 import { generateDailyDrama } from "./drama";
+import { updateBaseballStorylines } from "./storylines";
 
 export function gamesOnDay(lg: League, day: number): Game[] {
   return lg.schedule.filter(g => g.day === day);
@@ -123,6 +124,14 @@ export function simDay(lg: League): number {
   try {
     generateDailyDrama(lg);
   } catch { /* drama is non-critical; never crash the sim */ }
+
+  // Shared-engine storyline tracking — rivalries, MVP race, Cy Young
+  // race, win/loss streaks, playoff push, milestone watch, rookie rise,
+  // comebacks. Populates league.drama.storylines2 (StorylineState from
+  // /src/sports-engine), surfaced on the News page + ticker.
+  try {
+    updateBaseballStorylines(lg);
+  } catch { /* storylines are non-critical; never crash the sim */ }
 
   // K.46 — Time Capsule surface: 10 in-game seasons after writing
   if (lg.gmProfile?.timeCapsule) {

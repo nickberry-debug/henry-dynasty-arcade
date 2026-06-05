@@ -18,6 +18,7 @@ import type { Adventure, Choice, Hero, Scene } from "./types";
 import { CLASS_INFO, SUBCLASS_INFO, classInfoFor } from "./types";
 import { getStage as getCompanionStage } from "./companions";
 import { MYTHIC_ARTIFACTS } from "./artifacts";
+import { pickQuest, startOfflineQuest, resolveOfflineChoice, getQuest } from "./offlineQuests";
 
 const MODEL = "claude-haiku-4-5-20251001";
 const ENDPOINT = "https://api.anthropic.com/v1/messages";
@@ -410,6 +411,15 @@ Always return clean JSON in the requested shape. No markdown fences. No commenta
 
 /** Generate the adventure shell (title, hook, decision count, act boundaries) and the first scene. */
 export async function startAdventure(hero: Hero, opts: { patron?: string; lengthHint?: "short" | "medium" | "long" | "epic" | "auto" }): Promise<{ adventure: Adventure; scene1: Scene }> {
+  // ── Offline-quest path ─────────────────────────────────────────────
+  // When no Anthropic API key is set, route to the authored quest
+  // library instead of the AI generator. The player gets a real
+  // branching adventure with a complete arc — not a degraded mode.
+  if (!getApiKey()) {
+    const quest = pickQuest(hero);
+    return startOfflineQuest(hero, quest);
+  }
+  // ── AI-driven path (Claude) ────────────────────────────────────────
   // Decide decision count. Tight 9-12 default so adventures play out in
   // a single 30-60 minute sitting — the previous 20-45 was too long
   // for a kid in one session.
@@ -499,6 +509,14 @@ export async function startAdventure(hero: Hero, opts: { patron?: string; length
 
 /** Resolve a player choice and produce the NEXT scene. Uses pre-gen cache when available. */
 export async function resolveChoice(hero: Hero, adventure: Adventure, choice: Choice): Promise<Scene> {
+  // ── Offline-quest path: walk the authored scene graph ──────────────
+  if (adventure.offlineQuestId) {
+    const next = resolveOfflineChoice(hero, adventure, choice);
+    if (next) return next;
+    // Fallthrough: malformed leadsTo (shouldn't happen in shipped quests).
+    // Synthesize a generic ending scene so the player isn't stranded.
+    return synthOfflineEndingScene(hero, adventure);
+  }
   const currentScene = adventure.scenes[adventure.currentIndex];
   // Look up the pre-generated branch first.
   const cacheKey = `${adventure.id}-${currentScene.index}-${choice.label}`;
@@ -516,8 +534,31 @@ export async function resolveChoice(hero: Hero, adventure: Adventure, choice: Ch
 
 /** Resolve a free-text custom action — never pre-cached. */
 export async function resolveFreeText(hero: Hero, adventure: Adventure, freeText: string): Promise<Scene> {
+  // Offline quests don't have free-text — resolveOfflineChoice falls back
+  // to "first choice path" so the player can always advance.
+  if (adventure.offlineQuestId) {
+    return resolveChoice(hero, adventure, { label: freeText, kind: "custom", freeText: true });
+  }
   const customChoice: Choice = { label: freeText, kind: "custom", freeText: true };
   return generateNextScene(hero, adventure, customChoice, false);
+}
+
+/** Synthesize a graceful ending if an offline quest graph has a broken
+ *  leadsTo pointer (defensive — shouldn't fire in shipped content). */
+function synthOfflineEndingScene(hero: Hero, adventure: Adventure): Scene {
+  const cur = adventure.scenes[adventure.currentIndex];
+  return {
+    id: `${adventure.id}-end-fallback`,
+    index: cur.index + 1,
+    act: 3,
+    atmosphere: "calm",
+    body: `The road bends, and bends again, and brings ${hero.name} home before the long blue evening hour. The work of "${adventure.title}" — whatever its end — is behind you.`,
+    choices: [],
+    isEnding: true,
+    twist: `Some adventures end not with a revelation but with the small surprising fact that they end at all. You walked the road. The road put you down where it meant to put you down. That is, perhaps, all that ever happens.`,
+    whatIfEpilogue: `Briefly, walking home, you wonder about the version of this day in which you had chosen differently at the last bend. You will not meet that version. You only meet the one shaped by what you chose.`,
+    coda: `Home is a long way off, but the road is generous tonight. Your companion trots at your hip. The wooden charm hangs warm at your chest. Tomorrow will bring another road.`,
+  };
 }
 
 /** Pre-generate scenes for each of the current choices, in the background.

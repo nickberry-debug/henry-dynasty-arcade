@@ -84,30 +84,51 @@ export default function OlympusShops() {
         )}
 
         <div className="grid sm:grid-cols-2 gap-3">
-          {stock.map(item => {
+          {stock.map((item, i) => {
             const tooExpensive = activeHero.drachma < item.cost;
+            const kindEmoji =
+              item.kind === "weapon" ? "🗡" :
+              item.kind === "armor" ? "🛡" :
+              item.kind === "accessory" ? "✨" :
+              item.kind === "consumable" ? "🧪" : "📦";
             return (
-              <button
+              <motion.button
                 key={item.id}
+                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.03 }}
+                whileHover={{ y: -2 }}
+                whileTap={{ scale: 0.985 }}
                 onClick={() => setConfirming(item)}
                 disabled={tooExpensive}
-                className="text-left p-3 rounded-2xl pressable touch-target disabled:opacity-50"
+                aria-label={`Buy ${item.name} for ${item.cost} drachma`}
+                className="relative text-left p-3 rounded-2xl pressable touch-target disabled:opacity-50 overflow-hidden group"
                 style={{
-                  background: "rgba(15,27,45,0.5)",
-                  border: "1px solid rgba(218,165,32,0.2)",
+                  background: "linear-gradient(135deg, rgba(218,165,32,0.08), rgba(15,27,45,0.7))",
+                  border: "1px solid rgba(218,165,32,0.35)",
+                  boxShadow: "0 4px 14px -8px rgba(218,165,32,0.30), inset 0 0 0 1px rgba(218,165,32,0.08)",
                 }}
               >
-                <div className="flex items-start justify-between mb-1">
-                  <div className="font-display text-sm tracking-wide" style={{ fontFamily: "'Cinzel', serif", color: "#e9e3d2" }}>{item.name}</div>
-                  <div className="flex items-center gap-1 text-sm font-display" style={{ color: tooExpensive ? "rgba(199,80,80,0.85)" : "#DAA520" }}>
+                <div className="absolute -top-6 -right-6 w-16 h-16 rounded-full pointer-events-none opacity-15 group-hover:opacity-30 transition-opacity"
+                  style={{ background: "radial-gradient(circle, rgba(218,165,32,0.6), transparent 70%)" }} aria-hidden="true" />
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span aria-hidden="true" className="text-base">{kindEmoji}</span>
+                    <div className="font-display text-sm tracking-wide truncate" style={{ fontFamily: "'Cinzel', serif", color: "#e9e3d2" }}>{item.name}</div>
+                  </div>
+                  <div className="flex items-center gap-1 text-sm font-display shrink-0" style={{ color: tooExpensive ? "rgba(199,80,80,0.85)" : "#DAA520" }}>
                     <Coins size={12} /> {item.cost}
                   </div>
                 </div>
-                <div className="text-[11px]" style={{ color: "rgba(233,227,210,0.65)" }}>{item.effect}</div>
-                <div className="text-[9px] uppercase tracking-widest mt-1.5" style={{ color: "rgba(218,165,32,0.55)" }}>
-                  {item.kind}{item.tier ? ` · tier ${item.tier}` : ""}
+                <div className="text-[11px]" style={{ color: "rgba(233,227,210,0.70)" }}>{item.effect}</div>
+                <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-white/5">
+                  <div className="text-[9px] uppercase tracking-widest" style={{ color: "rgba(218,165,32,0.65)" }}>
+                    {item.kind}{item.tier ? ` · tier ${item.tier}` : ""}
+                  </div>
+                  {!tooExpensive && (
+                    <span className="text-[9px] tracking-widest opacity-65" style={{ color: "#DAA520" }}>BUY →</span>
+                  )}
                 </div>
-              </button>
+              </motion.button>
             );
           })}
         </div>
@@ -146,25 +167,46 @@ export default function OlympusShops() {
       </div>
 
       <div className="grid sm:grid-cols-3 gap-3">
-        {(["smithy", "apothecary", "bazaar"] as ShopKind[]).map(k => {
+        {(["smithy", "apothecary", "bazaar"] as ShopKind[]).map((k, i) => {
           const info = SHOP_INFO[k];
+          const previewStock = getShopStock(activeHero, k);
+          const previewItem = previewStock[0];
           return (
             <motion.button
               key={k}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              whileHover={{ y: -2 }}
+              transition={{ delay: i * 0.06, type: "spring", stiffness: 220, damping: 22 }}
+              whileHover={{ y: -3, scale: 1.01 }}
+              whileTap={{ scale: 0.985 }}
               onClick={() => setOpenShop(k)}
-              className="text-left p-4 rounded-2xl pressable touch-target"
+              aria-label={`Enter ${info.name}`}
+              className="relative text-left p-4 rounded-2xl pressable touch-target overflow-hidden group"
               style={{
-                background: "linear-gradient(135deg, rgba(15,27,45,0.6), rgba(5,10,18,0.6))",
-                border: "1px solid rgba(218,165,32,0.3)",
-                minHeight: 160,
+                background: "linear-gradient(135deg, rgba(218,165,32,0.10), rgba(15,27,45,0.7))",
+                border: "1px solid rgba(218,165,32,0.40)",
+                minHeight: 188,
+                boxShadow: "0 6px 18px -10px rgba(218,165,32,0.35), inset 0 0 0 1px rgba(218,165,32,0.10)",
               }}
             >
-              <div className="text-5xl mb-2">{info.emoji}</div>
-              <div className="font-display tracking-wide" style={{ fontFamily: "'Cinzel', serif", color: "#DAA520" }}>{info.name}</div>
-              <div className="text-[11px] mt-1" style={{ color: "rgba(233,227,210,0.65)" }}>{info.tagline}</div>
+              {/* corner gleam */}
+              <div className="absolute -top-8 -right-8 w-24 h-24 rounded-full pointer-events-none opacity-25 group-hover:opacity-45 transition-opacity"
+                style={{ background: "radial-gradient(circle, rgba(218,165,32,0.7), transparent 70%)" }} aria-hidden="true" />
+              <div className="flex items-start justify-between">
+                <div className="text-5xl drop-shadow-lg">{info.emoji}</div>
+                <span className="text-[9px] uppercase tracking-[0.3em] font-display px-2 py-0.5 rounded-full"
+                  style={{ color: "#DAA520", background: "rgba(218,165,32,0.14)", border: "1px solid rgba(218,165,32,0.35)", fontFamily: "'Cinzel', serif" }}>
+                  Enter →
+                </span>
+              </div>
+              <div className="mt-3 font-display text-lg tracking-wide" style={{ fontFamily: "'Cinzel', serif", color: "#DAA520" }}>{info.name}</div>
+              <div className="text-[11px] mt-1 italic" style={{ color: "rgba(233,227,210,0.70)" }}>{info.tagline}</div>
+              {previewItem && (
+                <div className="text-[10px] mt-2 pt-2 border-t border-white/10 truncate"
+                  style={{ color: "rgba(218,165,32,0.70)" }}>
+                  Today: {previewItem.name}
+                </div>
+              )}
             </motion.button>
           );
         })}

@@ -6,6 +6,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useOlympus } from "../store";
 import { HeroSprite } from "../components/HeroSprite";
+import { OlympusDivider } from "../components/OlympusDivider";
 import { Plus, Play, BookOpen, Sparkles, Archive, Store } from "lucide-react";
 import { GameSwitcher } from "../../components/GameSwitcher";
 import { olympusHasApiKey } from "../ai";
@@ -70,6 +71,9 @@ export default function OlympusHome() {
       <header className="text-center">
         <div className="text-[10px] uppercase tracking-[0.3em]" style={{ color: "rgba(233,227,210,0.6)" }}>Your Roster</div>
         <h1 className="font-display text-3xl tracking-[0.15em]" style={{ color: "#DAA520", fontFamily: "'Cinzel', serif" }}>HEROES OF OLYMPUS</h1>
+        <div className="max-w-xs mx-auto mt-2">
+          <OlympusDivider variant={3} />
+        </div>
       </header>
 
       {activeAdventure && activeAdventure.status === "active" && activeHero && (

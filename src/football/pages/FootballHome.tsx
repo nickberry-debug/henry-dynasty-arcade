@@ -9,6 +9,7 @@ import { simWeek } from "../sim";
 import { startPlayoffs as startPlayoffsImpl, simPlayoffRound, simAllPlayoffs } from "../playoffs";
 import { declareFreeAgents, cpuAutoSignFAs } from "../freeagency";
 import { ageAndDevelop } from "../development";
+import { rolloverStorylinesForNewSeason } from "../storylines";
 import { unlockedAchievements, lockedAchievements, FOOTBALL_ACHIEVEMENTS } from "../achievements";
 import { ArrowRight, Play, FastForward, Trophy, Users, Loader, Crown } from "lucide-react";
 
@@ -167,8 +168,14 @@ function FootballLeagueView({ lg }: { lg: FootballLeague }) {
   // Required tasks — anything the user really should look at.
   const tasks: { id: string; emoji: string; label: string; href?: string }[] = [];
   if (lg.phase === "freeagency") tasks.push({ id: "fa", emoji: "💼", label: "Free agency is open", href: "/football/freeagency" });
-  if (lg.phase === "draft") tasks.push({ id: "draft", emoji: "📋", label: "Draft is open — make your picks" });
+  if (lg.phase === "draft") tasks.push({ id: "draft", emoji: "📋", label: "Draft is open — make your picks", href: "/football/draft" });
+  if (lg.currentDraft && !lg.currentDraft.completed) tasks.push({ id: "draft-open", emoji: "🎓", label: `Draft is open — pick ${lg.currentDraft.currentPick + 1} of ${lg.currentDraft.pickOrder.length * lg.currentDraft.rounds}`, href: "/football/draft" });
   if (lg.playoffsBracket && !lg.champion) tasks.push({ id: "po", emoji: "🏆", label: "Playoffs underway — sim the next round" });
+  // Surface the most recent rookie class so the user reviews it instead of
+  // it silently arriving and disappearing into team rosters.
+  if (lg.lastDraftClass && lg.lastDraftClass.season === lg.season) {
+    tasks.push({ id: "draft-class", emoji: "🎓", label: `Rookie class arrived — review the ${lg.lastDraftClass.season} draft`, href: "/football/draft-class" });
+  }
   const injuredCount = lg.players.filter(p => p.teamId === userTeam.id && p.injury).length;
   if (injuredCount > 0) tasks.push({ id: "inj", emoji: "🤕", label: `${injuredCount} player${injuredCount > 1 ? "s" : ""} hurt — check roster`, href: `/football/team/${userTeam.id}` });
 
@@ -359,8 +366,8 @@ function FootballLeagueView({ lg }: { lg: FootballLeague }) {
       <div className="rounded-2xl p-4 card-elevated" style={{ background: "rgba(15,20,28,0.55)", border: "1px solid rgba(255,255,255,0.08)" }}>
         <div className="flex items-center justify-between mb-2.5">
           <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: "#FFB81C" }}>LATEST NEWS</div>
-          <Link to="/football/league" className="text-[11px] inline-flex items-center gap-1 pressable touch-target" style={{ color: "#FFB81C" }}>
-            League <ArrowRight size={11} />
+          <Link to="/football/news" className="text-[11px] inline-flex items-center gap-1 pressable touch-target" style={{ color: "#FFB81C" }}>
+            All news <ArrowRight size={11} />
           </Link>
         </div>
         {myNewsList.length === 0 && <div className="text-[12px] text-ink-300 italic">Quiet so far — sim a week.</div>}
@@ -552,14 +559,80 @@ function EndOfSeasonFlow({ lg, mutate, navigate }: { lg: any; mutate: (fn: (lgs:
     return <PlayoffsBracketCard lg={lg} mutate={mutate} busy={busy} setBusy={setBusy} navigate={navigate} />;
   }
 
-  // 3) Champion crowned — offer offseason rollover
+  // 3) Champion crowned — offseason is now a two-stage flow:
+  //    Stage A: "Begin Offseason" → declareFreeAgents + ageAndDevelop
+  //             (the latter sets up an interactive draft). Stop there.
+  //    Stage B: After the draft completes (interactive OR auto-complete),
+  //             "Start New Season" finalizes — cpuAutoSignFAs, rollover
+  //             storylines, regenerate schedule, advance year.
+
+  const draftActive = !!lg.currentDraft && !lg.currentDraft.completed;
+  const draftDone = !!lg.currentDraft?.completed;
+
+  // Stage A is the default — no draft state yet.
+  if (!lg.currentDraft) {
+    return (
+      <div className="rounded-2xl p-5 flex items-start gap-4 flex-wrap" style={{ background: "linear-gradient(135deg, rgba(255,184,28,0.2), rgba(11,61,46,0.4))", border: "1px solid rgba(255,184,28,0.5)" }}>
+        <div className="text-5xl shrink-0">🏆</div>
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-[10px] uppercase tracking-[0.3em] font-display" style={{ color: "#FFB81C" }}>Champions of Season {lg.season}</div>
+          <div className="font-display text-2xl mt-0.5" style={{ color: "#FFB81C" }}>{champion.city} {champion.name}</div>
+          <div className="text-xs text-ink-200 mt-1">Begin offseason: declare free agents, age the league, generate the rookie class. The interactive draft opens next.</div>
+        </div>
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+            try {
+              await mutate(lgs => {
+                declareFreeAgents(lgs);
+                ageAndDevelop(lgs);  // sets lgs.currentDraft (does NOT assign rookies)
+              });
+            } finally { setBusy(false); }
+          }}
+          className="px-5 py-3 rounded-xl font-display tracking-wider text-sm pressable touch-target flex items-center gap-2 disabled:opacity-50"
+          style={{ background: "#FFB81C", color: "#0a0d13" }}
+        >
+          {busy ? <><Loader size={16} className="animate-spin" /> Working…</> : "Begin Offseason →"}
+        </button>
+      </div>
+    );
+  }
+
+  // Stage A.5 — draft is open, point user at the interactive page.
+  if (draftActive) {
+    return (
+      <div className="rounded-2xl p-5 flex items-start gap-4 flex-wrap" style={{ background: "linear-gradient(135deg, rgba(167,139,250,0.2), rgba(11,61,46,0.4))", border: "1px solid rgba(167,139,250,0.5)" }}>
+        <div className="text-5xl shrink-0">🎓</div>
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-[10px] uppercase tracking-[0.3em] font-display" style={{ color: "#a78bfa" }}>Draft Open · Class of {lg.currentDraft!.season}</div>
+          <div className="font-display text-xl mt-0.5">Make Your Picks</div>
+          <div className="text-xs text-ink-200 mt-1">
+            {lg.currentDraft!.picks.length} of {lg.currentDraft!.pickOrder.length * lg.currentDraft!.rounds} picks made. Take your team's picks, scout the pool, or auto-complete the whole draft.
+          </div>
+        </div>
+        <button
+          onClick={() => navigate("/football/draft")}
+          className="px-5 py-3 rounded-xl font-display tracking-wider text-sm pressable touch-target inline-flex items-center gap-2"
+          style={{ background: "#a78bfa", color: "#0a0d13" }}
+        >
+          Open Draft →
+        </button>
+      </div>
+    );
+  }
+
+  // Stage B — draft complete, start new season.
   return (
-    <div className="rounded-2xl p-5 flex items-start gap-4 flex-wrap" style={{ background: "linear-gradient(135deg, rgba(255,184,28,0.2), rgba(11,61,46,0.4))", border: "1px solid rgba(255,184,28,0.5)" }}>
-      <div className="text-5xl shrink-0">🏆</div>
+    <div className="rounded-2xl p-5 flex items-start gap-4 flex-wrap" style={{ background: "linear-gradient(135deg, rgba(52,211,153,0.20), rgba(11,61,46,0.4))", border: "1px solid rgba(52,211,153,0.50)" }}>
+      <div className="text-5xl shrink-0">📅</div>
       <div className="flex-1 min-w-[200px]">
-        <div className="text-[10px] uppercase tracking-[0.3em] font-display" style={{ color: "#FFB81C" }}>Champions of Season {lg.season}</div>
-        <div className="font-display text-2xl mt-0.5" style={{ color: "#FFB81C" }}>{champion.city} {champion.name}</div>
-        <div className="text-xs text-ink-200 mt-1">A new season awaits. Offseason rolls the calendar: declare free agents, age the league, draft rookies, regenerate the schedule.</div>
+        <div className="text-[10px] uppercase tracking-[0.3em] font-display" style={{ color: "#34d399" }}>Draft Complete · {lg.currentDraft!.picks.length} picks</div>
+        <div className="font-display text-2xl mt-0.5" style={{ color: "#86efac" }}>Start the New Season</div>
+        <div className="text-xs text-ink-200 mt-1">
+          Final step: CPU teams sign any leftover free agents, the schedule regenerates, and you start Season {lg.season + 1}.
+        </div>
       </div>
       <button
         disabled={busy}
@@ -568,17 +641,11 @@ function EndOfSeasonFlow({ lg, mutate, navigate }: { lg: any; mutate: (fn: (lgs:
           await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
           try {
             await mutate(lgs => {
-              // 1. Declare free agents
-              declareFreeAgents(lgs);
-            });
-            // 2. Let user visit Free Agency page if they want — but for now,
-            //    keep the flow inline: just go straight to development.
-            await mutate(lgs => {
-              // 3. Age + retire + breakouts + busts + rookie draft
-              ageAndDevelop(lgs);
-              // 4. CPU teams auto-sign remaining FAs
               cpuAutoSignFAs(lgs);
-              // 5. Reset for next season
+              rolloverStorylinesForNewSeason(lgs);
+              // Clear the draft state — its records persist via lastDraftClass + news.
+              lgs.currentDraft = undefined;
+              // Reset for next season
               lgs.season += 1;
               lgs.week = 1;
               lgs.phase = "regular";
@@ -606,10 +673,10 @@ function EndOfSeasonFlow({ lg, mutate, navigate }: { lg: any; mutate: (fn: (lgs:
             });
           } finally { setBusy(false); }
         }}
-        className="px-5 py-3 rounded-xl font-display tracking-wider text-sm pressable touch-target flex items-center gap-2 disabled:opacity-50"
-        style={{ background: "#FFB81C", color: "#0a0d13" }}
+        className="px-5 py-3 rounded-xl font-display tracking-wider text-sm pressable touch-target inline-flex items-center gap-2 disabled:opacity-50"
+        style={{ background: "#86efac", color: "#0a0d13" }}
       >
-        {busy ? <><Loader size={16} className="animate-spin" /> Working…</> : "Begin Offseason →"}
+        {busy ? <><Loader size={16} className="animate-spin" /> Starting…</> : "Start New Season →"}
       </button>
     </div>
   );

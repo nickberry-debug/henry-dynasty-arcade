@@ -191,9 +191,9 @@ export default function HeroCreate() {
             </div>
           )}
 
-          {/* ── 1: Class ─────────────────────────────────────────── */}
+          {/* ── 1: Class — premium card grid with gold halo + larger emoji ── */}
           {step === 1 && (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
               {(Object.keys(CLASS_INFO) as OlympusClass[]).map(c => {
                 const info = CLASS_INFO[c];
                 const sel = c === className;
@@ -201,17 +201,29 @@ export default function HeroCreate() {
                   <div key={c} className="relative">
                     <button
                       onClick={() => setClassNameState(c)}
-                      className="text-left w-full p-3 rounded-xl pressable touch-target"
+                      className="text-left w-full p-4 rounded-2xl pressable touch-target relative overflow-hidden"
                       style={{
-                        background: sel ? "rgba(218,165,32,0.18)" : "rgba(15,27,45,0.5)",
-                        border: sel ? "1px solid rgba(218,165,32,0.5)" : "1px solid rgba(255,255,255,0.08)",
+                        background: sel
+                          ? "linear-gradient(135deg, rgba(218,165,32,0.25), rgba(15,27,45,0.6))"
+                          : "linear-gradient(135deg, rgba(15,27,45,0.55), rgba(7,16,30,0.7))",
+                        border: sel ? "1.5px solid rgba(218,165,32,0.85)" : "1px solid rgba(255,255,255,0.08)",
+                        boxShadow: sel
+                          ? "0 0 0 1px rgba(218,165,32,0.5) inset, 0 6px 24px -8px rgba(218,165,32,0.45)"
+                          : undefined,
+                        minHeight: 130,
                       }}
                     >
-                      <div className="text-2xl mb-1">{info.emoji}</div>
-                      <div className="font-display tracking-wide" style={{ fontFamily: "'Cinzel', serif", color: sel ? "#DAA520" : "#e9e3d2" }}>{info.name}</div>
-                      <div className="text-[11px] mt-1 leading-tight" style={{ color: "rgba(233,227,210,0.65)" }}>{info.description}</div>
-                      <div className="text-[10px] mt-2 font-display tracking-wider" style={{ color: "#DAA520" }}>
-                        {info.statBonuses.join(" · ")}
+                      {sel && (
+                        <div aria-hidden="true" className="absolute inset-0 pointer-events-none"
+                          style={{ background: "radial-gradient(380px 140px at 80% -20%, rgba(218,165,32,0.28), transparent 60%)" }} />
+                      )}
+                      <div className="relative">
+                        <div className="text-4xl mb-1.5" style={{ filter: sel ? "drop-shadow(0 0 12px rgba(218,165,32,0.6))" : undefined }}>{info.emoji}</div>
+                        <div className="font-display tracking-wider text-base" style={{ fontFamily: "'Cinzel', serif", color: sel ? "#DAA520" : "#e9e3d2" }}>{info.name}</div>
+                        <div className="text-[11px] mt-1 leading-snug" style={{ color: "rgba(233,227,210,0.75)" }}>{info.description}</div>
+                        <div className="text-[10px] mt-2.5 font-display tracking-[0.15em] uppercase" style={{ color: sel ? "#fde68a" : "#DAA520" }}>
+                          {info.statBonuses.join(" · ")}
+                        </div>
                       </div>
                     </button>
                     <div className="absolute top-2 right-2">
@@ -238,17 +250,20 @@ export default function HeroCreate() {
                   <div key={id} className="relative">
                     <button
                       onClick={() => setSubclass(id)}
-                      className="text-left w-full p-3 rounded-xl pressable touch-target"
+                      className="text-left w-full p-3.5 rounded-xl pressable touch-target relative overflow-hidden"
                       style={{
-                        background: sel ? "rgba(218,165,32,0.18)" : "rgba(15,27,45,0.5)",
-                        border: sel ? "1px solid rgba(218,165,32,0.5)" : "1px solid rgba(255,255,255,0.08)",
+                        background: sel
+                          ? "linear-gradient(135deg, rgba(218,165,32,0.25), rgba(15,27,45,0.6))"
+                          : "linear-gradient(135deg, rgba(15,27,45,0.55), rgba(7,16,30,0.7))",
+                        border: sel ? "1.5px solid rgba(218,165,32,0.85)" : "1px solid rgba(255,255,255,0.08)",
+                        boxShadow: sel ? "0 0 0 1px rgba(218,165,32,0.4) inset, 0 4px 18px -6px rgba(218,165,32,0.4)" : undefined,
                       }}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-display tracking-wide" style={{ fontFamily: "'Cinzel', serif", color: sel ? "#DAA520" : "#e9e3d2" }}>{info.name}</div>
-                        <div className="text-[10px] font-display tracking-wider" style={{ color: "#DAA520" }}>{info.bonuses.slice(0, 2).join(" · ")}</div>
+                        <div className="text-[10px] font-display tracking-wider" style={{ color: sel ? "#fde68a" : "#DAA520" }}>{info.bonuses.slice(0, 2).join(" · ")}</div>
                       </div>
-                      <div className="text-[11px] mt-1" style={{ color: "rgba(233,227,210,0.65)" }}>{info.description}</div>
+                      <div className="text-[11px] mt-1" style={{ color: "rgba(233,227,210,0.7)" }}>{info.description}</div>
                       <div className="text-[10px] mt-1.5 flex flex-wrap gap-2">
                         <span style={{ color: "#86efac" }}>✦ {info.passive.name}</span>
                         <span style={{ color: "#7dd3fc" }}>✦ {info.active.name}</span>

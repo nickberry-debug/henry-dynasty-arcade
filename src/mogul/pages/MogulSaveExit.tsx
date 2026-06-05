@@ -68,7 +68,7 @@ export default function MogulSaveExit() {
       </div>
 
       <div className="rounded-2xl p-5 text-center" style={{ background: "rgba(15,8,20,0.6)", border: "1px solid rgba(255,255,255,0.08)" }}>
-        <div className="text-sm text-ink-200 mb-3">Done managing? Head back to the Beckett Movie Studios hub.</div>
+        <div className="text-sm text-ink-200 mb-3">Done managing? Head back to the Movie Studios hub.</div>
         <div className="flex gap-2 justify-center flex-wrap">
           <button onClick={() => navigate("/mogul/studio/settings")} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-display tracking-widest pressable touch-target" style={{ background: "rgba(212,175,55,0.18)", border: "1px solid rgba(212,175,55,0.35)", color: "#D4AF37", touchAction: "manipulation" }}>
             ⚙️ Settings

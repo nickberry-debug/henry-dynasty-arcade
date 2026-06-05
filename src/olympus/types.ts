@@ -416,6 +416,9 @@ export interface Choice {
   kind: "combat" | "wits" | "persuasion" | "stealth" | "magic" | "luck" | "exploration" | "custom";
   /** Free-text actions don't have a label — they go through resolveFreeText. */
   freeText?: boolean;
+  /** Offline-quest mode: points to the next scene id in the authored
+   *  scene graph. AI-generated choices leave this undefined. */
+  leadsTo?: string;
 }
 
 /** When a scene involves combat, the AI (or our keyword fallback) can
@@ -497,6 +500,10 @@ export interface Adventure {
   outcome?: "triumph" | "bittersweet" | "tragic" | "mysterious";
   /** Decision history compressed for AI context window. */
   history: Array<{ scene: number; choiceLabel: string; outcome: string }>;
+  /** When set, this adventure is driven by an authored offline quest
+   *  from offlineQuests.ts rather than the AI generator. The scene
+   *  graph walks via Choice.leadsTo lookups. */
+  offlineQuestId?: string;
 }
 
 // ── Cloud save indicator ─────────────────────────────────────────────────

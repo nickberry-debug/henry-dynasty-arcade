@@ -336,3 +336,21 @@ html.theme-light .glass { background: rgba(255,255,255,0.9); border-color: rgba(
   padding: 8px 12px;
   border-radius: 8px;
 }
+
+/* Mech arena background pan — slow parallax drift on the starfield dots */
+@keyframes mech-pan {
+  0%   { background-position: 0 0, 0 0, 0 0, 0 0; }
+  100% { background-position: -240px 0, -180px 0, -300px 0, -120px 0; }
+}
+
+/* Creature Keeper idle bob — each creature pulses gently up and down. */
+@keyframes creature-bob {
+  0%, 100% { transform: translateY(calc(var(--bob-amp, 2px) * 0.5)); }
+  50%      { transform: translateY(calc(var(--bob-amp, 2px) * -0.5)); }
+}
+
+/* Scrapyard Kings — bot in overdrive (HP < 25%): brightness pulse. */
+@keyframes mech-overdrive {
+  0%, 100% { transform: scale(1.00); }
+  50%      { transform: scale(1.045); }
+}

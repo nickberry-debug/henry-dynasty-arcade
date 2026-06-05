@@ -2,13 +2,16 @@
 
 import { create } from "zustand";
 import type { AgentSave, ActiveMission, MissionVariation, EraId } from "./types";
+import { profileKey, getActiveProfileId, recordGameSession } from "../profiles/store";
+import { setBlob as cloudSet } from "../sync/cloudBlob";
 
-const STORAGE_KEY = "dd_temporal_saves";
+const BASE_KEY = "dd_temporal_saves";
+const STORAGE_KEY = () => profileKey(BASE_KEY);
 const MAX_SLOTS = 5;
 
 function loadAll(): AgentSave[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY());
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -16,7 +19,9 @@ function loadAll(): AgentSave[] {
 }
 
 function persist(saves: AgentSave[]): void {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saves)); } catch {}
+  try { localStorage.setItem(STORAGE_KEY(), JSON.stringify(saves)); } catch {}
+  const pid = getActiveProfileId();
+  if (pid) { try { cloudSet(pid, "temporal_saves_v1", saves); } catch {} }
 }
 
 export function createAgent(args: {
@@ -106,6 +111,17 @@ export const useTemporal = create<TemporalStore>((set, get) => ({
       const ripples = [{ era: args.eraId, missionId: args.templateId, primary: args.ripple.primary, secondary: args.ripple.secondary, week: completed.length }, ...s.ripples].slice(0, 30);
       const xp = s.xp + args.xpGained;
       const level = 1 + Math.floor(xp / 100);
+      // Family stats — credit a resolved mission as a win at this profile's
+      // new agent level. Integrity > 0 means the mission was net positive.
+      {
+        const pid = getActiveProfileId();
+        if (pid) recordGameSession(pid, "temporal", {
+          sessions: 1,
+          wins: args.integrityDelta >= 0 ? 1 : 0,
+          losses: args.integrityDelta < 0 ? 1 : 0,
+          level,
+        });
+      }
       return {
         ...s, modifiedAt: Date.now(),
         integrity: newIntegrity, rep: newRep,

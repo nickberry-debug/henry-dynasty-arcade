@@ -4,10 +4,30 @@ import type { Scorecard } from "../scorekeeper/types";
 import type { FootballLeague } from "../football/types";
 import type { Hero, Adventure } from "../olympus/types";
 import type { Studio as MogulStudio } from "../mogul/types";
-import type { Hero as DungeonHero, DungeonRun } from "../dungeon/types";
+import { getActiveProfileId, profileKey } from "../profiles/store";
+// Lazy-loaded sync helpers — imported once but called fire-and-forget so
+// network failures never block local operations. The helper internally
+// short-circuits when Firebase isn't configured (so this stays safe in
+// dev with no env, in tests, and offline).
+import { pushRecord, deleteRecord, backgroundPull } from "../sync/savedRecords";
+
+/** Default profile for backfilling pre-profile saves on first DB upgrade.
+ *  Henry is the original user (original "Henry's Dynasty" branding) so
+ *  legacy data goes to his profile by default. Other family members start
+ *  fresh; they can see Henry's via the multiplayer Roster Browser later. */
+const LEGACY_PROFILE_ID = "henry";
+
+/** Active profile getter w/ legacy fallback. Used in every list filter so
+ *  that pre-profile records (no profileId set) still resolve to a sensible
+ *  default if profile-picker hasn't been visited yet. */
+function pid(): string {
+  return getActiveProfileId() ?? LEGACY_PROFILE_ID;
+}
 
 export interface SavedLeague {
   id: string;
+  /** Owning profile id. Filtered on every list/load. */
+  profileId?: string;
   name: string;
   createdAt: number;
   modifiedAt: number;
@@ -17,6 +37,7 @@ export interface SavedLeague {
 
 export interface SavedFootballLeague {
   id: string;
+  profileId?: string;
   name: string;
   createdAt: number;
   modifiedAt: number;
@@ -26,6 +47,7 @@ export interface SavedFootballLeague {
 
 export interface SavedMogulStudio {
   id: string;
+  profileId?: string;
   name: string;
   createdAt: number;
   modifiedAt: number;
@@ -38,11 +60,9 @@ class DynastyDB extends Dexie {
   meta!: Table<{ key: string; value: any }, string>;
   scorecards!: Table<Scorecard, string>;
   footballLeagues!: Table<SavedFootballLeague, string>;
-  olympusHeroes!: Table<Hero, string>;
-  olympusAdventures!: Table<Adventure, string>;
+  olympusHeroes!: Table<Hero & { profileId?: string }, string>;
+  olympusAdventures!: Table<Adventure & { profileId?: string }, string>;
   mogulStudios!: Table<SavedMogulStudio, string>;
-  dungeonHeroes!: Table<DungeonHero, string>;
-  dungeonRuns!: Table<DungeonRun, string>;
 
   constructor() {
     super("HenryDiamondDynasty");
@@ -78,62 +98,106 @@ class DynastyDB extends Dexie {
       olympusAdventures: "id, heroId, startedAt, status",
       mogulStudios: "id, name, modifiedAt"
     });
+    // v6 — profileId on every save record. Backfills existing rows to
+    // "henry" (legacy default) so all pre-profile saves go to his profile.
     this.version(6).stores({
-      leagues: "id, name, modifiedAt",
+      leagues: "id, profileId, name, modifiedAt",
       meta: "key",
       scorecards: "id, mode, modifiedAt, completed",
-      footballLeagues: "id, name, modifiedAt",
-      olympusHeroes: "id, name, modifiedAt, archived",
-      olympusAdventures: "id, heroId, startedAt, status",
-      mogulStudios: "id, name, modifiedAt",
-      dungeonHeroes: "id, name, modifiedAt, classId",
-      dungeonRuns: "id, heroId, modifiedAt, status"
+      footballLeagues: "id, profileId, name, modifiedAt",
+      olympusHeroes: "id, profileId, name, modifiedAt, archived",
+      olympusAdventures: "id, profileId, heroId, startedAt, status",
+      mogulStudios: "id, profileId, name, modifiedAt"
+    }).upgrade(async tx => {
+      const stamp = (t: Table<{ profileId?: string }, string>) => t.toCollection().modify(r => {
+        if (!r.profileId) r.profileId = LEGACY_PROFILE_ID;
+      });
+      await Promise.all([
+        stamp(tx.table("leagues")),
+        stamp(tx.table("footballLeagues")),
+        stamp(tx.table("olympusHeroes")),
+        stamp(tx.table("olympusAdventures")),
+        stamp(tx.table("mogulStudios")),
+      ]);
     });
   }
 }
 
 export const db = new DynastyDB();
 
+// One-time migration of localStorage active-pointer keys on first run with
+// profiles. Pre-profile saves all belonged to "Henry" by default, so move
+// any global `dd_active_*` to Henry's profile-scoped key.
+(function migrateActivePointers() {
+  if (typeof localStorage === "undefined") return;
+  const FLAG = "dd_profile_pointer_migration_v1";
+  if (localStorage.getItem(FLAG)) return;
+  for (const key of ["dd_active_league", "dd_active_football", "dd_active_mogul", "dd_olympus_last_hero"]) {
+    const v = localStorage.getItem(key);
+    if (v) {
+      const newKey = `prof_${LEGACY_PROFILE_ID}::${key}`;
+      if (!localStorage.getItem(newKey)) localStorage.setItem(newKey, v);
+    }
+  }
+  localStorage.setItem(FLAG, "1");
+})();
+
 export async function saveLeague(league: League) {
   league.modifiedAt = Date.now();
-  await db.leagues.put({
+  const rec: SavedLeague = {
     id: league.id,
+    profileId: pid(),
     name: league.name,
     createdAt: league.createdAt,
     modifiedAt: league.modifiedAt,
     year: league.year,
-    data: league
-  });
-  localStorage.setItem("dd_active_league", league.id);
+    data: league,
+  };
+  await db.leagues.put(rec);
+  localStorage.setItem(profileKey("dd_active_league"), league.id);
+  pushRecord("leagues", pid(), rec);
 }
 
 export async function loadLeague(id?: string): Promise<League | null> {
-  const targetId = id || localStorage.getItem("dd_active_league") || undefined;
+  const targetId = id || localStorage.getItem(profileKey("dd_active_league")) || undefined;
+  const ownerId = pid();
+  backgroundPull("leagues", ownerId, db.leagues);
   if (!targetId) {
-    const all = await db.leagues.toArray();
+    const all = await db.leagues.where("profileId").equals(ownerId).toArray();
     if (!all.length) return null;
     const newest = all.sort((a, b) => b.modifiedAt - a.modifiedAt)[0];
-    localStorage.setItem("dd_active_league", newest.id);
+    localStorage.setItem(profileKey("dd_active_league"), newest.id);
     return newest.data;
   }
   const rec = await db.leagues.get(targetId);
-  return rec ? rec.data : null;
+  if (!rec) return null;
+  // Guard: refuse to return another profile's save through a stale pointer.
+  if (rec.profileId && rec.profileId !== ownerId) return null;
+  return rec.data;
 }
 
 export async function listLeagues(): Promise<SavedLeague[]> {
-  return db.leagues.orderBy("modifiedAt").reverse().toArray();
+  // Background pull from cloud — caller will re-render once new records
+  // land. First call after launch typically catches up; future calls are
+  // effectively cached.
+  backgroundPull("leagues", pid(), db.leagues);
+  const all = await db.leagues.where("profileId").equals(pid()).toArray();
+  return all.sort((a, b) => b.modifiedAt - a.modifiedAt);
 }
 
 export async function deleteLeague(id: string) {
   await db.leagues.delete(id);
-  if (localStorage.getItem("dd_active_league") === id) {
-    localStorage.removeItem("dd_active_league");
+  if (localStorage.getItem(profileKey("dd_active_league")) === id) {
+    localStorage.removeItem(profileKey("dd_active_league"));
   }
+  deleteRecord("leagues", pid(), id);
 }
 
 export async function clearAll() {
-  await db.leagues.clear();
-  localStorage.removeItem("dd_active_league");
+  // Only clears the active profile's leagues, not everyone's.
+  const mine = await db.leagues.where("profileId").equals(pid()).primaryKeys();
+  await db.leagues.bulkDelete(mine);
+  localStorage.removeItem(profileKey("dd_active_league"));
 }
 
 /** Score Keeper card persistence. */
@@ -162,14 +226,17 @@ export async function duplicateLeague(srcId: string, newName: string): Promise<s
   cloned.name = newName;
   cloned.createdAt = Date.now();
   cloned.modifiedAt = Date.now();
-  await db.leagues.put({
+  const newRec: SavedLeague = {
     id: cloneId,
+    profileId: pid(),
     name: newName,
     createdAt: cloned.createdAt,
     modifiedAt: cloned.modifiedAt,
     year: cloned.year,
-    data: cloned
-  });
+    data: cloned,
+  };
+  await db.leagues.put(newRec);
+  pushRecord("leagues", pid(), newRec);
   return cloneId;
 }
 
@@ -181,128 +248,135 @@ export async function renameLeague(id: string, name: string): Promise<boolean> {
   rec.data.name = name;
   rec.modifiedAt = Date.now();
   rec.data.modifiedAt = rec.modifiedAt;
+  if (!rec.profileId) rec.profileId = pid();
   await db.leagues.put(rec);
+  pushRecord("leagues", rec.profileId ?? pid(), rec);
   return true;
 }
 
 /** Sets which league is "active" — next loadFromDb() will return it. */
 export function setActiveLeague(id: string) {
-  localStorage.setItem("dd_active_league", id);
+  localStorage.setItem(profileKey("dd_active_league"), id);
 }
 
 // ─── Football leagues ─────────────────────────────────────────────────────
 export async function saveFootballLeague(lg: FootballLeague) {
   lg.modifiedAt = Date.now();
-  await db.footballLeagues.put({
-    id: lg.id, name: lg.name, createdAt: lg.createdAt, modifiedAt: lg.modifiedAt, season: lg.season, data: lg,
-  });
-  localStorage.setItem("dd_active_football", lg.id);
+  const rec: SavedFootballLeague = {
+    id: lg.id, profileId: pid(), name: lg.name,
+    createdAt: lg.createdAt, modifiedAt: lg.modifiedAt, season: lg.season, data: lg,
+  };
+  await db.footballLeagues.put(rec);
+  localStorage.setItem(profileKey("dd_active_football"), lg.id);
+  pushRecord("footballLeagues", pid(), rec);
 }
 export async function loadFootballLeague(id?: string): Promise<FootballLeague | null> {
-  const targetId = id || localStorage.getItem("dd_active_football") || undefined;
+  const targetId = id || localStorage.getItem(profileKey("dd_active_football")) || undefined;
+  const owner = pid();
+  backgroundPull("footballLeagues", owner, db.footballLeagues);
   if (!targetId) {
-    const all = await db.footballLeagues.toArray();
+    const all = await db.footballLeagues.where("profileId").equals(owner).toArray();
     if (!all.length) return null;
     const newest = all.sort((a, b) => b.modifiedAt - a.modifiedAt)[0];
-    localStorage.setItem("dd_active_football", newest.id);
+    localStorage.setItem(profileKey("dd_active_football"), newest.id);
     return newest.data;
   }
   const rec = await db.footballLeagues.get(targetId);
-  return rec ? rec.data : null;
+  if (!rec) return null;
+  if (rec.profileId && rec.profileId !== owner) return null;
+  return rec.data;
 }
 export async function listFootballLeagues(): Promise<SavedFootballLeague[]> {
-  return db.footballLeagues.orderBy("modifiedAt").reverse().toArray();
+  backgroundPull("footballLeagues", pid(), db.footballLeagues);
+  const all = await db.footballLeagues.where("profileId").equals(pid()).toArray();
+  return all.sort((a, b) => b.modifiedAt - a.modifiedAt);
 }
 export async function deleteFootballLeague(id: string) {
   await db.footballLeagues.delete(id);
-  if (localStorage.getItem("dd_active_football") === id) localStorage.removeItem("dd_active_football");
+  if (localStorage.getItem(profileKey("dd_active_football")) === id) {
+    localStorage.removeItem(profileKey("dd_active_football"));
+  }
+  deleteRecord("footballLeagues", pid(), id);
 }
 
 // ─── Mogul studios ───────────────────────────────────────────────────────
 export async function saveMogulStudio(studio: MogulStudio) {
   studio.modifiedAt = Date.now();
-  await db.mogulStudios.put({
+  const rec: SavedMogulStudio = {
     id: studio.id,
+    profileId: pid(),
     name: studio.player.name,
     createdAt: studio.createdAt,
     modifiedAt: studio.modifiedAt,
     year: studio.year,
     data: studio,
-  });
-  localStorage.setItem("dd_active_mogul", studio.id);
+  };
+  await db.mogulStudios.put(rec);
+  localStorage.setItem(profileKey("dd_active_mogul"), studio.id);
+  pushRecord("mogulStudios", pid(), rec);
 }
 export async function loadMogulStudio(id?: string): Promise<MogulStudio | null> {
-  const targetId = id || localStorage.getItem("dd_active_mogul") || undefined;
+  const targetId = id || localStorage.getItem(profileKey("dd_active_mogul")) || undefined;
+  const owner = pid();
+  backgroundPull("mogulStudios", owner, db.mogulStudios);
   if (!targetId) {
-    const all = await db.mogulStudios.toArray();
+    const all = await db.mogulStudios.where("profileId").equals(owner).toArray();
     if (!all.length) return null;
     const newest = all.sort((a, b) => b.modifiedAt - a.modifiedAt)[0];
-    localStorage.setItem("dd_active_mogul", newest.id);
+    localStorage.setItem(profileKey("dd_active_mogul"), newest.id);
     return newest.data;
   }
   const rec = await db.mogulStudios.get(targetId);
-  return rec ? rec.data : null;
+  if (!rec) return null;
+  if (rec.profileId && rec.profileId !== owner) return null;
+  return rec.data;
 }
 export async function listMogulStudios(): Promise<SavedMogulStudio[]> {
-  return db.mogulStudios.orderBy("modifiedAt").reverse().toArray();
+  backgroundPull("mogulStudios", pid(), db.mogulStudios);
+  const all = await db.mogulStudios.where("profileId").equals(pid()).toArray();
+  return all.sort((a, b) => b.modifiedAt - a.modifiedAt);
 }
 export async function deleteMogulStudio(id: string) {
   await db.mogulStudios.delete(id);
-  if (localStorage.getItem("dd_active_mogul") === id) localStorage.removeItem("dd_active_mogul");
+  if (localStorage.getItem(profileKey("dd_active_mogul")) === id) {
+    localStorage.removeItem(profileKey("dd_active_mogul"));
+  }
+  deleteRecord("mogulStudios", pid(), id);
 }
 
 // ─── Olympus heroes + adventures ─────────────────────────────────────────
 export async function saveOlympusHero(hero: Hero) {
   hero.modifiedAt = Date.now();
-  await db.olympusHeroes.put(hero);
-  try { localStorage.setItem("dd_olympus_last_hero", hero.id); } catch {}
+  await db.olympusHeroes.put({ ...hero, profileId: pid() });
+  try { localStorage.setItem(profileKey("dd_olympus_last_hero"), hero.id); } catch {}
 }
 export async function loadOlympusHero(id: string): Promise<Hero | null> {
-  return (await db.olympusHeroes.get(id)) ?? null;
+  const rec = await db.olympusHeroes.get(id);
+  if (!rec) return null;
+  if (rec.profileId && rec.profileId !== pid()) return null;
+  return rec;
 }
 export async function listOlympusHeroes(includeArchived = false): Promise<Hero[]> {
-  const all = await db.olympusHeroes.orderBy("modifiedAt").reverse().toArray();
-  return includeArchived ? all : all.filter(h => !h.archived);
+  const all = await db.olympusHeroes.where("profileId").equals(pid()).toArray();
+  const sorted = all.sort((a, b) => b.modifiedAt - a.modifiedAt);
+  return includeArchived ? sorted : sorted.filter(h => !h.archived);
 }
 export async function deleteOlympusHero(id: string) {
   await db.olympusHeroes.delete(id);
 }
 export async function saveOlympusAdventure(adv: Adventure) {
-  await db.olympusAdventures.put(adv);
+  await db.olympusAdventures.put({ ...adv, profileId: pid() });
 }
 export async function loadOlympusAdventure(id: string): Promise<Adventure | null> {
-  return (await db.olympusAdventures.get(id)) ?? null;
+  const rec = await db.olympusAdventures.get(id);
+  if (!rec) return null;
+  if (rec.profileId && rec.profileId !== pid()) return null;
+  return rec;
 }
 export async function listAdventuresForHero(heroId: string): Promise<Adventure[]> {
+  // Heroes are already profile-scoped, so adventures for a given heroId
+  // belong to whichever profile owns that hero. No extra filter needed.
   return db.olympusAdventures.where("heroId").equals(heroId).reverse().sortBy("startedAt");
-}
-
-// ─── Dungeon crawler heroes + runs ───────────────────────────────────────
-export async function saveDungeonHero(hero: DungeonHero) {
-  hero.modifiedAt = Date.now();
-  await db.dungeonHeroes.put(hero);
-  try { localStorage.setItem("dd_dungeon_last_hero", hero.id); } catch {}
-}
-export async function loadDungeonHero(id: string): Promise<DungeonHero | null> {
-  return (await db.dungeonHeroes.get(id)) ?? null;
-}
-export async function listDungeonHeroes(): Promise<DungeonHero[]> {
-  return db.dungeonHeroes.orderBy("modifiedAt").reverse().toArray();
-}
-export async function deleteDungeonHero(id: string) {
-  await db.dungeonHeroes.delete(id);
-}
-export async function saveDungeonRun(run: DungeonRun) {
-  run.modifiedAt = Date.now();
-  await db.dungeonRuns.put(run);
-}
-export async function loadDungeonRunForHero(heroId: string): Promise<DungeonRun | null> {
-  const runs = await db.dungeonRuns.where("heroId").equals(heroId).toArray();
-  const active = runs.filter(r => r.status === "active").sort((a, b) => b.modifiedAt - a.modifiedAt);
-  return active[0] ?? null;
-}
-export async function deleteDungeonRun(id: string) {
-  await db.dungeonRuns.delete(id);
 }
 
 /** Auto-snapshot current league with a year-marker name. Returns new save id. */
@@ -313,13 +387,16 @@ export async function snapshotLeague(lg: League, label?: string): Promise<string
   cloned.name = label ?? `${lg.name} — ${lg.year} snapshot`;
   cloned.createdAt = Date.now();
   cloned.modifiedAt = Date.now();
-  await db.leagues.put({
+  const rec: SavedLeague = {
     id: snapId,
+    profileId: pid(),
     name: cloned.name,
     createdAt: cloned.createdAt,
     modifiedAt: cloned.modifiedAt,
     year: cloned.year,
-    data: cloned
-  });
+    data: cloned,
+  };
+  await db.leagues.put(rec);
+  pushRecord("leagues", pid(), rec);
   return snapId;
 }

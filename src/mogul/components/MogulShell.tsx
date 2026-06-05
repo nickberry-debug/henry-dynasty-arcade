@@ -3,7 +3,7 @@
 // franchise shell pattern used in baseball/football.
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
-import { CalendarDays, Clapperboard, Building2, Trophy, Save as SaveIcon, ArrowLeft } from "lucide-react";
+import { CalendarDays, Clapperboard, Building2, Trophy, BarChart3, Save as SaveIcon, ArrowLeft } from "lucide-react";
 import { useMogul } from "../store";
 import { MogulNewsTicker } from "./MogulNewsTicker";
 
@@ -11,6 +11,7 @@ const TABS = [
   { to: "/mogul/studio",          label: "This Month", icon: CalendarDays, end: true },
   { to: "/mogul/studio/manage",   label: "Studio",     icon: Clapperboard },
   { to: "/mogul/studio/industry", label: "Industry",   icon: Building2 },
+  { to: "/mogul/studio/chart",    label: "Top 50",     icon: BarChart3 },
   { to: "/mogul/studio/awards",   label: "Awards",     icon: Trophy },
   { to: "/mogul/studio/save",     label: "Save & Exit", icon: SaveIcon },
 ];
@@ -46,7 +47,7 @@ export function MogulShell() {
     >
       <header className="sticky top-0 z-30 px-4 py-3 backdrop-blur border-b safe-top" style={{ background: headerBg, borderBottomColor: `${player.accent}33` }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate("/mogul")} className="w-9 h-9 rounded-full bg-black/30 flex items-center justify-center pressable touch-target" aria-label="Back to Beckett Movie Studios Hub">
+          <button onClick={() => navigate("/mogul")} className="w-9 h-9 rounded-full bg-black/30 flex items-center justify-center pressable touch-target" aria-label="Back to Movie Studios Hub">
             <ArrowLeft size={16} />
           </button>
           <div className="flex-1 min-w-0">

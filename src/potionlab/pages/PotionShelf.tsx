@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Volume2, Trash2 } from "lucide-react";
 import { PotionLabShell, LAB_PURPLE } from "../components/PotionLabShell";
 import { PotionBottle } from "../components/PotionBottle";
+import { RecipeSprite } from "../components/IngredientSprite";
 import { usePotionSave } from "../store";
 import { speak } from "../../wordplay/voice";
 
@@ -37,8 +38,8 @@ export default function PotionShelf() {
                     border: `1px solid ${p.color}55`,
                     minHeight: 130,
                   }}>
-                  <PotionBottle color={p.color} size={64} />
-                  <div className="text-[10px] font-display mt-1 text-center text-violet-50 truncate w-full">{p.emoji} {p.name}</div>
+                  <RecipeSprite recipe={{ id: p.recipeId, name: p.name, color: p.color }} size={64} />
+                  <div className="text-[10px] font-display mt-1 text-center text-violet-50 truncate w-full">{p.name}</div>
                   {p.narration && <Volume2 size={10} className="text-violet-200/60 mt-1" aria-hidden="true" />}
                 </motion.button>
               ))}

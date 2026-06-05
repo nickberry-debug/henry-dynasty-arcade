@@ -12,6 +12,7 @@ import { CLASS_INFO, classInfoFor } from "../types";
 import { pickNarratorVoice, getNarratorRate } from "../tts";
 import { hasOpenAITtsKey, synthesizeOpenAI, prewarmOpenAISequence, splitForTTS, getCachedOpenAIUrl } from "../openaiTts";
 import { HeroSprite } from "../components/HeroSprite";
+import { playSfx, unlockAudio } from "../../art";
 import { VoiceInput } from "../components/VoiceInput";
 import { Typewriter } from "../components/Typewriter";
 import { Confetti } from "../components/Confetti";
@@ -150,8 +151,10 @@ export function AdventureNew() {
       </section>
 
       {!hasKey && (
-        <div className="rounded-xl text-xs px-3 py-2.5" style={{ background: "rgba(255,191,36,0.1)", border: "1px solid rgba(255,191,36,0.3)", color: "#e9e3d2" }}>
-          💡 No Anthropic API key yet — the adventure will use baked-in fallback scenes. Add a key in Settings → Olympus for the full AI-driven experience.
+        <div className="rounded-xl text-xs px-3 py-2.5 space-y-1" style={{ background: "rgba(134,239,172,0.10)", border: "1px solid rgba(134,239,172,0.30)", color: "#e9e3d2" }}>
+          <div className="font-display tracking-[0.18em] text-[10px]" style={{ color: "#86efac" }}>OFFLINE STORY MODE</div>
+          <div>You're set to play one of four authored quests — a real branching adventure with full encounters, companions, items, and a twist ending. No API key needed.</div>
+          <div className="opacity-75 text-[10px]">Want richer dynamic storytelling later? Add an Anthropic key in Settings → Olympus to unlock the AI Storyteller's improvisation on top.</div>
         </div>
       )}
 
@@ -184,6 +187,15 @@ export function AdventurePlay() {
   const [finalizing, setFinalizing] = useState(false);
   const ttsRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Page-turn SFX on scene change — soft whoosh so each step feels like
+  // turning a page in an illuminated manuscript.
+  useEffect(() => { unlockAudio(); }, []);
+  useEffect(() => {
+    if (adventure?.currentIndex !== undefined && adventure.currentIndex > 0) {
+      playSfx("whoosh", { volume: 0.4 });
+    }
+  }, [adventure?.currentIndex]);
 
   // Pre-generate branches whenever the current scene changes — fires all
   // 4 next-scene API calls in parallel so they're cached and instant by

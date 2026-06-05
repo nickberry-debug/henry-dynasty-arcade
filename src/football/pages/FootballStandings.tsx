@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useFootball } from "../store";
 import { ArrowLeft } from "lucide-react";
+import { Sparkline } from "../../components/Sparkline";
 
 export default function FootballStandings() {
   const lg = useFootball(s => s.league);
@@ -12,6 +13,19 @@ export default function FootballStandings() {
       .filter(t => t.divisionId === d.id)
       .sort((a, b) => (b.wins - a.wins) || ((b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst))),
   }));
+
+  // Per-team last-10 win/loss vector — matches Baseball Standings sparkline.
+  function last10For(teamId: string): number[] {
+    const recent = lg!.schedule
+      .filter(g => g.played && (g.homeId === teamId || g.awayId === teamId))
+      .slice(-10);
+    return recent.map(g => {
+      if (!g.score) return 0;
+      const isHome = g.homeId === teamId;
+      const won = isHome ? g.score.home > g.score.away : g.score.away > g.score.home;
+      return won ? 1 : -1;
+    });
+  }
 
   return (
     <div className="space-y-4 pb-32">
@@ -36,6 +50,7 @@ export default function FootballStandings() {
                   </div>
                   <div className="text-xs font-mono w-14 text-right">{t.wins}-{t.losses}{t.ties ? `-${t.ties}` : ""}</div>
                   <div className={`text-xs font-mono w-12 text-right ${(t.pointsFor - t.pointsAgainst) >= 0 ? "text-emerald-400" : "text-red-400"}`}>{(t.pointsFor - t.pointsAgainst) >= 0 ? "+" : ""}{t.pointsFor - t.pointsAgainst}</div>
+                  <Sparkline values={last10For(t.id)} width={48} height={16} />
                 </Link>
               ))}
             </div>

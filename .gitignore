@@ -2,6 +2,8 @@ node_modules/
 dist/
 dev-dist/
 .vite/
+vite.config.ts.timestamp-*.mjs
+vite.config.js.timestamp-*.mjs
 .DS_Store
 *.log
 qa.ts

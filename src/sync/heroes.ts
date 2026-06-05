@@ -64,9 +64,18 @@ export function subscribeHeroes(cb: (heroes: Hero[]) => void): Unsubscribe | nul
   const coll = roomColl(HEROES);
   if (!coll) return null;
   return onSnapshot(query(coll), snap => {
-    const heroes: Hero[] = [];
-    snap.forEach(d => heroes.push(d.data() as Hero));
-    cb(heroes);
+    try {
+      const heroes: Hero[] = [];
+      snap.forEach(d => {
+        try {
+          const data = d.data();
+          if (data && typeof data === "object") heroes.push(data as Hero);
+        } catch (e) { console.warn("[sync] bad hero doc skipped", d.id, e); }
+      });
+      cb(heroes);
+    } catch (e) {
+      console.warn("[sync] heroes snapshot callback failed", e);
+    }
   }, err => console.warn("[sync] heroes snapshot error", err));
 }
 
@@ -74,9 +83,18 @@ export function subscribeAdventures(cb: (advs: Adventure[]) => void): Unsubscrib
   const coll = roomColl(ADVENTURES);
   if (!coll) return null;
   return onSnapshot(query(coll), snap => {
-    const advs: Adventure[] = [];
-    snap.forEach(d => advs.push(d.data() as Adventure));
-    cb(advs);
+    try {
+      const advs: Adventure[] = [];
+      snap.forEach(d => {
+        try {
+          const data = d.data();
+          if (data && typeof data === "object") advs.push(data as Adventure);
+        } catch (e) { console.warn("[sync] bad adventure doc skipped", d.id, e); }
+      });
+      cb(advs);
+    } catch (e) {
+      console.warn("[sync] adventures snapshot callback failed", e);
+    }
   }, err => console.warn("[sync] adventures snapshot error", err));
 }
 

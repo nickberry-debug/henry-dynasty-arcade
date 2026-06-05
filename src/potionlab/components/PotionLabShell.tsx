@@ -6,6 +6,7 @@ import { ArrowLeft, Settings as SettingsIcon, Volume2, VolumeX } from "lucide-re
 import { ArcadeSettings } from "../../arcade/ArcadeSettings";
 import { usePrefs } from "../../wordplay/ai";
 import { stopSpeaking } from "../../wordplay/voice";
+import { ParticleSystem, LightingOverlay } from "../../art";
 
 export const LAB_PURPLE = "#a78bfa";
 export const LAB_AMBER = "#fbbf24";
@@ -29,7 +30,25 @@ export function PotionLabShell({ title, subtitle, emoji, backTo = "/", right, ch
     if (!next) stopSpeaking();
   };
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "radial-gradient(1200px 600px at 20% -10%, rgba(167,139,250,0.18), transparent), linear-gradient(180deg, #0a0612 0%, #050306 100%)" }}>
+    <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ background: "linear-gradient(180deg, #0a0612 0%, #050306 100%)" }}>
+      {/* Backdrop art layers — anchored to viewport, behind everything */}
+      <div aria-hidden="true" className="fixed inset-0 pointer-events-none" style={{ zIndex: 0 }}>
+        {/* Mystical purple glow from upper-left, candle-amber glow from the cauldron area */}
+        <div style={{
+          position: "absolute", inset: 0,
+          background: "radial-gradient(900px 500px at 18% -8%, rgba(167,139,250,0.22), transparent 60%), radial-gradient(700px 500px at 75% 110%, rgba(251,191,36,0.16), transparent 60%)",
+        }} />
+        {/* Wispy cauldron smoke curling up from the lower area (Kenney smoke
+            texture; degrades to procedural puffs before it loads) */}
+        <ParticleSystem kind="smokeLight" rate={2} />
+        {/* Slow rising magic motes (purple/pink) — ambient mystical air */}
+        <ParticleSystem kind="magic" rate={6} />
+        {/* Faint embers drifting up from below — cauldron heat */}
+        <ParticleSystem kind="ember" rate={4} />
+        {/* Eerie color grade + vignette with a soft point light where the cauldron lives */}
+        <LightingOverlay mood="eerie" intensity={0.7} lightAt="50% 80%" />
+      </div>
+
       <header className="sticky top-0 z-30 px-3 py-2.5 backdrop-blur border-b safe-top" style={{
         background: "rgba(10,6,18,0.92)",
         borderBottomColor: `${LAB_PURPLE}44`,
@@ -63,7 +82,7 @@ export function PotionLabShell({ title, subtitle, emoji, backTo = "/", right, ch
           </button>
         </div>
       </header>
-      <main className="flex-1 p-3 lg:p-4 overflow-y-auto safe-bottom max-w-4xl mx-auto w-full">
+      <main className="flex-1 p-3 lg:p-4 overflow-y-auto safe-bottom max-w-4xl mx-auto w-full relative" style={{ zIndex: 1 }}>
         {children}
       </main>
       {settingsOpen && <ArcadeSettings onClose={() => setSettingsOpen(false)} />}

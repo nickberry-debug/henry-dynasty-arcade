@@ -9,6 +9,10 @@
 
 import type { League, NewsItem, Player } from "../store/types";
 import { DRAMA_TEMPLATES, type DramaTemplate, type DramaCategory } from "../data/dramaTemplates";
+// Shared sports-engine — storylines2 lives here so Baseball + Football
+// (and future sports) all use the same Storyline shape and lifecycle.
+import type { StorylineState as SharedStorylineState } from "../sports-engine";
+import { emptyStorylineState } from "../sports-engine";
 
 /** Persistent drama-engine state stored on the league object. */
 export interface DramaState {
@@ -24,8 +28,13 @@ export interface DramaState {
   recentTemplates: string[];
   /** Per-player temporary effect tracking — auto-expires. */
   activeEffects: ActiveEffect[];
-  /** Stories that bubble across multiple days — auto-curated. */
+  /** Legacy loose storylines — Baseball's drama subsystem uses these. KEPT
+   *  for backwards-compatibility with existing saves; not migrated. */
   storylines: Storyline[];
+  /** Shared-engine storylines — Baseball + Football both populate these
+   *  via /src/sports-engine/storylines. Drives the News page + ticker
+   *  consistently across both sports. */
+  storylines2?: SharedStorylineState;
   /** Eventid → reaction counts (local only). */
   reactions: Record<string, { likes: number; laughs: number; fire: number; sad: number; bullseye: number }>;
   /** Highlight-worthy events archived to scrapbook. */
@@ -59,6 +68,7 @@ export function defaultDramaState(): DramaState {
     recentTemplates: [],
     activeEffects: [],
     storylines: [],
+    storylines2: emptyStorylineState(),
     reactions: {},
     memorableMoments: [],
   };
@@ -73,6 +83,7 @@ export function ensureDramaState(lg: League): DramaState {
   if (!d.recentTemplates) d.recentTemplates = [];
   if (!d.activeEffects) d.activeEffects = [];
   if (!d.storylines) d.storylines = [];
+  if (!d.storylines2) d.storylines2 = emptyStorylineState();
   if (!d.reactions) d.reactions = {};
   if (!d.memorableMoments) d.memorableMoments = [];
   if (!d.intensity) d.intensity = "balanced";
@@ -404,6 +415,24 @@ function pickHotTake(rnd: () => number): DramaTemplate | null {
 /** Ticker source — most recent dramatic items, plus a few standings/milestone flavored lines. */
 export function buildTickerItems(lg: League): { id: string; emoji: string; text: string; category: string }[] {
   const items: { id: string; emoji: string; text: string; category: string }[] = [];
+
+  // Active storylines first — these are "alive" content from the shared
+  // /src/sports-engine module. Same source Football's ticker reads from.
+  const drama = (lg as any).drama;
+  if (drama?.storylines2?.active) {
+    const top = drama.storylines2.active
+      .slice()
+      .sort((a: any, b: any) => b.intensity - a.intensity)
+      .slice(0, 5);
+    for (const s of top) {
+      items.push({
+        id: `ticker-${s.id}`,
+        emoji: s.emoji ?? "📰",
+        text: s.label + (s.intensity > 1 ? " " + "★".repeat(Math.min(3, s.intensity - 1)) : ""),
+        category: "Storyline",
+      });
+    }
+  }
 
   // Recent drama events (last 3 days) — preferred.
   const cutoff = lg.day - 3;

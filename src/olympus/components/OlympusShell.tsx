@@ -25,7 +25,7 @@ export function OlympusShell() {
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-screen flex flex-col relative overflow-hidden"
       style={{
         background:
           "radial-gradient(800px 400px at 50% -10%, rgba(218,165,32,0.08), transparent 70%), linear-gradient(180deg, #0F1B2D 0%, #07101E 100%)",

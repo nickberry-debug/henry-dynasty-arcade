@@ -8,6 +8,7 @@
 import type { FootballLeague, FootballGame, FootballPlay, FootballPlayer, FootballTeam, FootballPlayKind } from "./types";
 import { rand, irnd, choice } from "../utils/rand";
 import { generateFootballDrama } from "./drama";
+import { updateFootballStorylines } from "./storylines";
 import { checkAchievements, FOOTBALL_ACHIEVEMENTS } from "./achievements";
 
 interface DriveCtx {
@@ -555,6 +556,10 @@ export function simWeek(lg: FootballLeague): number {
   }
   // Drama events for the week
   try { generateFootballDrama(lg, irnd(2, 4)); } catch { /* never block sim */ }
+  // Shared-engine storyline tracking — rivalries, MVP races, streaks,
+  // playoff pushes. Populates lg.storylines (StorylineState from
+  // /src/sports-engine), surfaced on the News page + ticker.
+  try { updateFootballStorylines(lg); } catch { /* never block sim */ }
 
   // Check + push achievement unlocks
   try {

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Lock, Sparkles, BookOpen } from "lucide-react";
 import { PotionLabShell, LAB_PURPLE, LAB_AMBER } from "../components/PotionLabShell";
 import { PotionBottle } from "../components/PotionBottle";
+import { IngredientSprite, RecipeSprite } from "../components/IngredientSprite";
 import { KNOWN_RECIPES, SECRET_RECIPES, HARRY_POTTER_RECIPES, GREEK_RECIPES, SKYRIM_RECIPES, SCHOOLYARD_RECIPES, EASTER_EGGS, type Recipe } from "../data/recipes";
 import { INGREDIENTS } from "../data/ingredients";
 import { usePotionSave } from "../store";
@@ -90,7 +91,7 @@ function RecipeRow({ recipe, discovered, isSecret }: { recipe: Recipe; discovere
         border: `1px solid ${discovered ? `${recipe.color}66` : "rgba(255,255,255,0.07)"}`,
       }}>
       {discovered ? (
-        <PotionBottle color={recipe.color} size={56} />
+        <RecipeSprite recipe={recipe} size={56} />
       ) : (
         <div className="w-14 h-14 flex items-center justify-center rounded" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
           <Lock size={20} className="text-violet-300/60" aria-hidden="true" />
@@ -99,7 +100,7 @@ function RecipeRow({ recipe, discovered, isSecret }: { recipe: Recipe; discovere
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <div className="font-display text-base text-violet-50 truncate">
-            {discovered ? `${recipe.emoji} ${recipe.name}` : isSecret ? "???" : recipe.name}
+            {discovered ? recipe.name : isSecret ? "???" : recipe.name}
           </div>
           {recipe.kind === "easter" && discovered && <Sparkles size={11} style={{ color: "#f472b6" }} aria-hidden="true" />}
         </div>
@@ -114,7 +115,8 @@ function RecipeRow({ recipe, discovered, isSecret }: { recipe: Recipe; discovere
                 return (
                   <span key={id} className="text-[10px] inline-flex items-center gap-1 px-2 py-0.5 rounded"
                     style={{ background: `${ing.color}22`, border: `1px solid ${ing.color}55`, color: "#fef9c3" }}>
-                    <span aria-hidden="true">{ing.emoji}</span>{ing.name}
+                    <IngredientSprite ingredient={ing} size={16} ground={false} />
+                    <span>{ing.name}</span>
                   </span>
                 );
               })}

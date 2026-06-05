@@ -7,9 +7,17 @@ import type {
   BuildRecipe, CharacterDef, MapConfig, SurfaceType, UnitFrameData, VFXEvent,
 } from "./types";
 import { PRESET_CHARACTERS, PRESET_CATEGORIES, MAPS } from "./presets";
+import { loadFamilyFighters, FAMILY_CATEGORY } from "./familyFighters";
 import BattleCanvas from "./BattleCanvas";
 import type { TeamSlot, PlaybackData } from "./BattleCanvas";
 import { getAnthropicKey } from "../arcade/keys";
+import { MiniAvatar, MiniSample, ArenaProp } from "./MiniAvatar";
+import { ParticleSystem } from "../art";
+import { getActiveProfileId, recordGameSession, loadProfiles } from "../profiles/store";
+import { addMemory } from "../profiles/memory";
+import { postActivity } from "../sync/liveActivity";
+import { pushLiveBattle, clearLiveBattle, type LiveBattleFrame } from "../sync/liveBattle";
+import { publishSession, clearSession } from "../sync/liveSession";
 
 const SPEED_OPTIONS = [0.1, 0.15, 0.25, 0.5, 1] as const;
 
@@ -207,7 +215,12 @@ function MultiCharPicker({ team, slots, onChange }: MultiCharPickerProps) {
     setActiveIdx(Math.min(safeIdx, next.length - 1));
   }
 
-  const filtered = PRESET_CHARACTERS.filter(c => {
+  // Family Brawl: prepend a fighter per family profile so two kids can
+  // pick each other's mascot. Fighters are stat-scaled by their cross-
+  // game wins (see familyFighters.ts).
+  const familyFighters = useMemo(() => loadFamilyFighters(), []);
+  const allFighters = useMemo(() => [...familyFighters, ...PRESET_CHARACTERS], [familyFighters]);
+  const filtered = allFighters.filter(c => {
     if (catFilter !== "all" && c.category !== catFilter) return false;
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -318,6 +331,12 @@ function MultiCharPicker({ team, slots, onChange }: MultiCharPickerProps) {
           style={{ background: catFilter === "all" ? accent : "rgba(255,255,255,0.07)", color: catFilter === "all" ? "#000" : "#9aa6bf" }}>
           ALL
         </button>
+        {/* Family Brawl chip — pinned first so kids find each other's mascots fast. */}
+        <button onClick={() => setCatFilter(FAMILY_CATEGORY)}
+          className="text-[7px] px-1.5 py-0.5 rounded-full font-display tracking-wide"
+          style={{ background: catFilter === FAMILY_CATEGORY ? "#c084fc" : "rgba(192,132,252,0.18)", color: catFilter === FAMILY_CATEGORY ? "#1a1208" : "#c4b5fd", border: "1px solid rgba(192,132,252,0.4)" }}>
+          👨‍👩‍👧‍👦 FAMILY
+        </button>
         {PRESET_CATEGORIES.map(cat => (
           <button key={cat} onClick={() => setCatFilter(cat)}
             className="text-[7px] px-1.5 py-0.5 rounded-full font-display tracking-wide"
@@ -327,20 +346,28 @@ function MultiCharPicker({ team, slots, onChange }: MultiCharPickerProps) {
         ))}
       </div>
 
-      {/* Character grid */}
-      <div className="grid grid-cols-3 gap-1 overflow-y-auto" style={{ maxHeight: 220 }}>
-        {filtered.map(char => (
-          <button key={char.id} onClick={() => setDef(safeIdx, char)}
-            className="rounded p-1.5 text-center transition-all"
-            style={{
-              background: activeSlot.def?.id === char.id ? `${accent}33` : "rgba(255,255,255,0.05)",
-              border: `1px solid ${activeSlot.def?.id === char.id ? accent : "rgba(255,255,255,0.07)"}`,
-            }}>
-            <div className="text-xl leading-none">{char.emoji}</div>
-            <div className="text-[8px] mt-0.5 leading-tight" style={{ color: "#bbb" }}>{char.name}</div>
-            <div className="text-[7px]" style={{ color: "#888" }}>{char.size}</div>
-          </button>
-        ))}
+      {/* Character grid — emoji-prominent meme style. Each tile's big
+          emoji is the identity anchor; a thin color-tinted ring + the
+          unit's name/size show selection. The mini portraits were too
+          samey to scan in a grid; this reads at a glance again. */}
+      <div className="grid grid-cols-3 gap-1 overflow-y-auto" style={{ maxHeight: 240 }}>
+        {filtered.map(char => {
+          const isActive = activeSlot.def?.id === char.id;
+          const tint = char.color || accent;
+          return (
+            <button key={char.id} onClick={() => setDef(safeIdx, char)}
+              className="rounded-lg p-1.5 text-center transition-all"
+              style={{
+                background: isActive ? `linear-gradient(135deg, ${tint}28, rgba(10,10,20,0.6))` : "rgba(255,255,255,0.05)",
+                border: `1px solid ${isActive ? tint : "rgba(255,255,255,0.10)"}`,
+                boxShadow: isActive ? `0 0 0 1px ${tint}55 inset, 0 0 14px -4px ${tint}66` : undefined,
+              }}>
+              <div className="text-3xl leading-none mb-0.5" aria-hidden="true">{char.emoji}</div>
+              <div className="text-[9px] font-display tracking-wide truncate" style={{ color: "#e5e7eb" }}>{char.name}</div>
+              <div className="text-[7px] uppercase tracking-widest" style={{ color: tint }}>{char.size}</div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -420,23 +447,72 @@ export default function BattleForge() {
   const aTotal = teamTotal(teamA);
   const bTotal = teamTotal(teamB);
 
-  // Convert slots for BattleCanvas (filter out null defs, just in case)
-  const teamASlots: TeamSlot[] = teamA
-    .filter(s => s.def !== null)
-    .map(s => ({ def: s.def!, count: s.count }));
-  const teamBSlots: TeamSlot[] = teamB
-    .filter(s => s.def !== null)
-    .map(s => ({ def: s.def!, count: s.count }));
+  // Convert slots for BattleCanvas (filter out null defs, just in case).
+  // MUST be memoized: BattleCanvas re-runs its entire setup effect (which
+  // destroys + recreates the <canvas> and restarts the sim at tick 0) when
+  // these array references change. During battle, onStats fires every tick
+  // → setAHp/setBHp → BattleForge re-renders every frame. Without useMemo
+  // these arrays got a new reference each frame, so the canvas was torn
+  // down and rebuilt ~60×/sec → the battle ran invisibly on a black canvas
+  // ("green/black screen, field flashes for a second" bug). Memoizing on
+  // the underlying slot state keeps the reference stable for the battle.
+  const teamASlots: TeamSlot[] = useMemo(
+    () => teamA.filter(s => s.def !== null).map(s => ({ def: s.def!, count: s.count })),
+    [teamA],
+  );
+  const teamBSlots: TeamSlot[] = useMemo(
+    () => teamB.filter(s => s.def !== null).map(s => ({ def: s.def!, count: s.count })),
+    [teamB],
+  );
 
   const handleLogEntry = useCallback((entry: BattleLogEntry) => {
     setLog(prev => [entry, ...prev].slice(0, 80));
   }, []);
 
+  // Throttle live-battle broadcasts to one push per ~250ms so Firestore
+  // doesn't get hammered with 60 writes/sec. Spectators see a smooth-
+  // ish HP bar without needing a per-frame canvas mirror.
+  const lastLivePushRef = useRef(0);
   const handleStats = useCallback((ah: number, am: number, bh: number, bm: number) => {
     setAHp(ah); setAMax(am); setBHp(bh); setBMax(bm);
     const total = ah + bh;
     setWinProb(total === 0 ? 0.5 : ah / total);
-  }, []);
+    // Broadcast frame to family devices (host-side only).
+    const now = Date.now();
+    if (now - lastLivePushRef.current < 250) return;
+    lastLivePushRef.current = now;
+    const pid = getActiveProfileId();
+    const me = pid ? loadProfiles().find(p => p.id === pid) : undefined;
+    if (!me) return;
+    const frame: LiveBattleFrame = {
+      hostProfileId: me.id,
+      hostProfileName: me.handle || me.name,
+      hostProfileColor: me.color,
+      teamALabel: teamLabel(teamA),
+      teamBLabel: teamLabel(teamB),
+      aHp: ah, aMax: am, bHp: bh, bMax: bm,
+      aAlive: Math.round((ah / Math.max(1, am)) * aTotal),
+      bAlive: Math.round((bh / Math.max(1, bm)) * bTotal),
+      mapName: selectedMap.name,
+      phase: "battle",
+      ts: now,
+    };
+    pushLiveBattle(frame);
+    // Also publish a lightweight session presence so the family Landing
+    // generic live-session strip surfaces this fight.
+    publishSession({
+      profileId: me.id,
+      profileName: me.handle || me.name,
+      profileColor: me.color,
+      gameId: "battleforge",
+      label: "Battle Forge fight",
+      detail: selectedMap.name,
+      emoji: "⚔️",
+      phase: "active",
+      startedAt: now,
+      spectateHref: "/battleforge/spectate",
+    });
+  }, [teamA, teamB, aTotal, bTotal, selectedMap.name]);
 
   const handleBattleEnd = useCallback((result: BattleResult) => {
     if (commentaryTimer.current) clearTimeout(commentaryTimer.current);
@@ -444,8 +520,70 @@ export default function BattleForge() {
     speak(result.winner === "draw"
       ? "It's a draw! An incredible battle!"
       : `${result.winner === "A" ? result.teamAName : result.teamBName}... WINS!`, 0.8, 1.2);
+    // Family Stats — the player "owns" team A by convention.
+    const pid = getActiveProfileId();
+    if (pid) {
+      recordGameSession(pid, "battleforge", {
+        sessions: 1,
+        seconds: Math.round((result.durationMs ?? 0) / 1000),
+        wins: result.winner === "A" ? 1 : 0,
+        losses: result.winner === "B" ? 1 : 0,
+      });
+      // Memory log — record battles that ended cleanly with an MVP.
+      if (result.mvp) {
+        const won = result.winner === "A";
+        addMemory({
+          profileId: pid, gameId: "battleforge",
+          kind: won ? "achievement" : "loss",
+          emoji: result.mvp.emoji,
+          text: won
+            ? `${result.mvp.name} carried the win — ${result.mvp.kills} kills.`
+            : `Lost the fight, but ${result.mvp.name} earned MVP with ${result.mvp.kills} kills.`,
+        });
+        // Family live activity — broadcast to other devices.
+        const profile = loadProfiles().find(p => p.id === pid);
+        if (profile) {
+          postActivity({
+            profileId: pid,
+            profileName: profile.handle || profile.name,
+            profileColor: profile.color,
+            gameId: "battleforge",
+            kind: won ? "battleforge_win" : "battleforge_loss",
+            emoji: result.mvp.emoji,
+            text: won
+              ? `${profile.handle || profile.name} won a Battle Forge with ${result.mvp.name}!`
+              : `${profile.handle || profile.name} lost a Battle Forge — ${result.mvp.name} put up a fight.`,
+          });
+        }
+      }
+    }
+    // Final "done" frame so spectators see the result land, then clear
+    // after a beat so the doc doesn't persist forever.
+    const myPid = getActiveProfileId();
+    const me = myPid ? loadProfiles().find(p => p.id === myPid) : undefined;
+    if (me) {
+      pushLiveBattle({
+        hostProfileId: me.id,
+        hostProfileName: me.handle || me.name,
+        hostProfileColor: me.color,
+        teamALabel: result.teamAName,
+        teamBLabel: result.teamBName,
+        aHp: result.winner === "A" ? 1 : 0, aMax: 1,
+        bHp: result.winner === "B" ? 1 : 0, bMax: 1,
+        aAlive: result.teamASurvivors, bAlive: result.teamBSurvivors,
+        mapName: selectedMap.name,
+        phase: "done", winner: result.winner,
+        lastLog: result.winner === "draw" ? "Draw!" : `Team ${result.winner} wins!`,
+        ts: Date.now(),
+      });
+    }
+    setTimeout(() => {
+      clearLiveBattle();
+      const pid = getActiveProfileId();
+      if (pid) clearSession(pid);
+    }, 30_000);
     setTimeout(() => setPhase("results"), 1500);
-  }, []);
+  }, [selectedMap.name]);
 
   // Safety timeout — if a battle gets stuck (units never engage, sim
   // never resolves), force a winner by attrition after 60 seconds.
@@ -547,15 +685,19 @@ export default function BattleForge() {
   // ── HUB ────────────────────────────────────────────────────────────────────
   if (phase === "hub") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center"
+      <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden"
         style={{ background: "radial-gradient(ellipse at 50% 30%, #1a0505 0%, #050208 80%)", paddingTop: "max(env(safe-area-inset-top,0px),16px)", paddingBottom: "max(env(safe-area-inset-bottom,0px),24px)" }}>
+        {/* Ambient battlefield haze — dark smoke drifting up behind the title */}
+        <div aria-hidden="true" className="absolute inset-0 pointer-events-none" style={{ zIndex: 0, opacity: 0.5 }}>
+          <ParticleSystem kind="smokeDark" rate={2} />
+        </div>
         <button onClick={() => navigate("/play")}
           className="absolute top-4 left-4 w-11 h-11 rounded-full flex items-center justify-center"
-          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", zIndex: 2 }}>
           <ArrowLeft size={18} />
         </button>
 
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center px-6">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center px-6 relative" style={{ zIndex: 1 }}>
           <div className="text-[10px] tracking-[0.4em] font-display mb-2" style={{ color: "#9aa6bf" }}>BERRY KID'S ARCADE</div>
           <div className="font-display text-5xl sm:text-7xl tracking-[0.1em] mb-2" style={{ color: "#FF4444", textShadow: "0 0 40px rgba(255,68,68,0.5)" }}>BATTLE</div>
           <div className="font-display text-5xl sm:text-7xl tracking-[0.1em]" style={{ color: "#FF8800", textShadow: "0 0 40px rgba(255,136,0,0.5)" }}>FORGE</div>
@@ -566,7 +708,7 @@ export default function BattleForge() {
 
         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
           transition={{ delay: 0.3, type: "spring" }}
-          className="flex flex-col items-center gap-3 px-6 w-full max-w-xs">
+          className="flex flex-col items-center gap-3 px-6 w-full max-w-xs relative" style={{ zIndex: 1 }}>
           <button onClick={() => setPhase("setup")}
             className="w-full py-5 rounded-2xl font-display text-2xl tracking-[0.15em] pressable"
             style={{ background: "linear-gradient(135deg, #FF4444, #FF8800)", color: "white", boxShadow: "0 8px 40px rgba(255,68,68,0.4)" }}>
@@ -578,10 +720,30 @@ export default function BattleForge() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
-          className="mt-8 flex flex-wrap gap-2 justify-center px-6 max-w-sm">
+          className="mt-8 flex flex-wrap gap-2 justify-center px-6 max-w-sm relative" style={{ zIndex: 1 }}>
           {["🐝 Killer Bee + ⚡ Thor vs 🐋 Blue Whale", "💪 Hercules + 🐉 Dragon Knight vs 😈 Dark Overlord", "🤖 Terminator + 🥷 Neo vs 🦁 Kali + ⚔️ Samurai"].map(txt => (
             <div key={txt} className="text-[10px] px-3 py-1.5 rounded-full" style={{ background: "rgba(255,68,68,0.12)", border: "1px solid rgba(255,68,68,0.25)", color: "#FF8888" }}>{txt}</div>
           ))}
+        </motion.div>
+
+        {/* Decorative isometric arena diorama — Kenney CC0 Mini Characters
+            standing on Mini Arena floor tiles, flanked by columns + banner.
+            Same iso art family as the battlefield. Aria-hidden. */}
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          aria-hidden="true"
+          className="mt-6 flex gap-0.5 justify-center items-end overflow-hidden px-4 max-w-xl relative"
+          style={{ filter: "drop-shadow(0 10px 28px rgba(255,68,68,0.25))", zIndex: 1 }}>
+          <ArenaProp name="column" size={52} style={{ alignSelf: "flex-end" }} />
+          {[0, 7, 3, 10].map((idx, i) => (
+            <div key={i} style={{ position: "relative", width: 60, height: 64 }}>
+              <ArenaProp name="floor" size={56}
+                style={{ position: "absolute", left: "50%", bottom: 0, transform: "translateX(-50%)" }} />
+              <MiniSample idx={idx} size={56}
+                style={{ position: "absolute", left: "50%", bottom: 10, transform: "translateX(-50%)", filter: "drop-shadow(0 3px 6px rgba(0,0,0,0.4))" }} />
+            </div>
+          ))}
+          <ArenaProp name="banner" size={52} style={{ alignSelf: "flex-end" }} />
         </motion.div>
       </div>
     );
@@ -951,7 +1113,13 @@ export default function BattleForge() {
             transition={{ delay: 0.5 }}
             className="w-full max-w-sm rounded-2xl p-4 mb-6 flex items-center gap-4"
             style={{ background: "linear-gradient(135deg, rgba(255,215,0,0.12), rgba(5,2,10,0.8))", border: "1px solid rgba(255,215,0,0.3)" }}>
-            <div className="text-5xl">{mvp.emoji}</div>
+            <div className="relative shrink-0" style={{ width: 80 }}>
+              <MiniAvatar fighter={mvp} size={80} onFloor />
+              <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center text-lg"
+                style={{ background: "rgba(5,2,10,0.92)", border: "1.5px solid rgba(255,215,0,0.6)" }}>
+                {mvp.emoji}
+              </div>
+            </div>
             <div className="flex-1 min-w-0">
               <div className="text-[9px] font-display tracking-[0.3em] mb-0.5" style={{ color: "#FFD700" }}>⭐ MVP</div>
               <div className="font-display text-lg truncate">{mvp.name}</div>
