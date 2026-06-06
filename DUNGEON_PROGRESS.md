@@ -2,7 +2,7 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-06 (Phase 2a shipped — ranged auto-aim weapon)
+**Last updated:** 2026-06-06 (Phase 2b shipped — combat anims + hit-react + sword trail + iPhone fixes)
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
 
 ---
@@ -16,11 +16,11 @@
 | Character backward-facing bug | ✅ done | `atan2(ax, az)` (was `atan2(ax, -az)`) at engine.ts:413 (player) + 463 (enemy) |
 | Wall rotation map (`rotMap`) | ⚠️ device-confirm | Values are best-guesses at `Dungeon3DRun.tsx:155`. Nick said map looks beautiful on iPad → values appear correct. **Mark ✅** unless any wall faces wrong direction in future runs |
 | Animation clip name picker | ⚠️ device-confirm | Substring search for idle/walk/attack in `pickClip()`. Need to log actual clip names from `character-a.glb` etc. to confirm picker hits the right ones. Action: add `console.log("clips for", name, animations.map(a=>a.name))` in dev mode |
-| Touch button safe-area | ❌ todo (Nick: "buttons trail off screen") | Buttons use `right:24, bottom:36` — doesn't account for iOS home-indicator. Use `calc(36px + env(safe-area-inset-bottom))` |
-| Joystick safe-area | ❌ todo | Same issue, joystick zone is `left:0, bottom:0` — should respect `env(safe-area-inset-bottom)` and `env(safe-area-inset-left)` |
-| Camera bounds at map edges | ❌ todo (Nick: "mild clipping at end point of map") | Camera lerps toward player without bounds; at map edges shows out-of-world void. Clamp `cameraTargetX/Z` to map interior (e.g. `clamp(p.x, CELL*2, WORLD_W - CELL*2)`) |
-| Control feel tightening | ❌ todo (Nick: "controls slightly tighter, screen control is a little stiff") | Try: camera lerp factor 5 → 8, player speed 6.5 → 7.5, joystick deadzone tighter |
-| Player + enemy collision feel | ❌ todo (Nick: "characters just bump into each other") | Currently `tryMove` slides; needs hit-stop on body-block + maybe pushback impulse |
+| Touch button safe-area | ✅ done (Phase 2b, 2026-06-06, commit `f8a630b`) | Buttons now use `max(5%, calc(20px + env(safe-area-inset-right)))` (melee) and `max(28%, calc(110px + env(safe-area-inset-right)))` (ranged), bottoms `max(8%, calc(36px + env(safe-area-inset-bottom)))`. Wrapper has `overflow:hidden` + safe-area padding. |
+| Joystick safe-area | ✅ done (Phase 2b, 2026-06-06, commit `f8a630b`) | Outer wrapper applies safe-area-inset padding on left/right/top so the joystick zone is confined to safe area. |
+| Camera bounds at map edges | ✅ done (Phase 0+2b) | Engine clamps `cameraTargetX/Z` via `CAM_INSET_X/Z = CELL*3`. Phase 2b also widens orthographic d×1.15 on portrait so map edges fit. |
+| Control feel tightening | ✅ done (Phase 0+2b) | Player speed 6.5→7.5, camera lerp factor 9, joystick max throw 50→40. Phase 2b: portrait frustum widened + lookAt offset 3.0 (vs 1.5 landscape) so player feels centered on iPhone. |
+| Player + enemy collision feel | ✅ done (Phase 2b, 2026-06-06, commit `f8a630b`) | Body-block pass in `step()` pushes overlapping pairs apart. Mid-attack contact amplifies push 2× and adds `hitStop=0.03`. Pushback impulse on hit lives in the new hit-react system below. |
 | InstancedMesh / geometry merging | 🔮 deferred | Real perf win path. Maybe 100-300 draw calls now → <50 with InstancedMesh on the repeating wall/floor pieces. **Do after Phase 1** when full GLB catalog is wired and the perf hit is visible. |
 
 **Phase 0 entrance status:** Bot delivered the foundation in Session 1 (v1.11.1). Nick confirmed "looks beautiful" on iPad device review 2026-06-06. Remaining items above are concrete polish.
@@ -50,9 +50,9 @@
 | Multiple attack options (heavy + light combo) | ❌ todo | Phase 2 spec: light + heavy melee; light = current, heavy = hold attack for 0.4s → larger hitbox + knockback + slower windup |
 | Enemy AI variety (chargers/ranged/swarmers/tanky) | ❌ todo | Per-kind behavior: chargers telegraph + dash, ranged kite + projectile, swarmers travel in groups, tanky has armor + slow swing |
 | Dodge-roll or block | ❌ todo | Tap-jump button or double-tap joystick → 0.3s iframes + dash 4 units in current facing |
-| **Fighting + weapon animations** | ❌ todo (Nick request) | Wire attack/heavy/hit-react/death clips from the character GLBs. Per-clip duration drives `attackDur`. Sword swing trail (Three.js TubeGeometry on a sweep arc) for visual juice. |
-| **Character body-blocking feel** | ❌ todo (Nick: "characters just bump into each other") | Add hit-stop on collision, plus a small pushback impulse on body-on-body contact so it feels physical, not slidey. Maybe a soft contact "thud" particle/sound. |
-| Full JuiceKit on hits | 🟡 partial | Hit-stop + flash exist; needs particles, knockback (enemy is currently static through hit), screen shake on heavy hits, slow-mo on kills |
+| **Fighting + weapon animations** | ✅ done (Phase 2b, 2026-06-06, commit `f8a630b`) | Player attack action drives from `attack-melee-right` clip (27 clips on character-a.glb probed via JSON header dump). Procedural ±20° rotation pulse fallback. Sword trail = `RingGeometry` partial arc, additive blend, fades white→transparent across the swing window with ~46° sweep. |
+| **Character body-blocking feel** | ✅ done (Phase 2b, 2026-06-06, commit `f8a630b`) | New body-block pass at end of `step()`: overlapping player/enemy push apart with 0.8× of overlap (1.6× if either mid-attack). Player takes half the impulse vs enemy. Mid-attack contact adds `hitStop=0.03`. |
+| Full JuiceKit on hits | 🟡 partial → mostly done in 2b | Hit-stop + flash + knockback (`e.hitStun=0.12`, `e.kbX/kbZ`, ~0.4u push over 0.1s, AI gated during stun) + enemy death scale.y 1→0.3 + opacity 1→0 fade. Still TODO: particles, screen shake on heavy hits, slow-mo on kills. |
 
 ---
 
@@ -154,7 +154,7 @@
 
 When you re-fire "continue the dungeon roadmap":
 1. Read this file.
-2. **Phase 2b queued next** (fighting + weapon animations, then body-blocking feel). Phase 1c biomes is the user's alternative — they will pick one on next ping.
+2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 3 (hero classes — Warrior / Ranger / Mage with class-select screen).** Bot should ASK before starting; don't auto-roll.
 3. Otherwise resume at the first ❌ item.
 4. Complete & verify it. Update this file.
 5. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
@@ -166,3 +166,37 @@ When you re-fire "continue the dungeon roadmap":
 - Patch script: `C:\Projects\patch_dungeon3d_phase2a.py` (19 hunks, all matched). Files changed: `src/dungeon3d/engine.ts` + `src/dungeon3d/pages/Dungeon3DRun.tsx`.
 - `npm run build` green (tsc + vite). Only pre-existing chunk-size + dexie dynamic-import warnings.
 - BUILD_STAMP bumped to `2026-06-06T18:00:00Z` so Nick can confirm new build on-device.
+
+## Phase 2b session notes (2026-06-06)
+
+- Commit `f8a630b` on `main`, deployed by Vercel as `dpl_5qz3PBHv7sFjCGop9vhFsjDNisy4` (READY at 1780766086).
+- Aliases: `henry-dynasty.vercel.app`, `henry-dynasty-git-main-nickberry-debugs-projects.vercel.app`.
+- Patch script: `C:\Projects\patch_dungeon3d_phase2b.py` (20 hunks, all matched). Files changed: `src/dungeon3d/engine.ts` + `src/dungeon3d/pages/Dungeon3DRun.tsx`.
+- `npm run build` green (37.13s, tsc + vite). Pre-existing chunk-size + dexie dynamic-import warnings only.
+- BUILD_STAMP bumped to `2026-06-06T20:30:00Z` so Nick can confirm new build on-device.
+
+### What landed (combat juice)
+
+- **Player attack animation**: `attack-melee-right` clip selected by existing `pickClip("attack")` substring match. Action weight blended via `lerp(.., 0.4)` when `p.attackT > 0`. Procedural ±20° rotation pulse fallback if a clip never resolves.
+- **Sword swing trail**: lazy-spawned `RingGeometry(0.8, 1.8, 16, 1, π/4, π/2)` wrapped in an anchor `Object3D`, additive blend, `depthWrite:false`, opacity fades `(1-progress)*0.85` and rotates `(progress-0.5)*0.8` rad for a swoosh.
+- **Enemy hit-react**: new `Enemy.hitStun / kbX / kbZ` fields. On melee or projectile hit: `hitStun=0.12`, knockback unit-vector stored. AI loop ticks hitStun first, applies `tryMove` at `KB_SPEED=4.0` for that duration (~0.4u total), then `continue` to gate chase movement.
+- **Enemy death animation**: per-axis fade — `scale.y = 0.9 * lerp(1, 0.3, deathProg)` and material `transparent:true; opacity = 1 - deathProg`. Mesh disposal at `deathT==0` still cleans up.
+- **Hit-stop on body contact**: body-block pass at end of `step()` detects overlap and pushes apart. Amplified 2× and `hitStop=0.03` if either is mid-attack.
+
+### What landed (iPhone fixes — bundled per follow-up request)
+
+- **Stronger portrait lookAt offset**: `camTuningRef.current.lookAtZ = portrait ? 3.0 : 1.5` (was hard-coded 1.5).
+- **Widened portrait frustum**: `camTuningRef.current.d = portrait ? 14*1.15 : 14`.
+- **Resize/orientationchange listener**: recomputes tuning + viewport state used for the debug badge.
+- **Per-frame `d` re-read**: resize check also triggers on `camera.top !== d` so orientation flips update the frustum immediately. `camera.top/bottom` refreshed alongside left/right.
+- **Camera snap at mount**: before `threeRef.current = {...}` the camera is positioned at the player + `cameraTargetX/Z` seeded — no first-frame flash at world origin.
+- **Percentage-based button positions**: melee `right: max(5%, calc(20px + env(safe-area-inset-right, 0px)))`, ranged `right: max(28%, calc(110px + env(safe-area-inset-right, 0px)))`, both `bottom: max(8%, calc(36px + env(safe-area-inset-bottom, 0px)))`.
+- **Wrapper safe-area**: outer game div has `overflow: hidden` + `paddingTop/Left/Right: env(safe-area-inset-*)`.
+- **Viewport debug badge**: 9px mono badge top-right of header — `${w}×${h} P|L ${ratio.toFixed(2)}`, opacity 0.4. Nick can screenshot if framing still feels off.
+
+### Still TODO (Phase 2 leftovers, not picked up in 2b)
+
+- Multiple attack options (light + heavy combo).
+- Enemy AI variety (chargers/ranged/swarmers/tanky).
+- Dodge-roll or block.
+- Full JuiceKit: particles, screen shake on heavy hits, slow-mo on kills.
