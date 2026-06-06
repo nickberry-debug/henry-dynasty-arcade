@@ -42,6 +42,49 @@ export interface DungeonLevel {
 
 export type EnemyKind = "grunt" | "brute" | "scout";
 
+export type ClassId = "warrior" | "ranger" | "mage";
+
+export interface ClassDef {
+  id: ClassId;
+  label: string;
+  tagline: string;
+  hpMax: number;
+  speed: number;
+  attackDmg: number;
+  attackRange: number;
+  attackDur: number;
+  rangedCdDur: number;
+  rangedDmg: number;
+  rangedSpeed: number;
+  rangedRadius: number;
+  tint: number;
+}
+
+export const CLASS_DEFS: Record<ClassId, ClassDef> = {
+  warrior: {
+    id: "warrior", label: "Warrior", tagline: "Charge in, hit hard.",
+    hpMax: 120, speed: 6.8,
+    attackDmg: 22, attackRange: 2.6, attackDur: 0.34,
+    // Warrior's Zap = dash, not a projectile. Cooldown lives in rangedCdDur.
+    rangedCdDur: 0.7, rangedDmg: 22, rangedSpeed: 0, rangedRadius: 0,
+    tint: 0xff8a4c,
+  },
+  ranger: {
+    id: "ranger", label: "Ranger", tagline: "Two arrows, light feet.",
+    hpMax: 80, speed: 8.5,
+    attackDmg: 10, attackRange: 2.2, attackDur: 0.30,
+    rangedCdDur: 0.32, rangedDmg: 10, rangedSpeed: 22, rangedRadius: 0.55,
+    tint: 0x6ee07a,
+  },
+  mage: {
+    id: "mage", label: "Mage", tagline: "Frost nova + fat fireball.",
+    hpMax: 70, speed: 6.5,
+    attackDmg: 15, attackRange: 3.0, attackDur: 0.55,
+    rangedCdDur: 1.1, rangedDmg: 32, rangedSpeed: 14, rangedRadius: 0.9,
+    tint: 0xc8a0ff,
+  },
+};
+
 export interface Player {
   x: number; z: number;
   /** Facing angle in radians (around Y). 0 = +X. */
@@ -55,6 +98,20 @@ export interface Player {
   rangedCd: number;
   rangedCdDur: number;
   anim: "idle" | "walk" | "attack" | "hurt";
+  // ── Phase 3: class data ────────────────────────────────────────
+  classId: ClassId;
+  speed: number;
+  attackDmg: number;
+  attackRange: number;
+  rangedDmg: number;
+  rangedSpeed: number;
+  rangedRadius: number;
+  // Warrior dash state. dashT > 0 means we're dashing; dashHit tracks
+  // enemy ids already damaged so one dash doesn't tick repeatedly.
+  dashT: number;
+  dashVx: number;
+  dashVz: number;
+  dashHit: Set<string>;
 }
 
 export interface Enemy {
@@ -86,6 +143,8 @@ export interface Projectile {
   vx: number; vz: number;
   ttl: number;    // seconds remaining
   damage: number;
+  /** Override collision radius. Defaults to RANGED_RADIUS if absent. */
+  radius?: number;
 }
 
 export interface Game {
@@ -299,18 +358,29 @@ function computeWallOrientations(grid: Tile[][]): DungeonLevel["wallOrientation"
 
 // ── Player + game construction ───────────────────────────────────────
 
-export function newPlayer(level: DungeonLevel): Player {
+export function newPlayer(level: DungeonLevel, classId: ClassId = "warrior"): Player {
+  const cd = CLASS_DEFS[classId];
   return {
     x: level.spawn.x, z: level.spawn.z, facing: 0,
-    hp: 100, hpMax: 100, coins: 0,
-    attackT: 0, attackDur: 0.34,
-    iframes: 0, flashT: 0, rangedCd: 0, rangedCdDur: 0.55, anim: "idle",
+    hp: cd.hpMax, hpMax: cd.hpMax, coins: 0,
+    attackT: 0, attackDur: cd.attackDur,
+    iframes: 0, flashT: 0,
+    rangedCd: 0, rangedCdDur: cd.rangedCdDur,
+    anim: "idle",
+    classId,
+    speed: cd.speed,
+    attackDmg: cd.attackDmg,
+    attackRange: cd.attackRange,
+    rangedDmg: cd.rangedDmg,
+    rangedSpeed: cd.rangedSpeed,
+    rangedRadius: cd.rangedRadius,
+    dashT: 0, dashVx: 0, dashVz: 0, dashHit: new Set<string>(),
   };
 }
 
-export function newGame(depth = 1): Game {
+export function newGame(depth = 1, classId: ClassId = "warrior"): Game {
   const level = genLevel(depth);
-  const player = newPlayer(level);
+  const player = newPlayer(level, classId);
   const enemies: Enemy[] = level.enemies.map(mkEnemy);
   return {
     level, depth, player,
@@ -339,6 +409,7 @@ export function descendLevel(g: Game): Game {
     ...g.player,
     x: next.spawn.x, z: next.spawn.z,
     attackT: 0, iframes: 1.0, flashT: 0, anim: "idle",
+    dashT: 0, dashVx: 0, dashVz: 0, dashHit: new Set<string>(),
   };
   return {
     level: next, depth: g.depth + 1, player,
@@ -410,40 +481,84 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   const p = g.player;
 
   // ── Player movement ──
-  const mag = Math.hypot(input.ax, input.az);
-  if (mag > 0.01) {
-    const nx = (input.ax / mag) * PLAYER_SPEED * dt;
-    const nz = (input.az / mag) * PLAYER_SPEED * dt;
-    tryMove(g.level, p, nx, nz, PLAYER_R);
-    // Facing: model's default forward is +Z, so rotation.y = 0 → +Z.
-    // With camera looking down at the world, input.az = +1 (south)
-    // means the player moves +Z and should face +Z. The old formula
-    // used atan2(ax, -az) which made the model face the OPPOSITE
-    // direction (backward bug). atan2(ax, az) is the right mapping.
-    p.facing = Math.atan2(input.ax, input.az);
-    p.anim = p.attackT > 0 ? "attack" : "walk";
+  // Phase 3: Warrior dash overrides regular movement while dashT > 0.
+  if (p.dashT > 0) {
+    p.dashT = Math.max(0, p.dashT - dt);
+    tryMove(g.level, p, p.dashVx * dt, p.dashVz * dt, PLAYER_R);
+    // Contact damage to enemies whose hitbox the dash crosses.
+    for (const e of g.enemies) {
+      if (e.deathT > 0) continue;
+      if (p.dashHit.has(e.id)) continue;
+      const ddx = e.x - p.x, ddz = e.z - p.z;
+      const rsum = PLAYER_R + ENEMY_R + 0.2;
+      if (ddx * ddx + ddz * ddz < rsum * rsum) {
+        p.dashHit.add(e.id);
+        e.hp -= p.attackDmg;
+        e.flashT = 0.18;
+        const _vm = Math.hypot(p.dashVx, p.dashVz) || 1;
+        e.hitStun = 0.15;
+        e.kbX = p.dashVx / _vm;
+        e.kbZ = p.dashVz / _vm;
+        if (e.hp <= 0) {
+          e.deathT = 0.6;
+          g.runKills++;
+          const n = 2 + Math.floor(Math.random() * 3);
+          for (let k = 0; k < n; k++) {
+            g.coins.push({
+              id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              x: e.x + (Math.random() - 0.5) * 1.2,
+              z: e.z + (Math.random() - 0.5) * 1.2,
+              y: 0.5,
+              vx: (Math.random() - 0.5) * 2,
+              vz: (Math.random() - 0.5) * 2,
+              vy: 2 + Math.random() * 1.5,
+              ttl: 14,
+            });
+          }
+          g.hitStop = Math.max(g.hitStop, 0.10);
+        } else {
+          g.hitStop = Math.max(g.hitStop, 0.04);
+        }
+      }
+    }
+    p.facing = Math.atan2(p.dashVx, p.dashVz);
+    p.anim = "attack";
   } else {
-    p.anim = p.attackT > 0 ? "attack" : "idle";
+    const mag = Math.hypot(input.ax, input.az);
+    if (mag > 0.01) {
+      const nx = (input.ax / mag) * p.speed * dt;
+      const nz = (input.az / mag) * p.speed * dt;
+      tryMove(g.level, p, nx, nz, PLAYER_R);
+      p.facing = Math.atan2(input.ax, input.az);
+      p.anim = p.attackT > 0 ? "attack" : "walk";
+    } else {
+      p.anim = p.attackT > 0 ? "attack" : "idle";
+    }
   }
   if (p.flashT > 0) p.anim = "hurt";
 
   // ── Player attack ──
-  if (input.attack && p.attackT <= 0 && p.iframes <= 0) {
+  if (input.attack && p.attackT <= 0 && p.iframes <= 0 && p.dashT <= 0) {
     p.attackT = p.attackDur;
-    // Hitbox: a small circle in front of the player based on facing.
-    const ahead = ATTACK_RANGE * 0.5;
-    const hbX = p.x + Math.sin(p.facing) * ahead;
-    const hbZ = p.z - Math.cos(p.facing) * ahead;
+    // Mage: 360° frost nova centered on the player. Damages + slows
+    // every living enemy within attackRange.
+    // Warrior/Ranger: frontal cone hitbox in front of the player.
+    const isNova = p.classId === "mage";
+    const ahead = p.attackRange * 0.5;
+    const hbX = isNova ? p.x : p.x + Math.sin(p.facing) * ahead;
+    const hbZ = isNova ? p.z : p.z - Math.cos(p.facing) * ahead;
+    const hitR = isNova ? p.attackRange : p.attackRange;
     for (const e of g.enemies) {
       if (e.deathT > 0) continue;
-      if (dist2({ x: hbX, z: hbZ }, e) < ATTACK_RANGE) {
-        e.hp -= ATTACK_DAMAGE;
+      if (dist2({ x: hbX, z: hbZ }, e) < hitR) {
+        e.hp -= p.attackDmg;
         e.flashT = 0.18;
-        // Hit-react: stun + knockback away from player.
+        // Hit-react: stun + knockback away from player. Mage's nova
+        // slows harder (0.25s stun) and shoves enemies outward.
         {
           const _kdx = e.x - p.x, _kdz = e.z - p.z;
           const _km = Math.hypot(_kdx, _kdz) || 1;
-          e.hitStun = 0.12;
+          e.hitStun = isNova ? 0.25 : 0.12;
           e.kbX = _kdx / _km;
           e.kbZ = _kdz / _km;
         }
@@ -477,7 +592,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
 
   // ── Player ranged auto-aim ──
   p.rangedCd = Math.max(0, p.rangedCd - dt);
-  if (input.ranged && p.rangedCd <= 0 && p.iframes <= 0) {
+  if (input.ranged && p.rangedCd <= 0 && p.iframes <= 0 && p.dashT <= 0) {
     p.rangedCd = p.rangedCdDur;
     // Nearest living enemy within RANGED_RANGE.
     let nearest: Enemy | null = null;
@@ -497,16 +612,47 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       dirX = Math.sin(p.facing);
       dirZ = Math.cos(p.facing);
     }
-    g.projectiles.push({
-      id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      x: p.x + dirX * 0.7,
-      z: p.z + dirZ * 0.7,
-      vx: dirX * RANGED_SPEED,
-      vz: dirZ * RANGED_SPEED,
-      ttl: RANGED_TTL,
-      damage: RANGED_DAMAGE,
-    });
-    g.hitStop = Math.max(g.hitStop, 0.04);
+    if (p.classId === "warrior") {
+      // Warrior dash: 4u forward over 0.2s, contact damage handled in
+      // movement block via dashHit set.
+      p.dashT = 0.2;
+      p.dashVx = dirX * (4 / 0.2);
+      p.dashVz = dirZ * (4 / 0.2);
+      p.dashHit = new Set<string>();
+      p.iframes = Math.max(p.iframes, 0.22);
+      g.hitStop = Math.max(g.hitStop, 0.04);
+    } else if (p.classId === "ranger") {
+      // Ranger: two arrows, one straight + one offset ±15° per shot.
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      const ang = (15 * Math.PI) / 180;
+      const cosA = Math.cos(ang * sign);
+      const sinA = Math.sin(ang * sign);
+      const oX = dirX * cosA - dirZ * sinA;
+      const oZ = dirX * sinA + dirZ * cosA;
+      const spd = p.rangedSpeed;
+      g.projectiles.push({
+        id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        x: p.x + dirX * 0.7, z: p.z + dirZ * 0.7,
+        vx: dirX * spd, vz: dirZ * spd,
+        ttl: RANGED_TTL, damage: p.rangedDmg, radius: p.rangedRadius,
+      });
+      g.projectiles.push({
+        id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_b`,
+        x: p.x + oX * 0.7, z: p.z + oZ * 0.7,
+        vx: oX * spd, vz: oZ * spd,
+        ttl: RANGED_TTL, damage: p.rangedDmg, radius: p.rangedRadius,
+      });
+      g.hitStop = Math.max(g.hitStop, 0.03);
+    } else {
+      // Mage fireball: slow, heavy, fat collision radius.
+      g.projectiles.push({
+        id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        x: p.x + dirX * 0.7, z: p.z + dirZ * 0.7,
+        vx: dirX * p.rangedSpeed, vz: dirZ * p.rangedSpeed,
+        ttl: RANGED_TTL + 0.4, damage: p.rangedDmg, radius: p.rangedRadius,
+      });
+      g.hitStop = Math.max(g.hitStop, 0.05);
+    }
   }
 
   // ── Projectile step ──
@@ -529,7 +675,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
     for (const e of g.enemies) {
       if (e.deathT > 0) continue;
       const dx = e.x - pr.x, dz = e.z - pr.z;
-      const rsum = RANGED_RADIUS + ENEMY_R;
+      const rsum = (pr.radius ?? RANGED_RADIUS) + ENEMY_R;
       if (dx * dx + dz * dz < rsum * rsum) {
         e.hp -= pr.damage;
         e.flashT = 0.18;

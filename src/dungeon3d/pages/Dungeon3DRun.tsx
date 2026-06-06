@@ -17,7 +17,8 @@ import * as THREE from "three";
 import {
   newGame, step, descendLevel, CELL, COLS, ROWS, WORLD_W, WORLD_H,
   isCellVisible,
-  type Game, type InputState,
+  CLASS_DEFS,
+  type Game, type InputState, type ClassId,
 } from "../engine";
 import {
   loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
@@ -26,13 +27,15 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T20:30:00Z";
+const BUILD_STAMP = "2026-06-06T21:45:00Z";
 
 export default function Dungeon3DRun() {
   const navigate = useNavigate();
   const dungeon = useDungeon3D();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const gameRef = useRef<Game>(newGame());
+  // Phase 3: game is null until the player picks a class.
+  const gameRef = useRef<Game | null>(null);
+  const [classChoice, setClassChoice] = useState<ClassId | null>(null);
   const [, force] = useState(0);
   const [endShown, setEndShown] = useState(false);
   const recordedRef = useRef(false);
@@ -278,6 +281,12 @@ export default function Dungeon3DRun() {
     (async () => {
       const container = containerRef.current;
       if (!container) return;
+      // Phase 3: don't mount the scene until the player picks a class.
+      if (!classChoice) return;
+      // Lazily construct the game with the chosen class.
+      if (!gameRef.current) {
+        gameRef.current = newGame(1, classChoice);
+      }
 
       await preloadCriticalModels();
       if (cancelled) return;
@@ -342,15 +351,22 @@ export default function Dungeon3DRun() {
       renderer.domElement.style.height = "100%";
 
       // â”€â”€ Build initial dungeon + entities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      const dungeonGroup = await buildDungeon(scene, gameRef.current.level);
+      const dungeonGroup = await buildDungeon(scene, gameRef.current!.level);
       if (cancelled) return;
       const coinGroup = buildCoinMeshes(scene);
-      const chestGroup = buildChestMeshes(scene, gameRef.current.level);
+      const chestGroup = buildChestMeshes(scene, gameRef.current!.level);
 
-      // Player character.
-      const playerRes = await loadCharacter(CHARACTER_MODELS.player);
+      // Player character. Phase 3: model + tint vary by class.
+      const _classUrl: Record<ClassId, string> = {
+        warrior: CHARACTER_MODELS.player,
+        ranger:  "/assets/kenney/blocky-characters/Models/GLB%20format/character-b.glb",
+        mage:    "/assets/kenney/blocky-characters/Models/GLB%20format/character-e.glb",
+      };
+      const _classTint = CLASS_DEFS[classChoice].tint;
+      const playerRes = await loadCharacter(_classUrl[classChoice]);
       if (cancelled) return;
-      playerRes.obj.position.set(gameRef.current.player.x, 0, gameRef.current.player.z);
+      tintModel(playerRes.obj, _classTint);
+      playerRes.obj.position.set(gameRef.current!.player.x, 0, gameRef.current!.player.z);
       // Slightly smaller than the dungeon to match the iso scale.
       playerRes.obj.scale.setScalar(0.9);
       scene.add(playerRes.obj);
@@ -370,19 +386,19 @@ export default function Dungeon3DRun() {
         enemyObjs.set(eId, { obj: res.obj, mixer: res.mixer });
       }
       // Kick off all enemy loads at once.
-      for (const e of gameRef.current.enemies) {
+      for (const e of gameRef.current!.enemies) {
         const color = e.kind === "brute" ? 0xff7777 : e.kind === "scout" ? 0x77ff77 : 0xff9944;
         await ensureEnemyMesh(e.id, e.kind, color);
       }
 
       // Snap camera + game target to player so first frame isn't at world origin.
       {
-        const _p = gameRef.current.player;
+        const _p = gameRef.current!.player;
         const _lookZ = camTuningRef.current.lookAtZ;
         camera.position.set(_p.x + 18, 22, _p.z + 18 + _lookZ);
         camera.lookAt(_p.x, 0, _p.z + _lookZ);
-        gameRef.current.cameraTargetX = _p.x;
-        gameRef.current.cameraTargetZ = _p.z;
+        gameRef.current!.cameraTargetX = _p.x;
+        gameRef.current!.cameraTargetZ = _p.z;
       }
 
       threeRef.current = {
@@ -433,6 +449,7 @@ export default function Dungeon3DRun() {
         inputRef.current.ranged = k.ranged;
 
         const g = gameRef.current;
+        if (!g) return;
         step(g, dt, inputRef.current);
 
         // Resize check.
@@ -704,7 +721,7 @@ export default function Dungeon3DRun() {
       threeRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [classChoice]);
 
   // Rebuild scene contents for a new level (called on descend).
   async function rebuildLevel(nextGame: Game) {
@@ -768,24 +785,104 @@ export default function Dungeon3DRun() {
   }
 
   const g = gameRef.current;
-  const hpPct = Math.max(0, g.player.hp / g.player.hpMax);
+  const hpPct = g ? Math.max(0, g.player.hp / g.player.hpMax) : 1;
 
   // Record run-end stats once.
   useEffect(() => {
     if (recordedRef.current) return;
+    if (!g) return;
     if (g.state !== "playing" && !endShown) {
       setEndShown(true);
       recordedRef.current = true;
       dungeon.finishRun(g.runCoins, g.runKills, g.depth, g.state === "cleared");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [g.state]);
+  }, [g?.state]);
 
   function newRun() {
-    gameRef.current = newGame();
+    // Phase 3: send the player back to class-select. The setup useEffect
+    // tears down the scene on the next render (classChoice → null) and
+    // remounts with the new class once the user picks one.
+    const t3 = threeRef.current;
+    if (t3) t3.dispose();
+    threeRef.current = null;
+    gameRef.current = null;
     setEndShown(false);
     recordedRef.current = false;
-    rebuildLevel(gameRef.current);
+    setClassChoice(null);
+  }
+
+  // ── Class-select screen ────────────────────────────────────────────
+  if (!classChoice || !g) {
+    const order: ClassId[] = ["warrior", "ranger", "mage"];
+    const cardBg: Record<ClassId, string> = {
+      warrior: "linear-gradient(135deg, rgba(255,138,76,0.22), rgba(20,5,8,0.92))",
+      ranger:  "linear-gradient(135deg, rgba(110,224,122,0.22), rgba(5,20,10,0.92))",
+      mage:    "linear-gradient(135deg, rgba(200,160,255,0.22), rgba(10,5,20,0.92))",
+    };
+    const cardBorder: Record<ClassId, string> = {
+      warrior: "#ff8a4c",
+      ranger:  "#6ee07a",
+      mage:    "#c8a0ff",
+    };
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4"
+           style={{
+             background: "#0a0510", color: "#fef3c7",
+             paddingTop: "env(safe-area-inset-top, 0px)",
+             paddingBottom: "env(safe-area-inset-bottom, 0px)",
+           }}>
+        <header className="absolute top-0 left-0 right-0 px-3 py-2 flex items-center gap-2"
+                style={{ background: "rgba(0,0,0,0.65)" }}>
+          <button onClick={() => navigate("/dungeon3d")} aria-label="Quit"
+                  className="w-9 h-9 rounded-full flex items-center justify-center pressable touch-target"
+                  style={{ background: "rgba(255,255,255,0.08)" }}>
+            <ArrowLeft size={14} />
+          </button>
+          <div className="flex-1 font-display tracking-widest text-[11px]"
+               style={{ color: "#fde047" }}>CHOOSE YOUR HERO</div>
+          <div className="text-[9px] font-mono opacity-60" style={{ color: "#fde047" }}
+               title={`Build stamp: ${BUILD_STAMP}`}>
+            {BUILD_STAMP.slice(5, 16).replace("T", " ")}
+          </div>
+        </header>
+        <div className="w-full max-w-md grid gap-3 mt-12">
+          {order.map(c => {
+            const cd = CLASS_DEFS[c];
+            return (
+              <button key={c} onClick={() => { setEndShown(false); recordedRef.current = false; setClassChoice(c); }}
+                      className="text-left rounded-2xl p-4 pressable touch-target"
+                      style={{
+                        background: cardBg[c],
+                        border: `1.5px solid ${cardBorder[c]}`,
+                        color: "#fef3c7",
+                      }}>
+                <div className="flex items-baseline gap-2">
+                  <div className="font-display tracking-widest text-lg"
+                       style={{ color: cardBorder[c] }}>{cd.label.toUpperCase()}</div>
+                  <div className="text-[10px] opacity-75">{cd.tagline}</div>
+                </div>
+                <div className="mt-2 grid grid-cols-4 gap-2 text-[10px] font-mono opacity-90">
+                  <div><div className="opacity-60">HP</div><div>{cd.hpMax}</div></div>
+                  <div><div className="opacity-60">SPD</div><div>{cd.speed.toFixed(1)}</div></div>
+                  <div><div className="opacity-60">MELEE</div><div>{cd.attackDmg}</div></div>
+                  <div>
+                    <div className="opacity-60">{c === "warrior" ? "DASH" : "RANGED"}</div>
+                    <div>{c === "warrior" ? "4u/0.2s" : `${cd.rangedDmg}×${(1 / cd.rangedCdDur).toFixed(1)}/s`}</div>
+                  </div>
+                </div>
+                <div className="mt-2 text-[9px] opacity-60">
+                  {c === "warrior" && "Zap = forward dash w/ contact damage."}
+                  {c === "ranger"  && "Zap = two arrows per shot, fast cooldown."}
+                  {c === "mage"    && "Sword = frost nova (AoE + slow). Zap = fat fireball."}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-4 text-[10px] opacity-50">Tap a card to start the run.</div>
+      </div>
+    );
   }
 
   return (
@@ -805,6 +902,12 @@ export default function Dungeon3DRun() {
         </button>
         <div className="flex-1 flex items-center gap-2 text-[11px]">
           <div className="font-display tracking-widest" style={{ color: "#fde047" }}>DUNGEON</div>
+          <div className="font-display tracking-wider text-[10px]"
+               style={{ color: CLASS_DEFS[classChoice].tint === 0xff8a4c ? "#ff8a4c"
+                          : CLASS_DEFS[classChoice].tint === 0x6ee07a ? "#6ee07a"
+                          : "#c8a0ff" }}>
+            Â· {CLASS_DEFS[classChoice].label.toUpperCase()}
+          </div>
           <div className="opacity-70">Â·  Lv {g.depth}</div>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-mono" style={{ color: "#fca5a5" }}>
@@ -899,9 +1002,17 @@ export default function Dungeon3DRun() {
             right: "max(28%, calc(110px + env(safe-area-inset-right, 0px)))",
             bottom: "max(8%, calc(36px + env(safe-area-inset-bottom, 0px)))",
             width: 72, height: 72, borderRadius: "50%",
-            background: "linear-gradient(135deg, rgba(96,165,250,0.85), rgba(37,99,235,0.85))",
-            border: "3px solid rgba(191,219,254,0.65)",
-            color: "#dbeafe",
+            background: classChoice === "warrior"
+              ? "linear-gradient(135deg, rgba(255,160,90,0.9), rgba(220,90,30,0.9))"
+              : classChoice === "ranger"
+              ? "linear-gradient(135deg, rgba(110,224,122,0.9), rgba(30,160,80,0.9))"
+              : "linear-gradient(135deg, rgba(255,170,90,0.9), rgba(220,60,30,0.9))",
+            border: classChoice === "warrior"
+              ? "3px solid rgba(255,220,170,0.7)"
+              : classChoice === "ranger"
+              ? "3px solid rgba(220,255,210,0.7)"
+              : "3px solid rgba(255,210,180,0.75)",
+            color: "#fff7ed",
             fontSize: 24,
             display: "flex", alignItems: "center", justifyContent: "center",
             touchAction: "none",
