@@ -2,7 +2,7 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-06 (Nick iPad device review)
+**Last updated:** 2026-06-06 (Phase 2a shipped — ranged auto-aim weapon)
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
 
 ---
@@ -46,7 +46,7 @@
 | Item | Status | Notes |
 |---|---|---|
 | Melee attack button | ✅ done | Red sword button bottom-right. Hooked to `input.attack` → `p.attackT` → hitbox check. Works |
-| **Ranged weapon with auto-aim to nearest enemy** | ❌ todo (Nick request) | New input + button: blue/purple button to left of melee. On press: pick nearest enemy in range (e.g. 8 units, within fog-revealed area), spawn projectile from player toward it, projectile flies for N frames or until collision. Damage on hit + impact particles. Add ranged-weapon clip to player. |
+| **Ranged weapon with auto-aim to nearest enemy** | ✅ done (Phase 2a, 2026-06-06, commit `225dc86`) | Blue Zap touch button (72px) left of melee + F/L key bindings. On press: nearest living enemy within `RANGED_RANGE=9` is picked, `p.facing` rotates toward it, projectile spawns at `p.pos + dir*0.7` with velocity `dir*RANGED_SPEED(18)`, lives `RANGED_TTL=1.2s`, deals `RANGED_DAMAGE=12`. Glowy blue sphere mesh (0x60a5fa emissive). Wall + enemy collision; on kill drops 2-4 coins same as melee. `rangedCdDur=0.55s` cooldown. Tiny hit-stop on fire. Verified on Vercel dpl_BE2y94CBwiJ6zSq6QNr6UY7wSL4J. |
 | Multiple attack options (heavy + light combo) | ❌ todo | Phase 2 spec: light + heavy melee; light = current, heavy = hold attack for 0.4s → larger hitbox + knockback + slower windup |
 | Enemy AI variety (chargers/ranged/swarmers/tanky) | ❌ todo | Per-kind behavior: chargers telegraph + dash, ranged kite + projectile, swarmers travel in groups, tanky has armor + slow swing |
 | Dodge-roll or block | ❌ todo | Tap-jump button or double-tap joystick → 0.3s iframes + dash 4 units in current facing |
@@ -154,7 +154,15 @@
 
 When you re-fire "continue the dungeon roadmap":
 1. Read this file.
-2. Resume at the first ❌ item in Phase 0.
-3. Complete & verify it. Update this file.
-4. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
-5. Don't advance to Phase 1 until ALL Phase 0 items are ✅ or 🔮.
+2. **Phase 2b queued next** (fighting + weapon animations, then body-blocking feel). Phase 1c biomes is the user's alternative — they will pick one on next ping.
+3. Otherwise resume at the first ❌ item.
+4. Complete & verify it. Update this file.
+5. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
+
+## Phase 2a session notes (2026-06-06)
+
+- Commit `225dc86` on `main`, deployed by Vercel as `dpl_BE2y94CBwiJ6zSq6QNr6UY7wSL4J` (READY at 1780763080).
+- Aliases: `henry-dynasty.vercel.app`, `henry-dynasty-git-main-nickberry-debugs-projects.vercel.app`.
+- Patch script: `C:\Projects\patch_dungeon3d_phase2a.py` (19 hunks, all matched). Files changed: `src/dungeon3d/engine.ts` + `src/dungeon3d/pages/Dungeon3DRun.tsx`.
+- `npm run build` green (tsc + vite). Only pre-existing chunk-size + dexie dynamic-import warnings.
+- BUILD_STAMP bumped to `2026-06-06T18:00:00Z` so Nick can confirm new build on-device.
