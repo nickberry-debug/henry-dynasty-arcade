@@ -67,6 +67,9 @@ export interface Enemy {
   atkCd: number;
   flashT: number;
   deathT: number;
+  hitStun: number;
+  kbX: number;
+  kbZ: number;
 }
 
 export interface Coin {
@@ -326,6 +329,7 @@ function mkEnemy(s: { kind: EnemyKind; x: number; z: number }): Enemy {
     kind: s.kind, x: s.x, z: s.z,
     hp, hpMax: hp, facing: 0,
     state: "idle", atkCd: 0, flashT: 0, deathT: 0,
+    hitStun: 0, kbX: 0, kbZ: 0,
   };
 }
 
@@ -435,6 +439,14 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       if (dist2({ x: hbX, z: hbZ }, e) < ATTACK_RANGE) {
         e.hp -= ATTACK_DAMAGE;
         e.flashT = 0.18;
+        // Hit-react: stun + knockback away from player.
+        {
+          const _kdx = e.x - p.x, _kdz = e.z - p.z;
+          const _km = Math.hypot(_kdx, _kdz) || 1;
+          e.hitStun = 0.12;
+          e.kbX = _kdx / _km;
+          e.kbZ = _kdz / _km;
+        }
         if (e.hp <= 0) {
           e.deathT = 0.6;
           g.runKills++;
@@ -521,6 +533,13 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       if (dx * dx + dz * dz < rsum * rsum) {
         e.hp -= pr.damage;
         e.flashT = 0.18;
+        // Hit-react: stun + knockback along projectile velocity.
+        {
+          const _vm = Math.hypot(pr.vx, pr.vz) || 1;
+          e.hitStun = 0.12;
+          e.kbX = pr.vx / _vm;
+          e.kbZ = pr.vz / _vm;
+        }
         if (e.hp <= 0) {
           e.deathT = 0.6;
           g.runKills++;
@@ -550,6 +569,15 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   for (const e of g.enemies) {
     if (e.deathT > 0) { e.deathT = Math.max(0, e.deathT - dt); continue; }
     if (e.flashT > 0) e.flashT = Math.max(0, e.flashT - dt);
+    // Hit-stun: apply knockback push, skip AI/movement while stunned.
+    if (e.hitStun > 0) {
+      e.hitStun = Math.max(0, e.hitStun - dt);
+      const KB_SPEED = 4.0;  // ~0.4 units over ~0.1s
+      if (e.kbX !== 0 || e.kbZ !== 0) {
+        tryMove(g.level, e, e.kbX * KB_SPEED * dt, e.kbZ * KB_SPEED * dt, ENEMY_R);
+      }
+      continue;
+    }
     const d = dist2(e, p);
     if (d < 10) e.state = d < ENEMY_ATTACK_RANGE ? "attack" : "chase";
     else e.state = "idle";
@@ -581,6 +609,25 @@ export function step(g: Game, dtRaw: number, input: InputState) {
     }
   }
   g.enemies = g.enemies.filter(e => e.deathT > 0 || e.hp > 0);
+
+  // ── Body-block / shoulder-bump ──
+  // Player-enemy overlap pushes them apart. If either is mid-attack we
+  // amplify the push and add a tiny hit-stop so contact has weight.
+  for (const e of g.enemies) {
+    if (e.deathT > 0) continue;
+    const dx = e.x - p.x, dz = e.z - p.z;
+    const d = Math.hypot(dx, dz);
+    const minDist = PLAYER_R + ENEMY_R;
+    if (d > 0.001 && d < minDist) {
+      const nx = dx / d, nz = dz / d;
+      const overlap = minDist - d;
+      const amped = (p.attackT > 0 || e.state === "attack");
+      const push = overlap * (amped ? 1.6 : 0.8);
+      tryMove(g.level, e, nx * push, nz * push, ENEMY_R);
+      tryMove(g.level, p, -nx * push * 0.5, -nz * push * 0.5, PLAYER_R);
+      if (amped) g.hitStop = Math.max(g.hitStop, 0.03);
+    }
+  }
 
   // ── Coins ──
   for (const c of g.coins) {

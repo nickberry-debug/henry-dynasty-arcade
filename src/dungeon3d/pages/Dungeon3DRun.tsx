@@ -26,7 +26,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T18:00:00Z";
+const BUILD_STAMP = "2026-06-06T20:30:00Z";
 
 export default function Dungeon3DRun() {
   const navigate = useNavigate();
@@ -40,12 +40,37 @@ export default function Dungeon3DRun() {
 
   // Input snapshot.
   const inputRef = useRef<InputState>({ ax: 0, az: 0, attack: false, ranged: false });
+  // Camera tuning recomputed on resize/orientationchange so portrait gets
+  // a wider frustum + larger lookAt offset (player stays nicely framed).
+  const camTuningRef = useRef({ d: 14, lookAtZ: 1.5 });
+  const [viewport, setViewport] = useState({
+    w: typeof window === "undefined" ? 0 : window.innerWidth,
+    h: typeof window === "undefined" ? 0 : window.innerHeight,
+  });
   const keys = useRef({ up: false, down: false, left: false, right: false, attack: false, ranged: false });
   const joyRef = useRef<{ active: boolean; cx: number; cy: number; x: number; y: number; id: number | null }>({
     active: false, cx: 0, cy: 0, x: 0, y: 0, id: null,
   });
 
   useEffect(() => { unlockAudio(); }, []);
+
+  // Recompute camera tuning + viewport badge on resize / orientation change.
+  useEffect(() => {
+    function recompute() {
+      const w = window.innerWidth, h = window.innerHeight;
+      const portrait = h > w;
+      camTuningRef.current.d = portrait ? 14 * 1.15 : 14;
+      camTuningRef.current.lookAtZ = portrait ? 3.0 : 1.5;
+      setViewport({ w, h });
+    }
+    recompute();
+    window.addEventListener("resize", recompute);
+    window.addEventListener("orientationchange", recompute);
+    return () => {
+      window.removeEventListener("resize", recompute);
+      window.removeEventListener("orientationchange", recompute);
+    };
+  }, []);
 
   // Keyboard wiring.
   useEffect(() => {
@@ -87,7 +112,7 @@ export default function Dungeon3DRun() {
     camera: THREE.OrthographicCamera;
     playerObj: THREE.Object3D;
     playerMixer: THREE.AnimationMixer | null;
-    playerActions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction };
+    playerActions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction; attack?: THREE.AnimationAction };
     enemyObjs: Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }>;
     dungeonGroup: THREE.Group;
     coinGroup: THREE.Group;
@@ -287,9 +312,10 @@ export default function Dungeon3DRun() {
       // perspective. We use orthographic to keep the chunky kit pieces
       // looking clean at any screen size. d controls zoom level.
       const aspect = container.clientWidth / container.clientHeight;
-      // Pulled back from d=8 to d=14 â€” user feedback said too close.
-      // Bigger d = more world visible in the orthographic frustum.
-      const d = 14;
+      // Pulled back from d=8 to d=14 -- user feedback said too close.
+      // Bigger d = more world visible in the orthographic frustum. Portrait
+      // multiplies d by 1.15 (see camTuningRef recompute on resize).
+      let d = camTuningRef.current.d;
       const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 100);
       // Iso angle: 35.264Â° pitch + 45Â° yaw is the "true" isometric
       // angle. Camera offset proportional to d so the pitch stays
@@ -349,11 +375,21 @@ export default function Dungeon3DRun() {
         await ensureEnemyMesh(e.id, e.kind, color);
       }
 
+      // Snap camera + game target to player so first frame isn't at world origin.
+      {
+        const _p = gameRef.current.player;
+        const _lookZ = camTuningRef.current.lookAtZ;
+        camera.position.set(_p.x + 18, 22, _p.z + 18 + _lookZ);
+        camera.lookAt(_p.x, 0, _p.z + _lookZ);
+        gameRef.current.cameraTargetX = _p.x;
+        gameRef.current.cameraTargetZ = _p.z;
+      }
+
       threeRef.current = {
         renderer, scene, camera,
         playerObj: playerRes.obj,
         playerMixer: playerRes.mixer,
-        playerActions: { idle: playerRes.actions.idle, walk: playerRes.actions.walk },
+        playerActions: { idle: playerRes.actions.idle, walk: playerRes.actions.walk, attack: playerRes.actions.attack },
         enemyObjs,
         dungeonGroup,
         coinGroup,
@@ -402,24 +438,24 @@ export default function Dungeon3DRun() {
         // Resize check.
         const t3 = threeRef.current;
         if (t3) {
+          // Re-read d each frame so orientation flips update the frustum.
+          const _tuning = camTuningRef.current;
+          d = _tuning.d;
+          const _curAspect = container.clientWidth / container.clientHeight;
           if (container.clientWidth !== renderer.domElement.width / renderer.getPixelRatio()
-            || container.clientHeight !== renderer.domElement.height / renderer.getPixelRatio()) {
+            || container.clientHeight !== renderer.domElement.height / renderer.getPixelRatio()
+            || camera.top !== d) {
             renderer.setSize(container.clientWidth, container.clientHeight);
-            const aspect = container.clientWidth / container.clientHeight;
-            camera.left = -d * aspect; camera.right = d * aspect;
+            camera.left = -d * _curAspect; camera.right = d * _curAspect;
+            camera.top = d; camera.bottom = -d;
             camera.updateProjectionMatrix();
           }
 
-          // Camera follows player at the iso offset matching the
-          // zoomed-out d=14 framing.
+          // Camera follows player at the iso offset. lookAt offset is
+          // recomputed on resize/orientation change (portrait gets 3.0,
+          // landscape 1.5) so the player stays well-framed above the UI.
           const cam = t3.camera;
-          // LOOKAT_Z_OFFSET pushes the player higher in the frame on portrait iPhone
-          // (negative Z is "north" on the iso projection, which appears higher on screen,
-          // but the camera looks from +Z so a target shifted +Z appears lower; we want
-          // the player to appear higher â†’ shift target +Z by ~CELL/3 from the player's
-          // actual world position so the camera looks slightly "past" the player into +Z,
-          // making the player render higher in the frame).
-          const LOOKAT_Z_OFFSET = 1.5;  // ~CELL/3, tuned for iPhone portrait
+          const LOOKAT_Z_OFFSET = _tuning.lookAtZ;
           cam.position.x = g.cameraTargetX + 18;
           cam.position.z = g.cameraTargetZ + 18 + LOOKAT_Z_OFFSET;
           cam.position.y = 22;
@@ -483,12 +519,60 @@ export default function Dungeon3DRun() {
             }
           }
 
-          // Crossfade idle â†” walk via weight.
+          // Attack action dominates when attackT > 0; otherwise crossfade idle/walk.
+          const isAttacking = g.player.attackT > 0;
+          const isWalking = g.player.anim === "walk";
+          if (t3.playerActions.attack) {
+            const targetAtk = isAttacking ? 1 : 0;
+            t3.playerActions.attack.weight = lerp(t3.playerActions.attack.weight, targetAtk, 0.4);
+          } else if (isAttacking) {
+            // Procedural fallback: rotate rig ±20° as a half-sine pulse across the swing.
+            const _atkProg = 1 - (g.player.attackT / g.player.attackDur);
+            const _swing = Math.sin(_atkProg * Math.PI) * (20 * Math.PI / 180);
+            t3.playerObj.rotation.y = g.player.facing + _swing;
+          }
           if (t3.playerActions.idle && t3.playerActions.walk) {
-            const walking = g.player.anim === "walk" || g.player.anim === "attack";
-            const tw = walking ? 1 : 0;
+            const atkW = t3.playerActions.attack?.weight ?? 0;
+            const remaining = Math.max(0, 1 - atkW);
+            const tw = (isWalking ? 1 : 0) * remaining;
             t3.playerActions.walk.weight = lerp(t3.playerActions.walk.weight, tw, 0.2);
-            t3.playerActions.idle.weight = 1 - t3.playerActions.walk.weight;
+            t3.playerActions.idle.weight = Math.max(0, remaining - t3.playerActions.walk.weight);
+          }
+
+          // ── Sword swing trail (additive arc, fades over the swing window). ──
+          {
+            let trailAnchor = (t3 as any).swordTrailAnchor as THREE.Object3D | undefined;
+            let trailMat = (t3 as any).swordTrailMat as THREE.MeshBasicMaterial | undefined;
+            if (!trailAnchor || !trailMat) {
+              const tgeo = new THREE.RingGeometry(0.8, 1.8, 16, 1, Math.PI / 4, Math.PI / 2);
+              trailMat = new THREE.MeshBasicMaterial({
+                color: 0xfff8c5,
+                transparent: true,
+                opacity: 0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+              });
+              const trailMesh = new THREE.Mesh(tgeo, trailMat);
+              trailMesh.rotation.x = -Math.PI / 2;  // lay flat in XZ plane
+              trailAnchor = new THREE.Object3D();
+              trailAnchor.add(trailMesh);
+              trailAnchor.visible = false;
+              t3.scene.add(trailAnchor);
+              (t3 as any).swordTrailAnchor = trailAnchor;
+              (t3 as any).swordTrailMat = trailMat;
+            }
+            if (g.player.attackT > 0) {
+              const atkProg = 1 - (g.player.attackT / g.player.attackDur);  // 0→1
+              trailAnchor.visible = true;
+              trailAnchor.position.set(g.player.x, 1.0, g.player.z);
+              // Sweep the arc through ~46° across the swing window.
+              trailAnchor.rotation.y = g.player.facing + (atkProg - 0.5) * 0.8;
+              trailMat.opacity = (1 - atkProg) * 0.85;
+            } else {
+              trailAnchor.visible = false;
+              trailMat.opacity = 0;
+            }
           }
           // Hit-flash overlay on player â€” tint the materials.
           if (g.player.flashT > 0) {
@@ -518,8 +602,26 @@ export default function Dungeon3DRun() {
             const egz = Math.floor((e.z + WORLD_H / 2) / CELL);
             handle.obj.visible = isCellVisible(g, egx, egz);
             if (handle.mixer) handle.mixer.update(dt);
-            const fadeOut = e.deathT > 0 ? (e.deathT / 0.6) : 1;
-            handle.obj.scale.setScalar(0.9 * fadeOut);
+            if (e.deathT > 0) {
+              // Death window: scale Y 1→0.3, fade opacity 1→0 over 0.6s.
+              const deathProg = 1 - (e.deathT / 0.6);  // 0→1
+              handle.obj.scale.x = 0.9;
+              handle.obj.scale.z = 0.9;
+              handle.obj.scale.y = 0.9 * lerp(1, 0.3, deathProg);
+              handle.obj.traverse(o => {
+                const mesh = o as THREE.Mesh;
+                if (!mesh.isMesh) return;
+                const m = mesh.material as THREE.Material | THREE.Material[];
+                const apply = (mm: THREE.Material) => {
+                  mm.transparent = true;
+                  (mm as any).opacity = 1 - deathProg;
+                };
+                if (Array.isArray(m)) m.forEach(apply);
+                else if (m) apply(m);
+              });
+            } else {
+              handle.obj.scale.setScalar(0.9);
+            }
             // Hit-flash.
             if (e.flashT > 0) {
               handle.obj.traverse(o => {
@@ -687,7 +789,13 @@ export default function Dungeon3DRun() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "#0a0510", color: "#fef3c7" }}>
+    <div className="min-h-screen flex flex-col" style={{
+      background: "#0a0510", color: "#fef3c7",
+      overflow: "hidden",
+      paddingTop: "env(safe-area-inset-top, 0px)",
+      paddingLeft: "env(safe-area-inset-left, 0px)",
+      paddingRight: "env(safe-area-inset-right, 0px)",
+    }}>
       <header className="px-3 py-2 flex items-center gap-2"
         style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(6px)" }}>
         <button onClick={() => navigate("/dungeon3d")} aria-label="Quit"
@@ -708,6 +816,10 @@ export default function Dungeon3DRun() {
         <div className="text-[9px] font-mono ml-2 opacity-60" style={{ color: "#fde047" }}
              title={`Build stamp: ${BUILD_STAMP}`}>
           {BUILD_STAMP.slice(5, 16).replace("T", " ")}
+        </div>
+        <div className="text-[9px] font-mono ml-2" style={{ color: "#a5b4fc", opacity: 0.4 }}
+             title="Viewport debug">
+          {viewport.w}×{viewport.h} {viewport.h > viewport.w ? "P" : "L"} {(viewport.w / Math.max(1, viewport.h)).toFixed(2)}
         </div>
         <button onClick={newRun} aria-label="Restart"
           className="w-9 h-9 rounded-full flex items-center justify-center pressable touch-target ml-2"
@@ -784,8 +896,8 @@ export default function Dungeon3DRun() {
           onClick={rangedPress}
           style={{
             position: "absolute",
-            right: "calc(132px + env(safe-area-inset-right, 0px))",
-            bottom: "calc(36px + env(safe-area-inset-bottom, 0px))",
+            right: "max(28%, calc(110px + env(safe-area-inset-right, 0px)))",
+            bottom: "max(8%, calc(36px + env(safe-area-inset-bottom, 0px)))",
             width: 72, height: 72, borderRadius: "50%",
             background: "linear-gradient(135deg, rgba(96,165,250,0.85), rgba(37,99,235,0.85))",
             border: "3px solid rgba(191,219,254,0.65)",
@@ -807,8 +919,8 @@ export default function Dungeon3DRun() {
           onClick={attackPress}
           style={{
             position: "absolute",
-            right: "calc(24px + env(safe-area-inset-right, 0px))",
-            bottom: "calc(36px + env(safe-area-inset-bottom, 0px))",
+            right: "max(5%, calc(20px + env(safe-area-inset-right, 0px)))",
+            bottom: "max(8%, calc(36px + env(safe-area-inset-bottom, 0px)))",
             width: 88, height: 88, borderRadius: "50%",
             background: "linear-gradient(135deg, rgba(248,113,113,0.85), rgba(220,38,38,0.85))",
             border: "3px solid rgba(254,243,199,0.65)",
