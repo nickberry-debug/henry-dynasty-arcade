@@ -2,7 +2,7 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-06 (Phase 3 shipped — hero classes Warrior/Ranger/Mage + class-select screen, commit `b2d3839`)
+**Last updated:** 2026-06-06 (Phase 4 shipped — loot drops, gear slots, rarity tiers, interact button, commit `ea0187e`)
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
 
 ---
@@ -73,11 +73,11 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| Weapon/armor drops with rarity tiers | ❌ todo | common (gray) → uncommon (green) → rare (blue) → epic (purple) → legendary (orange) |
-| Equip system affecting stats | ❌ todo | Slots: weapon, helm, body, ring. Each slot has stat impact |
-| Inventory UI | ❌ todo | Grid view; compare hover; equip on tap |
+| Weapon/armor drops with rarity tiers | ✅ done (Phase 4, 2026-06-06, commit `ea0187e`) | 5-tier rarity ladder (common white / uncommon green / rare blue / epic violet / legendary orange) with weighted drop (55/25/13/6/1). RARITY_COLORS for 3D + RARITY_HEX for HUD. |
+| Equip system affecting stats | ✅ done (Phase 4, 2026-06-06, commit `ea0187e`) | Three slots: weapon / armor / trinket. `Player.equipped` persists across descend. `recomputePlayerStats(p)` walks slots, sums affix % then multiplies on top of `CLASS_DEFS[p.classId]` base: hpMax (current hp scales proportionally), speed, attackDmg+rangedDmg, attackRange, rangedCdDur (lower = better). |
+| Inventory UI | 🟡 partial (Phase 4) | Always-on top-left HUD shows 3 slots w/ item name color-coded by rarity. No compare-hover, no full grid view yet — that's Phase 5 territory or a 4b polish pass. |
 | Sell/salvage for currency | ❌ todo | Salvage = gold based on rarity |
-| **Interaction button (chests/doors/NPCs)** | ❌ todo (Nick request, "if important now") | Lower-priority button; press to interact with whatever is in range. Maybe context-sensitive: shows "OPEN" when near chest, "DESCEND" when near stairs (replaces auto-trigger). |
+| **Interaction button (chests/doors/NPCs)** | ✅ done (Phase 4, 2026-06-06, commit `ea0187e`) | Tan 50px button between joystick and melee (left of melee, right of ranged, slightly above). Faded at opacity 0.3 by default; goes to 1.0 + glows in rarity color + shows floating `[E] {name}` label whenever a pickable item is within 1.2u. Engine computes `g.nearestPickable` each frame so the React HUD knows what to surface. Bound to KeyE on keyboard, debounced 120ms on touch. |
 
 ---
 
@@ -156,7 +156,7 @@
 
 When you re-fire "continue the dungeon roadmap":
 1. Read this file.
-2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 4 (loot/gear) — Phase 3 (hero classes) shipped 2026-06-06 commit `b2d3839`.** Bot should ASK before starting; don't auto-roll.
+2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 5 (progression/meta — XP/levels/ability tree) OR Phase 6 (bosses) — Phase 4 (loot/gear/interact) shipped 2026-06-06 commit `ea0187e`.** Bot should ASK before starting; don't auto-roll.
 3. Otherwise resume at the first ❌ item.
 4. Complete & verify it. Update this file.
 5. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
@@ -246,3 +246,55 @@ When you re-fire "continue the dungeon roadmap":
 - Distinct projectile mesh per class would be a nice juice pass (currently all projectiles render with the same blue glow from Phase 2a). Could be Phase 3b polish.
 - No per-class run stats yet — Phase 5 (progression/meta) territory.
 - Sword/Zap button icons still generic. Could swap to a Bow icon for ranger or a Flame icon for mage if Nick wants more visual delta.
+
+
+
+## Phase 4 session notes (2026-06-06)
+
+- Commit `ea0187e` on `main`, deployed by Vercel as `dpl_2fZJXabCnyoXvgQtt8vqEpcFWjuH` (READY at 1780777497).
+- Aliases: `henry-dynasty.vercel.app`, `henry-dynasty-git-main-nickberry-debugs-projects.vercel.app`.
+- BUILD_STAMP bumped to `2026-06-06T22:30:00Z`.
+- Patch script: `C:\Projects\patch_dungeon3d_phase4.py` (12 engine edits + 15 tsx edits = 27 hunks, all single-anchored find/replace with `.bak` per file). All patches applied on first run; build green in 37.69s.
+
+### What landed (engine.ts)
+
+- New `Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary"` type + `Item` interface (id / kind / name / rarity / affixes / x / z / pickedUp).
+- `RARITY_COLORS` (three.js hex, exported) + `RARITY_HEX` (CSS hex, exported) so the renderer + React HUD can share a single palette.
+- `Player` gained `equipped: { weapon?: Item; armor?: Item; trinket?: Item }` + `interactCd: number`. `descendLevel` resets the cooldown but preserves `equipped` so gear carries across floors.
+- `Game` gained `items: Item[]` (ground drops), `toast: { text; rarity; ttl } | null`, and `nearestPickable: Item | null`.
+- `InputState` gained `interact: boolean`.
+- `newPlayer` / `newGame` initialize the new fields. `descendLevel` drops a guaranteed uncommon+ item near the new spawn (floor-clear bonus).
+- Loot generation helpers (private + a single `export rollLoot`): weighted `pickRarity()` (55/25/13/6/1), `pickRarityMin(min)` (bounded reroll above the floor), `rollAffixes(rarity)` (counts + ranges per spec: common 1/3-6%, uncommon 1-2/5-10%, rare 2/10-15%, epic 2-3/15-25%, legendary 3/25-40%), `tryEnemyLoot(g, e)` (18% base + 5% on brutes + 3% on scouts).
+- Three kill paths (dash hit / melee hit / projectile hit) each call `tryEnemyLoot(g, e)` inside the `if (e.hp <= 0)` block, right before the hit-stop assignment.
+- `recomputePlayerStats(p)` (exported) walks `p.equipped`, sums affix percentages, multiplies on top of `CLASS_DEFS[p.classId]` base. Stats touched: `hpMax` (current `hp` scales proportionally so a +hp affix doesn't snap you to 1), `speed`, `attackDmg`, `rangedDmg`, `attackRange`, `rangedCdDur` (lower = better — subtracts the % instead of adding).
+- `step()` got a new block right after the stairs check: scans for the nearest pickable within `PICKUP_LOOT_RANGE = 1.2`, stores it on `g.nearestPickable`, ticks `p.interactCd`. On `input.interact` press with a nearby item: 0.3s cooldown set, swap into the matching slot, drop the previously-equipped item back into `g.items` at a small jitter offset, call `recomputePlayerStats(p)`, write a `g.toast` with affix-formatted text. Toast counts down via `ttl -= dt`.
+
+### What landed (Dungeon3DRun.tsx)
+
+- BUILD_STAMP refreshed to `2026-06-06T22:30:00Z`.
+- `lucide-react` imports add `Hand` (button icon) + `Backpack` (HUD icon).
+- Engine imports add `RARITY_COLORS`, `RARITY_HEX`, `recomputePlayerStats`, and the `Item`/`Rarity` types.
+- `inputRef` + `keys` ref both gain `interact: boolean`. Keyboard binds `KeyE` -> interact (true on down, false on up).
+- `interactPress` touch handler matches the existing attack/ranged pattern (sets the key true and clears it after 120ms).
+- `threeRef` gained `itemGroup: THREE.Group`. Setup useEffect creates the group and adds it to the scene.
+- New mesh-rebuild block sits right before `renderer.render(scene, camera)`: tears down all existing children (disposing geometry + material to keep iOS memory happy), then for each non-picked-up `g.items` entry spawns a fresh `OctahedronGeometry(0.32, 0)` mesh with `MeshStandardMaterial` using `RARITY_COLORS[it.rarity]` for both color + emissive (intensity 0.85). Position bobs `±0.1u` at `Math.sin(g.elapsed * 2 + idChar*0.7)`, Y-rotates at `g.elapsed * 1.2`. Visibility gated by fog-of-war.
+- Equipment HUD (top-left of `<main>`): a `<div>` panel with a `Backpack` icon header + three rows (WEAPON / ARMOR / TRINKET). Empty slots render `—` in faded foreground; filled slots show the item name in the rarity color via `RARITY_HEX[it.rarity]`.
+- Pickup toast: top-center, fixed position, rarity-colored border + text, fades the last 0.6s via `Math.min(1, g.toast.ttl / 0.6)`.
+- New interact button: 50px, tan/neutral gradient at opacity 0.3 by default, goes to opacity 1.0 + rarity-color border + box-shadow when `g.nearestPickable` is non-null. Positioned `right: max(15%, calc(58px + safe-area))` + `bottom: max(18%, calc(110px + safe-area))` — between joystick and melee, just above the existing button row so it doesn't fight the joystick zone on small screens.
+- Floating `[E] {name}` label renders just above the interact button when `g.nearestPickable` is non-null, in the rarity color.
+
+### What to test on iPhone
+
+1. **Drop chance**: kill ~10 grunts — should see ~2 items drop. Brutes/scouts feel slightly more generous (23%/21% vs 18%). Items appear as glowing prisms on the floor, bobbing + rotating, color-coded by rarity (white/green/blue/violet/orange).
+2. **Interact button glow**: walk near a dropped item — the new tan-ish button between joystick and melee should snap from 30% opacity to full opacity + a rarity-colored border + shadow. A small `[E] NAME` label appears above the button. Walk away → it fades back out.
+3. **Equip → stat changes**: tap the interact button. Toast appears at top center for ~2s ("RARE Hunter's Bow — +12% dmg, +8% spd"). The top-left HUD slot updates with the item name in its rarity color. Stats apply immediately — a +speedPct item should make the player visibly faster; +rangedCdPct cuts the Zap cooldown; +hpPct bumps the HP bar (current HP scales proportionally so you don't get nuked).
+4. **Slot replacement**: pick up a second weapon. The previous weapon drops back on the floor right where the new one was — pick it back up if you want to swap again.
+5. **Floor clear bonus**: hit the stairs to descend. The next level should already have an uncommon-or-better item waiting near the spawn point — verifies the descend-bonus path + that `equipped` persists across floors.
+6. **Header BUILD_STAMP**: should show `06-06 22:30` so you know you're on the Phase 4 build.
+
+### Still TODO (Phase 4 leftovers)
+
+- Full inventory grid w/ compare-hover + tap-to-equip (only top-left HUD strip lives right now).
+- Sell/salvage for currency.
+- Per-class default kits or starter-item bias would feel nice (warrior leans weapons, ranger trinkets, mage armor).
+- Drop chance could scale with depth so deeper floors feel more rewarding.
