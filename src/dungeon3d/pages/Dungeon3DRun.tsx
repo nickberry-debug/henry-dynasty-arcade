@@ -29,7 +29,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T00:10:00Z";  // CLASS_SELECT_HOTFIX_2
+const BUILD_STAMP = "2026-06-07T01:00:00Z";  // HOTFIX_FACING_INV_ZOOM
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
@@ -106,7 +106,9 @@ export default function Dungeon3DRun() {
     function recompute() {
       const w = window.innerWidth, h = window.innerHeight;
       const portrait = h > w;
-      camTuningRef.current.d = portrait ? 14 * 1.15 : 14;
+      // HOTFIX_FACING_INV_ZOOM: base d 14 -> 28, portrait multiplier 1.15 -> 1.35
+      // (per Nick: start with the bigger numbers, dial back later if too empty).
+      camTuningRef.current.d = portrait ? 28 * 1.35 : 28;
       camTuningRef.current.lookAtZ = portrait ? 3.0 : 1.5;
       setViewport({ w, h });
     }
@@ -494,6 +496,14 @@ export default function Dungeon3DRun() {
         }
         const mag = Math.hypot(ax, az);
         if (mag > 1) { ax /= mag; az /= mag; }
+        // HOTFIX_FACING_INV_ZOOM: iso camera looks down -X -Z diagonal, so
+        // screen-up = world (-1, 0, -1)/sqrt(2).  Rotate the input vector by
+        // -45° around Y BEFORE handing it to step() — fixes joystick and
+        // keyboard in one place.  worldX = (ax + az)/sqrt(2);  worldZ = (-ax + az)/sqrt(2).
+        const SQ_HALF = 0.70710678;
+        const _ax = ax, _az = az;
+        ax = ( _ax + _az) * SQ_HALF;
+        az = (-_ax + _az) * SQ_HALF;
         inputRef.current.ax = ax;
         inputRef.current.az = az;
         inputRef.current.attack = k.attack;
@@ -559,9 +569,11 @@ export default function Dungeon3DRun() {
             }
           });
 
-          // Update player transform + anim weights.
+          // Update player transform + anim weights.  HOTFIX_FACING_INV_ZOOM:
+          // the blocky-characters GLB local-forward is 180° off from p.facing,
+          // so we add PI to align the model with movement + the swing arc.
           t3.playerObj.position.set(g.player.x, 0, g.player.z);
-          t3.playerObj.rotation.y = g.player.facing;
+          t3.playerObj.rotation.y = g.player.facing + Math.PI;
           if (t3.playerMixer) t3.playerMixer.update(dt);
 
           // ── Projectile meshes ──
@@ -603,9 +615,10 @@ export default function Dungeon3DRun() {
             t3.playerActions.attack.weight = lerp(t3.playerActions.attack.weight, targetAtk, 0.4);
           } else if (isAttacking) {
             // Procedural fallback: rotate rig ±20° as a half-sine pulse across the swing.
+            // HOTFIX_FACING_INV_ZOOM: keep +PI on procedural fallback so model facing matches.
             const _atkProg = 1 - (g.player.attackT / g.player.attackDur);
             const _swing = Math.sin(_atkProg * Math.PI) * (20 * Math.PI / 180);
-            t3.playerObj.rotation.y = g.player.facing + _swing;
+            t3.playerObj.rotation.y = g.player.facing + _swing + Math.PI;
           }
           if (t3.playerActions.idle && t3.playerActions.walk) {
             const atkW = t3.playerActions.attack?.weight ?? 0;
@@ -643,7 +656,8 @@ export default function Dungeon3DRun() {
               trailAnchor.visible = true;
               trailAnchor.position.set(g.player.x, 1.0, g.player.z);
               // Sweep the arc through ~46° across the swing window.
-              trailAnchor.rotation.y = g.player.facing + (atkProg - 0.5) * 0.8;
+              // HOTFIX_FACING_INV_ZOOM: +PI so the arc lands in FRONT of the (now-flipped) model.
+              trailAnchor.rotation.y = g.player.facing + (atkProg - 0.5) * 0.8 + Math.PI;
               trailMat.opacity = (1 - atkProg) * 0.85;
             } else {
               trailAnchor.visible = false;
@@ -672,7 +686,8 @@ export default function Dungeon3DRun() {
             const handle = t3.enemyObjs.get(e.id);
             if (!handle) continue;
             handle.obj.position.set(e.x, 0, e.z);
-            handle.obj.rotation.y = e.facing;
+            // HOTFIX_FACING_INV_ZOOM: same +PI fix for enemies.
+            handle.obj.rotation.y = e.facing + Math.PI;
             // Hide enemies whose current grid cell is not yet revealed.
             const egx = Math.floor((e.x + WORLD_W / 2) / CELL);
             const egz = Math.floor((e.z + WORLD_H / 2) / CELL);

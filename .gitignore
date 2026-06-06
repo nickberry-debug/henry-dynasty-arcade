@@ -29,3 +29,6 @@ workspace-state.json
 
 # bot backup files
 *.bak.*
+
+build.log
+build.err

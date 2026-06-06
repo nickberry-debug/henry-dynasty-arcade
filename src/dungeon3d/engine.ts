@@ -1359,15 +1359,18 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   g.cameraTargetX += (p.x - g.cameraTargetX) * camLerp;
   g.cameraTargetZ += (p.z - g.cameraTargetZ) * camLerp;
 
-  // ── Camera bounds: keep target inside the playable interior so we
-  //    don't show out-of-world void when the player is near a wall.
-  //    Inset of CELL*3 keeps the iso frame inside the map rectangle.
-  const CAM_INSET_X = CELL * 3;
-  const CAM_INSET_Z = CELL * 3;
-  if (g.cameraTargetX < CAM_INSET_X) g.cameraTargetX = CAM_INSET_X;
-  if (g.cameraTargetX > WORLD_W - CAM_INSET_X) g.cameraTargetX = WORLD_W - CAM_INSET_X;
-  if (g.cameraTargetZ < CAM_INSET_Z) g.cameraTargetZ = CAM_INSET_Z;
-  if (g.cameraTargetZ > WORLD_H - CAM_INSET_Z) g.cameraTargetZ = WORLD_H - CAM_INSET_Z;
+  // ── Camera bounds: clamp target to the CENTERED world rectangle.
+  //    HOTFIX_CAMERA_BOUNDS: the previous clamp used un-centered world
+  //    coords (CELL*3..WORLD_W-CELL*3 = 12..60) but cameraTargetX is in
+  //    centered coords [-WORLD_W/2, +WORLD_W/2], which pinned the camera
+  //    at 12 whenever the player was on the left half of the map. Now
+  //    we clamp to the actual world edges so the camera tracks freely.
+  const HALF_W = WORLD_W / 2;
+  const HALF_H = WORLD_H / 2;
+  if (g.cameraTargetX < -HALF_W) g.cameraTargetX = -HALF_W;
+  if (g.cameraTargetX >  HALF_W) g.cameraTargetX =  HALF_W;
+  if (g.cameraTargetZ < -HALF_H) g.cameraTargetZ = -HALF_H;
+  if (g.cameraTargetZ >  HALF_H) g.cameraTargetZ =  HALF_H;
 
   // ── Fog-of-war reveal ──
   updateFogOfWar(g);
