@@ -18,7 +18,9 @@ import {
   newGame, step, descendLevel, CELL, COLS, ROWS, WORLD_W, WORLD_H,
   isCellVisible,
   CLASS_DEFS, RARITY_COLORS, RARITY_HEX, recomputePlayerStats,
+  ABILITY_DEFS, META_UNLOCKS, getAbilityDef, applyAbilityChoice,
   type Game, type InputState, type ClassId, type Item, type Rarity,
+  type AbilityDef,
 } from "../engine";
 import {
   loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
@@ -27,7 +29,43 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T22:30:00Z";
+const BUILD_STAMP = "2026-06-06T23:30:00Z";
+
+// PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
+// ── Phase 5: localStorage meta progression ────────────────────
+//
+// Schema: `henry-dungeon-meta-v1` = { shards: number; unlocks: Record<ClassId, string[]> }
+// Defensive parse: malformed JSON -> reset to defaults.
+const META_KEY = "henry-dungeon-meta-v1";
+type MetaState = { shards: number; unlocks: Record<ClassId, string[]> };
+
+function _defaultMeta(): MetaState {
+  return { shards: 0, unlocks: { warrior: [], ranger: [], mage: [] } };
+}
+
+function loadMeta(): MetaState {
+  if (typeof window === "undefined") return _defaultMeta();
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    if (!raw) return _defaultMeta();
+    const parsed = JSON.parse(raw);
+    return {
+      shards: typeof parsed?.shards === "number" ? parsed.shards : 0,
+      unlocks: {
+        warrior: Array.isArray(parsed?.unlocks?.warrior) ? parsed.unlocks.warrior : [],
+        ranger:  Array.isArray(parsed?.unlocks?.ranger)  ? parsed.unlocks.ranger  : [],
+        mage:    Array.isArray(parsed?.unlocks?.mage)    ? parsed.unlocks.mage    : [],
+      },
+    };
+  } catch {
+    return _defaultMeta();
+  }
+}
+
+function saveMeta(m: MetaState) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(META_KEY, JSON.stringify(m)); } catch { /* quota / private mode */ }
+}
 
 export default function Dungeon3DRun() {
   const navigate = useNavigate();
@@ -36,6 +74,12 @@ export default function Dungeon3DRun() {
   // Phase 3: game is null until the player picks a class.
   const gameRef = useRef<Game | null>(null);
   const [classChoice, setClassChoice] = useState<ClassId | null>(null);
+  // Phase 5: meta progression + level-up modal state.
+  const [meta, setMeta] = useState<MetaState>(() => loadMeta());
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [showSoulForge, setShowSoulForge] = useState(false);
+  const [levelUpChoiceIds, setLevelUpChoiceIds] = useState<string[]>([]);
+  const [runEndBanner, setRunEndBanner] = useState<{ kills: number; floor: number; shards: number } | null>(null);
   const [, force] = useState(0);
   const [endShown, setEndShown] = useState(false);
   const recordedRef = useRef(false);
@@ -288,7 +332,8 @@ export default function Dungeon3DRun() {
       if (!classChoice) return;
       // Lazily construct the game with the chosen class.
       if (!gameRef.current) {
-        gameRef.current = newGame(1, classChoice);
+        const _unlocks = meta.unlocks[classChoice] ?? [];
+        gameRef.current = newGame(1, classChoice, _unlocks);
       }
 
       await preloadCriticalModels();
@@ -457,7 +502,14 @@ export default function Dungeon3DRun() {
 
         const g = gameRef.current;
         if (!g) return;
-        step(g, dt, inputRef.current);
+        // Phase 5: pause engine while level-up modal is up.
+        if (g.pendingLevelUp && !showLevelUp) {
+          setLevelUpChoiceIds(g.levelUpChoices);
+          setShowLevelUp(true);
+        }
+        if (!g.pendingLevelUp && !showLevelUp) {
+          step(g, dt, inputRef.current);
+        }
 
         // Resize check.
         const t3 = threeRef.current;
@@ -838,21 +890,55 @@ export default function Dungeon3DRun() {
       setEndShown(true);
       recordedRef.current = true;
       dungeon.finishRun(g.runCoins, g.runKills, g.depth, g.state === "cleared");
+      // Phase 5: persist shards + show banner if the player died.
+      if (g.runEnded) {
+        const next = { ...meta, shards: meta.shards + g.runShardsEarned };
+        setMeta(next); saveMeta(next);
+        setRunEndBanner({ kills: g.runKills, floor: g.depth, shards: g.runShardsEarned });
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [g?.state]);
 
   function newRun() {
-    // Phase 3: send the player back to class-select. The setup useEffect
-    // tears down the scene on the next render (classChoice → null) and
-    // remounts with the new class once the user picks one.
+    // Phase 3: send the player back to class-select.
     const t3 = threeRef.current;
     if (t3) t3.dispose();
     threeRef.current = null;
     gameRef.current = null;
     setEndShown(false);
     recordedRef.current = false;
+    setShowLevelUp(false);
+    setLevelUpChoiceIds([]);
+    setRunEndBanner(null);
     setClassChoice(null);
+  }
+
+  // Phase 5: apply a level-up choice and resume the run.
+  function pickLevelUp(abilityId: string) {
+    const g = gameRef.current;
+    if (!g) return;
+    applyAbilityChoice(g.player, abilityId);
+    g.pendingLevelUp = false;
+    g.levelUpChoices = [];
+    setShowLevelUp(false);
+    setLevelUpChoiceIds([]);
+  }
+
+  // Phase 5: purchase a meta unlock if shards allow.
+  function purchaseUnlock(unlockId: string) {
+    const def = META_UNLOCKS.find(u => u.id === unlockId);
+    if (!def) return;
+    if (meta.shards < def.cost) return;
+    if (meta.unlocks[def.classId].includes(unlockId)) return;
+    const next: MetaState = {
+      shards: meta.shards - def.cost,
+      unlocks: {
+        ...meta.unlocks,
+        [def.classId]: [...meta.unlocks[def.classId], unlockId],
+      },
+    };
+    setMeta(next); saveMeta(next);
   }
 
   // ── Class-select screen ────────────────────────────────────────────
@@ -892,13 +978,27 @@ export default function Dungeon3DRun() {
         <div className="w-full max-w-md grid gap-3 mt-12">
           {order.map(c => {
             const cd = CLASS_DEFS[c];
+            const _tapClass = (e?: React.SyntheticEvent) => {
+              if (e) { e.preventDefault(); e.stopPropagation(); }
+              // HOTFIX: log so remote debugging on iPhone shows handler fired.
+              try { console.log("[d3d] class tapped:", c); } catch { /* noop */ }
+              setEndShown(false);
+              recordedRef.current = false;
+              setRunEndBanner(null);
+              setClassChoice(c);
+            };
             return (
-              <button key={c} onClick={() => { setEndShown(false); recordedRef.current = false; setClassChoice(c); }}
+              <button key={c}
+                      onPointerDown={_tapClass}
+                      onClick={_tapClass}
                       className="text-left rounded-2xl p-4 pressable touch-target"
                       style={{
                         background: cardBg[c],
                         border: `1.5px solid ${cardBorder[c]}`,
                         color: "#fef3c7",
+                        touchAction: "manipulation",
+                        pointerEvents: "auto",
+                        WebkitTapHighlightColor: "rgba(253,224,71,0.18)",
                       }}>
                 <div className="flex items-baseline gap-2">
                   <div className="font-display tracking-widest text-lg"
@@ -923,7 +1023,108 @@ export default function Dungeon3DRun() {
             );
           })}
         </div>
+        {/* Phase 5: run-end banner shown after death, on the class-select screen. */}
+        {runEndBanner && (
+          <div className="mt-3 rounded-xl px-4 py-3 text-center" style={{
+            background: "linear-gradient(135deg, rgba(60,20,40,0.92), rgba(20,5,20,0.92))",
+            border: "1.5px solid rgba(253,224,71,0.55)",
+            color: "#fef3c7",
+            maxWidth: 360,
+            width: "100%",
+          }}>
+            <div className="font-display tracking-widest text-[11px]" style={{ color: "#fde047" }}>RUN OVER</div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] font-mono">
+              <div><div className="opacity-60">KILLS</div><div className="text-[14px]">{runEndBanner.kills}</div></div>
+              <div><div className="opacity-60">FLOOR</div><div className="text-[14px]">{runEndBanner.floor}</div></div>
+              <div><div className="opacity-60">SHARDS</div><div className="text-[14px]" style={{ color: "#c8a0ff" }}>+{runEndBanner.shards}</div></div>
+            </div>
+          </div>
+        )}
         <div className="mt-4 text-[10px] opacity-50">Tap a card to start the run.</div>
+        {/* Phase 5: Soul Forge button. */}
+        <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSoulForge(true); }}
+                onClick={(e) => { e.preventDefault(); setShowSoulForge(true); }}
+                className="mt-3 rounded-full pressable touch-target px-4 py-2 flex items-center gap-2"
+                style={{
+                  background: "linear-gradient(135deg, rgba(200,160,255,0.18), rgba(20,5,30,0.9))",
+                  border: "1.5px solid rgba(200,160,255,0.65)",
+                  color: "#c8a0ff",
+                  touchAction: "manipulation",
+                  pointerEvents: "auto",
+                }}>
+          <Sparkles size={14} aria-hidden="true" />
+          <span className="font-display tracking-widest text-[11px]">SOUL FORGE</span>
+          <span className="text-[10px] font-mono opacity-80">{meta.shards} shards</span>
+        </button>
+        {/* Phase 5: Soul Forge modal. */}
+        {showSoulForge && (
+          <div onPointerDown={(e) => { e.stopPropagation(); }}
+               onClick={(e) => { if (e.target === e.currentTarget) setShowSoulForge(false); }}
+               style={{
+                 position: "fixed", inset: 0, zIndex: 50,
+                 background: "rgba(0,0,0,0.72)",
+                 display: "flex", alignItems: "center", justifyContent: "center",
+                 padding: 16,
+                 backdropFilter: "blur(4px)",
+                 touchAction: "manipulation",
+               }}>
+            <div style={{
+              maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto",
+              background: "linear-gradient(135deg, rgba(30,15,40,0.96), rgba(10,5,20,0.96))",
+              border: "1.5px solid rgba(200,160,255,0.55)",
+              borderRadius: 16, padding: 16, color: "#fef3c7",
+            }}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-display tracking-widest text-[13px]" style={{ color: "#c8a0ff" }}>SOUL FORGE</div>
+                <div className="text-[11px] font-mono opacity-80">{meta.shards} shards</div>
+              </div>
+              <div className="text-[10px] opacity-70 mb-3">Persistent unlocks. Applied at the start of every run.</div>
+              {(["warrior","ranger","mage"] as ClassId[]).map(cid => (
+                <div key={cid} className="mb-3">
+                  <div className="font-display tracking-widest text-[11px] mb-1"
+                       style={{ color: cid === "warrior" ? "#ff8a4c" : cid === "ranger" ? "#6ee07a" : "#c8a0ff" }}>
+                    {cid.toUpperCase()}
+                  </div>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {META_UNLOCKS.filter(u => u.classId === cid).map(u => {
+                      const owned = meta.unlocks[cid].includes(u.id);
+                      const canAfford = meta.shards >= u.cost;
+                      return (
+                        <button key={u.id}
+                                disabled={owned}
+                                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); if (!owned) purchaseUnlock(u.id); }}
+                                onClick={(e) => { e.preventDefault(); if (!owned) purchaseUnlock(u.id); }}
+                                className="text-left rounded-lg p-2 pressable touch-target"
+                                style={{
+                                  background: owned ? "rgba(110,224,122,0.16)" : "rgba(255,255,255,0.04)",
+                                  border: `1px solid ${owned ? "rgba(110,224,122,0.6)" : (canAfford ? "rgba(253,224,71,0.45)" : "rgba(255,255,255,0.15)")}`,
+                                  color: owned ? "#86efac" : canAfford ? "#fef3c7" : "rgba(254,243,199,0.55)",
+                                  touchAction: "manipulation", pointerEvents: "auto",
+                                  opacity: owned ? 0.85 : (canAfford ? 1 : 0.7),
+                                }}>
+                          <div className="flex items-baseline justify-between gap-2">
+                            <div className="font-mono text-[11px]">{u.name}</div>
+                            <div className="text-[10px] opacity-80">{owned ? "OWNED" : `${u.cost} shards`}</div>
+                          </div>
+                          <div className="text-[9px] opacity-75 mt-0.5">{u.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <button onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setShowSoulForge(false); }}
+                      onClick={(e) => { e.preventDefault(); setShowSoulForge(false); }}
+                      className="mt-2 w-full rounded-lg py-2 pressable touch-target font-display tracking-widest text-[11px]"
+                      style={{
+                        background: "rgba(255,255,255,0.06)",
+                        border: "1px solid rgba(254,243,199,0.25)",
+                        color: "#fef3c7",
+                        touchAction: "manipulation", pointerEvents: "auto",
+                      }}>CLOSE</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -951,7 +1152,8 @@ export default function Dungeon3DRun() {
                           : "#c8a0ff" }}>
             Â· {CLASS_DEFS[classChoice].label.toUpperCase()}
           </div>
-          <div className="opacity-70">Â·  Lv {g.depth}</div>
+          <div className="opacity-70">Â· Floor {g.depth}</div>
+          <div className="font-display tracking-wider text-[10px] opacity-90" style={{ color: "#c8a0ff" }}>Â· Lv {g.player.level}</div>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-mono" style={{ color: "#fca5a5" }}>
           <Heart size={11} fill="#fca5a5" /> {Math.max(0, Math.ceil(g.player.hp))}
@@ -978,6 +1180,16 @@ export default function Dungeon3DRun() {
           width: `${hpPct * 100}%`, height: "100%",
           background: hpPct > 0.4 ? "#86efac" : "#fca5a5",
           transition: "width 0.2s ease",
+        }} />
+      </div>
+      {/* Phase 5: XP bar, color-coded by class. */}
+      <div className="h-1 mx-3 mt-1 rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+        <div style={{
+          width: `${Math.min(100, (g.player.xp / Math.max(1, g.player.xpToNext)) * 100)}%`,
+          height: "100%",
+          background: CLASS_DEFS[g.player.classId].tint === 0xff8a4c ? "#ff8a4c"
+                    : CLASS_DEFS[g.player.classId].tint === 0x6ee07a ? "#6ee07a" : "#c8a0ff",
+          transition: "width 0.18s ease",
         }} />
       </div>
 
@@ -1056,6 +1268,59 @@ export default function Dungeon3DRun() {
               <div className="text-[11px] tracking-[0.4em] font-display">LOADING DUNGEON</div>
               <div className="text-[10px] opacity-70 mt-1">Streaming Kenney modelsâ€¦</div>
             </div>
+          </div>
+        )}
+
+        {/* Phase 5: Level-up modal (engine paused via step() gate). */}
+        {showLevelUp && (
+          <div style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            background: "rgba(0,0,0,0.78)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            padding: 16, gap: 12,
+            backdropFilter: "blur(6px)",
+            touchAction: "manipulation",
+          }}>
+            <div className="font-display tracking-[0.4em] text-[14px]" style={{ color: "#fde047" }}>LEVEL UP</div>
+            <div className="font-mono text-[10px] opacity-80" style={{ color: "#fef3c7" }}>
+              Level {g.player.level} · Choose an ability
+            </div>
+            <div className="w-full max-w-md grid gap-2 mt-2">
+              {levelUpChoiceIds.map((id, idx) => {
+                const def = getAbilityDef(id);
+                if (!def) return null;
+                const tint = CLASS_DEFS[g.player.classId].tint === 0xff8a4c ? "#ff8a4c"
+                           : CLASS_DEFS[g.player.classId].tint === 0x6ee07a ? "#6ee07a" : "#c8a0ff";
+                return (
+                  <button key={id}
+                          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); pickLevelUp(id); }}
+                          onClick={(e) => { e.preventDefault(); pickLevelUp(id); }}
+                          className={`text-left rounded-2xl p-4 pressable touch-target ${idx === 1 ? "phase5-pulse" : ""}`}
+                          style={{
+                            background: `linear-gradient(135deg, ${tint}26, rgba(10,5,20,0.92))`,
+                            border: `1.5px solid ${tint}`,
+                            color: "#fef3c7",
+                            touchAction: "manipulation",
+                            pointerEvents: "auto",
+                            WebkitTapHighlightColor: "rgba(253,224,71,0.18)",
+                          }}>
+                    <div className="flex items-baseline gap-2">
+                      <Sparkles size={12} aria-hidden="true" style={{ color: tint }} />
+                      <div className="font-display tracking-widest text-[14px]" style={{ color: tint }}>{(def as AbilityDef).name.toUpperCase()}</div>
+                      <div className="text-[9px] opacity-60 ml-auto">{(def as AbilityDef).kind === "stat" ? "STAT" : "TAG"}</div>
+                    </div>
+                    <div className="mt-1 text-[11px] opacity-90">{(def as AbilityDef).desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <style>{`
+              @keyframes phase5pulse {
+                0%, 100% { transform: scale(1.0); }
+                50% { transform: scale(1.025); }
+              }
+              .phase5-pulse { animation: phase5pulse 1.6s ease-in-out infinite; }
+            `}</style>
           </div>
         )}
 

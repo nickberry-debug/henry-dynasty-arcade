@@ -123,6 +123,147 @@ export const CLASS_DEFS: Record<ClassId, ClassDef> = {
   },
 };
 
+// PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
+// ── Phase 5: Ability system + class ability pools ────────────────────
+//
+// "stat" abilities go through recomputePlayerStats (stack with gear).
+// "tag" abilities live on player.abilities and gameplay code branches
+// on them. Each class has 6 abilities; level-up offers 3 random unused.
+// Empty pool falls back to a generic "Refined Edge" +5% all stats.
+
+export type AbilityKind = "stat" | "tag";
+
+export interface AbilityDef {
+  id: string;
+  kind: AbilityKind;
+  name: string;
+  desc: string;
+  classId: ClassId;
+  stat?: {
+    hpPct?: number;
+    dmgPct?: number;
+    speedPct?: number;
+    rangedCdPct?: number;
+    meleeRangePct?: number;
+    rangedDmgPct?: number;
+    rangedRangePct?: number;
+    dmgTakenPct?: number;       // negative = reduction
+    meleeBelow40Pct?: number;   // applied only when hp < 40% of max
+  };
+}
+
+export const ABILITY_DEFS: AbilityDef[] = [
+  // Warrior
+  { id: "bulwark",   kind: "stat", classId: "warrior", name: "Bulwark",   desc: "+20% max HP",                   stat: { hpPct: 20 } },
+  { id: "vampiric",  kind: "tag",  classId: "warrior", name: "Vampiric",  desc: "Melee hits heal 10% of dmg" },
+  { id: "cleave",    kind: "tag",  classId: "warrior", name: "Cleave",    desc: "Melee hits a 90° cone" },
+  { id: "momentum",  kind: "tag",  classId: "warrior", name: "Momentum",  desc: "Dash refunds 50% CD on hit" },
+  { id: "ironhide",  kind: "stat", classId: "warrior", name: "Ironhide",  desc: "-15% damage taken",             stat: { dmgTakenPct: -15 } },
+  { id: "berserker", kind: "stat", classId: "warrior", name: "Berserker", desc: "+30% melee dmg below 40% HP",   stat: { meleeBelow40Pct: 30 } },
+  // Ranger
+  { id: "swift",       kind: "stat", classId: "ranger", name: "Swift",       desc: "+15% speed",                 stat: { speedPct: 15 } },
+  { id: "pierce",      kind: "tag",  classId: "ranger", name: "Pierce",      desc: "Arrows pass through 1 enemy" },
+  { id: "triple_shot", kind: "tag",  classId: "ranger", name: "Triple Shot", desc: "Fire 3 arrows per press" },
+  { id: "eagle_eye",   kind: "stat", classId: "ranger", name: "Eagle Eye",   desc: "+30% ranged dmg, +50% range", stat: { rangedDmgPct: 30, rangedRangePct: 50 } },
+  { id: "evasion",     kind: "tag",  classId: "ranger", name: "Evasion",     desc: "25% chance to dodge a hit" },
+  { id: "quickdraw",   kind: "stat", classId: "ranger", name: "Quickdraw",   desc: "-20% ranged cooldown",       stat: { rangedCdPct: 20 } },
+  // Mage
+  { id: "arcane_battery",  kind: "stat", classId: "mage", name: "Arcane Battery",  desc: "-25% ranged cooldown", stat: { rangedCdPct: 25 } },
+  { id: "frost_nova_plus", kind: "tag",  classId: "mage", name: "Frost Nova+",     desc: "Nova hitstun doubles" },
+  { id: "fireball_split",  kind: "tag",  classId: "mage", name: "Fireball Split",  desc: "Fireball splits into 4" },
+  { id: "mana_shield",     kind: "tag",  classId: "mage", name: "Mana Shield",     desc: "First hit per floor negated" },
+  { id: "meteor",          kind: "tag",  classId: "mage", name: "Meteor",          desc: "Every 8th shot is a meteor (3× dmg)" },
+  { id: "chilling_aura",   kind: "tag",  classId: "mage", name: "Chilling Aura",   desc: "Enemies within 4u slowed 30%" },
+];
+
+/** XP required to reach the next level. Curve: 100, 145, 210, 305, 442, ... */
+export function xpForLevel(level: number): number {
+  return 100 * Math.floor(Math.pow(1.45, Math.max(0, level - 1)));
+}
+
+/** XP awarded per kill, scaling with floor depth. */
+export function xpForKill(kind: EnemyKind, depth: number): number {
+  const base = kind === "scout" ? 14 : kind === "brute" ? 22 : 8;
+  return base * Math.max(1, depth);
+}
+
+export function unusedAbilities(p: Player): AbilityDef[] {
+  return ABILITY_DEFS.filter(a => a.classId === p.classId && !p.abilities.includes(a.id));
+}
+
+function _sampleN<T>(arr: T[], n: number): T[] {
+  const copy = [...arr];
+  const out: T[] = [];
+  for (let i = 0; i < n && copy.length > 0; i++) {
+    const idx = Math.floor(Math.random() * copy.length);
+    out.push(copy.splice(idx, 1)[0]);
+  }
+  return out;
+}
+
+/** Pick up to 3 level-up choices. Empty pool returns the fallback id. */
+export function pickLevelUpChoices(p: Player): string[] {
+  const pool = unusedAbilities(p);
+  if (pool.length === 0) return ["refined_edge"];
+  return _sampleN(pool, 3).map(a => a.id);
+}
+
+/** Look up an ability by id. Handles the synthetic "refined_edge" fallback. */
+export function getAbilityDef(id: string): AbilityDef | null {
+  if (id === "refined_edge") {
+    return {
+      id: "refined_edge",
+      classId: "warrior",
+      kind: "stat",
+      name: "Refined Edge",
+      desc: "+5% all stats",
+      stat: { hpPct: 5, dmgPct: 5, speedPct: 5, rangedCdPct: 5, rangedDmgPct: 5 },
+    };
+  }
+  return ABILITY_DEFS.find(a => a.id === id) ?? null;
+}
+
+// ── Phase 5: Meta progression (soul shards + persistent unlocks) ────
+
+export type MetaUnlockId =
+  | "warrior_veteran" | "warrior_sharpened" | "warrior_ironclad"
+  | "ranger_trained"  | "ranger_marksman"   | "ranger_eaglescout"
+  | "mage_apprentice" | "mage_adept"        | "mage_archmage";
+
+export interface MetaUnlockDef {
+  id: MetaUnlockId;
+  classId: ClassId;
+  name: string;
+  desc: string;
+  cost: number;
+  apply: (base: ClassDef) => ClassDef;
+  /** Player-side hook: e.g. ironclad reduces dmg taken. */
+  dmgTakenPct?: number;
+}
+
+export const META_UNLOCKS: MetaUnlockDef[] = [
+  { id: "warrior_veteran",   classId: "warrior", name: "Veteran",     desc: "+10% max HP",          cost: 50,  apply: b => ({ ...b, hpMax: Math.round(b.hpMax * 1.1) }) },
+  { id: "warrior_sharpened", classId: "warrior", name: "Sharpened",   desc: "+10% melee dmg",       cost: 75,  apply: b => ({ ...b, attackDmg: b.attackDmg * 1.1 }) },
+  { id: "warrior_ironclad",  classId: "warrior", name: "Ironclad",    desc: "-10% dmg taken",       cost: 150, apply: b => b, dmgTakenPct: -10 },
+  { id: "ranger_trained",    classId: "ranger",  name: "Trained",     desc: "+10% speed",           cost: 50,  apply: b => ({ ...b, speed: b.speed * 1.1 }) },
+  { id: "ranger_marksman",   classId: "ranger",  name: "Marksman",    desc: "+10% ranged dmg",      cost: 75,  apply: b => ({ ...b, rangedDmg: b.rangedDmg * 1.1 }) },
+  { id: "ranger_eaglescout", classId: "ranger",  name: "Eagle Scout", desc: "-10% ranged cooldown", cost: 150, apply: b => ({ ...b, rangedCdDur: b.rangedCdDur * 0.9 }) },
+  { id: "mage_apprentice",   classId: "mage",    name: "Apprentice",  desc: "+10% max HP",          cost: 50,  apply: b => ({ ...b, hpMax: Math.round(b.hpMax * 1.1) }) },
+  { id: "mage_adept",        classId: "mage",    name: "Adept",       desc: "+10% nova dmg",        cost: 75,  apply: b => ({ ...b, attackDmg: b.attackDmg * 1.1 }) },
+  { id: "mage_archmage",     classId: "mage",    name: "Archmage",    desc: "-10% ranged cooldown", cost: 150, apply: b => ({ ...b, rangedCdDur: b.rangedCdDur * 0.9 }) },
+];
+
+/** Effective base ClassDef given the player's purchased meta unlocks. */
+export function classDefWithMeta(classId: ClassId, unlockIds: string[]): ClassDef {
+  let base: ClassDef = { ...CLASS_DEFS[classId] };
+  for (const u of META_UNLOCKS) {
+    if (u.classId !== classId) continue;
+    if (!unlockIds.includes(u.id)) continue;
+    base = u.apply(base);
+  }
+  return base;
+}
+
 export interface Player {
   x: number; z: number;
   /** Facing angle in radians (around Y). 0 = +X. */
@@ -153,6 +294,22 @@ export interface Player {
   // ── Phase 4: equipped gear + interact debounce ─────────────────
   equipped: { weapon?: Item; armor?: Item; trinket?: Item };
   interactCd: number;
+  // Phase 5: progression
+  xp: number;
+  xpToNext: number;
+  level: number;
+  /** Ability ids picked this run. */
+  abilities: string[];
+  /** Meta unlocks the player owns (persists across runs). */
+  metaUnlocks: string[];
+  /** Derived: 1.0 = no change, <1 = reduction. */
+  dmgTakenMult: number;
+  /** Derived: bonus melee dmg applied only when hp < 40% of max. */
+  meleeBelow40Mult: number;
+  /** Phase 5 tag-runtime state. */
+  manaShieldUsedThisFloor: boolean;
+  /** Number of ranged shots fired this run (drives meteor cadence). */
+  shotCount: number;
 }
 
 export interface Enemy {
@@ -207,6 +364,15 @@ export interface Game {
   items: Item[];
   toast: { text: string; rarity: Rarity; ttl: number } | null;
   nearestPickable: Item | null;
+  // ── Phase 5 ─────────────────────────────
+  /** When true, the engine pauses while the level-up modal is open. */
+  pendingLevelUp: boolean;
+  /** Ability ids offered in the level-up modal. */
+  levelUpChoices: string[];
+  /** Shards earned this run (becomes runShards on death). */
+  runShardsEarned: number;
+  /** Set to true after death so the UI can show the banner once. */
+  runEnded: boolean;
 }
 
 // ── Random utilities ─────────────────────────────────────────────────
@@ -403,9 +569,10 @@ function computeWallOrientations(grid: Tile[][]): DungeonLevel["wallOrientation"
 
 // ── Player + game construction ───────────────────────────────────────
 
-export function newPlayer(level: DungeonLevel, classId: ClassId = "warrior"): Player {
-  const cd = CLASS_DEFS[classId];
-  return {
+export function newPlayer(level: DungeonLevel, classId: ClassId = "warrior", metaUnlocks: string[] = []): Player {
+  // Phase 5: base = CLASS_DEFS + meta unlocks (applied BEFORE gear/ability math).
+  const cd = classDefWithMeta(classId, metaUnlocks);
+  const p: Player = {
     x: level.spawn.x, z: level.spawn.z, facing: 0,
     hp: cd.hpMax, hpMax: cd.hpMax, coins: 0,
     attackT: 0, attackDur: cd.attackDur,
@@ -422,12 +589,22 @@ export function newPlayer(level: DungeonLevel, classId: ClassId = "warrior"): Pl
     dashT: 0, dashVx: 0, dashVz: 0, dashHit: new Set<string>(),
     equipped: {},
     interactCd: 0,
+    xp: 0, xpToNext: xpForLevel(1), level: 1,
+    abilities: [],
+    metaUnlocks: [...metaUnlocks],
+    dmgTakenMult: 1.0,
+    meleeBelow40Mult: 1.0,
+    manaShieldUsedThisFloor: false,
+    shotCount: 0,
   };
+  return p;
 }
 
-export function newGame(depth = 1, classId: ClassId = "warrior"): Game {
+export function newGame(depth = 1, classId: ClassId = "warrior", metaUnlocks: string[] = []): Game {
   const level = genLevel(depth);
-  const player = newPlayer(level, classId);
+  const player = newPlayer(level, classId, metaUnlocks);
+  // Phase 5: recompute stats once so any % bumps are reflected on frame 1.
+  recomputePlayerStats(player);
   const enemies: Enemy[] = level.enemies.map(mkEnemy);
   return {
     level, depth, player,
@@ -436,6 +613,7 @@ export function newGame(depth = 1, classId: ClassId = "warrior"): Game {
     cameraTargetX: player.x, cameraTargetZ: player.z,
     hitStop: 0, elapsed: 0, runCoins: 0, runKills: 0,
     items: [], toast: null, nearestPickable: null,
+    pendingLevelUp: false, levelUpChoices: [], runShardsEarned: 0, runEnded: false,
   };
 }
 
@@ -459,6 +637,8 @@ export function descendLevel(g: Game): Game {
     attackT: 0, iframes: 1.0, flashT: 0, anim: "idle",
     dashT: 0, dashVx: 0, dashVz: 0, dashHit: new Set<string>(),
     interactCd: 0,
+    // Phase 5: refresh mana shield each floor.
+    manaShieldUsedThisFloor: false,
   };
   // Phase 4: floor-clear bonus — guaranteed uncommon+ drop near the new spawn.
   const _bonusItem = rollLoot(
@@ -475,6 +655,9 @@ export function descendLevel(g: Game): Game {
     hitStop: 0, elapsed: 0,
     runCoins: g.runCoins, runKills: g.runKills,
     items: [_bonusItem], toast: null, nearestPickable: null,
+    // Phase 5: carry over the level-up + shards bookkeeping (game-level).
+    pendingLevelUp: g.pendingLevelUp, levelUpChoices: g.levelUpChoices,
+    runShardsEarned: g.runShardsEarned, runEnded: g.runEnded,
   };
 }
 
@@ -589,8 +772,34 @@ function tryEnemyLoot(g: Game, e: Enemy) {
  *  new derived values. Current HP scales with new max so a heal effect
  *  doesn't pop the player below 1 HP. */
 export function recomputePlayerStats(p: Player) {
-  const base = CLASS_DEFS[p.classId];
+  // Phase 5: base ClassDef -> meta unlocks -> ability stat bumps -> gear affixes.
+  const base = classDefWithMeta(p.classId, p.metaUnlocks ?? []);
   let dmg = 0, spd = 0, hp = 0, rcd = 0, mrange = 0;
+  let rngDmg = 0, rngRange = 0;
+  let dmgTakenPct = 0;
+  let meleeBelow40Pct = 0;
+  // Meta-unlock damage-taken hooks (e.g. warrior_ironclad: -10%).
+  for (const m of META_UNLOCKS) {
+    if (m.classId !== p.classId) continue;
+    if (!(p.metaUnlocks ?? []).includes(m.id)) continue;
+    if (m.dmgTakenPct) dmgTakenPct += m.dmgTakenPct;
+  }
+  // Ability stat bumps (stat-kind abilities only).
+  for (const aid of (p.abilities ?? [])) {
+    const def = getAbilityDef(aid);
+    if (!def || !def.stat) continue;
+    const s = def.stat;
+    if (s.hpPct)            hp += s.hpPct;
+    if (s.dmgPct)           dmg += s.dmgPct;
+    if (s.speedPct)         spd += s.speedPct;
+    if (s.rangedCdPct)      rcd += s.rangedCdPct;
+    if (s.meleeRangePct)    mrange += s.meleeRangePct;
+    if (s.rangedDmgPct)     rngDmg += s.rangedDmgPct;
+    if (s.rangedRangePct)   rngRange += s.rangedRangePct;
+    if (s.dmgTakenPct)      dmgTakenPct += s.dmgTakenPct;
+    if (s.meleeBelow40Pct)  meleeBelow40Pct += s.meleeBelow40Pct;
+  }
+  // Gear affixes (Phase 4).
   for (const slot of ["weapon", "armor", "trinket"] as const) {
     const it = p.equipped[slot];
     if (!it) continue;
@@ -607,8 +816,33 @@ export function recomputePlayerStats(p: Player) {
   p.speed = base.speed * (1 + spd / 100);
   p.attackDmg = base.attackDmg * (1 + dmg / 100);
   p.attackRange = base.attackRange * (1 + mrange / 100);
-  p.rangedDmg = base.rangedDmg * (1 + dmg / 100);
+  p.rangedDmg = base.rangedDmg * (1 + (dmg + rngDmg) / 100);
   p.rangedCdDur = Math.max(0.05, base.rangedCdDur * (1 - rcd / 100));
+  // Phase 5: derived multipliers.
+  p.dmgTakenMult = Math.max(0.1, 1 + dmgTakenPct / 100);
+  p.meleeBelow40Mult = 1 + meleeBelow40Pct / 100;
+  // eagle_eye's +50% range extends ranged engagement distance (used in step()).
+  (p as any).rangedRangeMult = 1 + rngRange / 100;
+}
+
+/** Award XP from a kill, level up + queue the modal if threshold crossed. */
+export function awardXpForKill(g: Game, kind: EnemyKind) {
+  const p = g.player;
+  const gained = xpForKill(kind, g.depth);
+  p.xp += gained;
+  while (p.xp >= p.xpToNext) {
+    p.xp -= p.xpToNext;
+    p.level += 1;
+    p.xpToNext = xpForLevel(p.level);
+    g.pendingLevelUp = true;
+    g.levelUpChoices = pickLevelUpChoices(p);
+  }
+}
+
+/** Apply a chosen ability id. Stat-kind = added + recompute. */
+export function applyAbilityChoice(p: Player, abilityId: string) {
+  if (!p.abilities.includes(abilityId)) p.abilities.push(abilityId);
+  recomputePlayerStats(p);
 }
 
 
@@ -656,15 +890,24 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       const rsum = PLAYER_R + ENEMY_R + 0.2;
       if (ddx * ddx + ddz * ddz < rsum * rsum) {
         p.dashHit.add(e.id);
-        e.hp -= p.attackDmg;
+        const _dashDmg = p.attackDmg * ((p.hp < p.hpMax * 0.4) ? (p.meleeBelow40Mult ?? 1) : 1);
+        e.hp -= _dashDmg;
         e.flashT = 0.18;
+        // Phase 5: Vampiric heal on dash impact.
+        if (p.abilities.includes("vampiric")) {
+          p.hp = Math.min(p.hpMax, p.hp + _dashDmg * 0.10);
+        }
+        // Phase 5: Momentum refunds 50% of the ranged CD on dash hits.
+        if (p.abilities.includes("momentum")) {
+          p.rangedCd = Math.max(0, p.rangedCd - p.rangedCdDur * 0.5);
+        }
         const _vm = Math.hypot(p.dashVx, p.dashVz) || 1;
         e.hitStun = 0.15;
         e.kbX = p.dashVx / _vm;
         e.kbZ = p.dashVz / _vm;
         if (e.hp <= 0) {
           e.deathT = 0.6;
-          g.runKills++;
+          g.runKills++; awardXpForKill(g, e.kind);
           const n = 2 + Math.floor(Math.random() * 3);
           for (let k = 0; k < n; k++) {
             g.coins.push({
@@ -704,31 +947,50 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   // ── Player attack ──
   if (input.attack && p.attackT <= 0 && p.iframes <= 0 && p.dashT <= 0) {
     p.attackT = p.attackDur;
-    // Mage: 360° frost nova centered on the player. Damages + slows
-    // every living enemy within attackRange.
-    // Warrior/Ranger: frontal cone hitbox in front of the player.
+    // Phase 5: cleave widens to a 90° cone; frost_nova_plus doubles nova hitstun.
     const isNova = p.classId === "mage";
+    const hasCleave = p.abilities.includes("cleave") && !isNova;
+    const hasFrostPlus = isNova && p.abilities.includes("frost_nova_plus");
     const ahead = p.attackRange * 0.5;
-    const hbX = isNova ? p.x : p.x + Math.sin(p.facing) * ahead;
-    const hbZ = isNova ? p.z : p.z - Math.cos(p.facing) * ahead;
-    const hitR = isNova ? p.attackRange : p.attackRange;
+    const hbX = (isNova || hasCleave) ? p.x : p.x + Math.sin(p.facing) * ahead;
+    const hbZ = (isNova || hasCleave) ? p.z : p.z - Math.cos(p.facing) * ahead;
+    const hitR = hasCleave ? p.attackRange * 1.2 : p.attackRange;
+    // Phase 5: Berserker bonus when hp < 40% of max.
+    const _meleeMult = (p.hp < p.hpMax * 0.4) ? (p.meleeBelow40Mult ?? 1) : 1;
+    const _outDmg = p.attackDmg * _meleeMult;
     for (const e of g.enemies) {
       if (e.deathT > 0) continue;
-      if (dist2({ x: hbX, z: hbZ }, e) < hitR) {
-        e.hp -= p.attackDmg;
+      let _inHit: boolean;
+      if (hasCleave) {
+        const _dx = e.x - p.x, _dz = e.z - p.z;
+        const _d = Math.hypot(_dx, _dz);
+        if (_d >= hitR) _inHit = false;
+        else {
+          const _fx = Math.sin(p.facing), _fz = Math.cos(p.facing);
+          const _cosA = (_dx * _fx + _dz * _fz) / Math.max(0.01, _d);
+          _inHit = _cosA > Math.SQRT1_2; // ~45° half-angle = 90° cone
+        }
+      } else {
+        _inHit = dist2({ x: hbX, z: hbZ }, e) < hitR;
+      }
+      if (_inHit) {
+        e.hp -= _outDmg;
         e.flashT = 0.18;
-        // Hit-react: stun + knockback away from player. Mage's nova
-        // slows harder (0.25s stun) and shoves enemies outward.
+        // Phase 5: Vampiric heal (non-mage melee).
+        if (p.abilities.includes("vampiric") && !isNova) {
+          p.hp = Math.min(p.hpMax, p.hp + _outDmg * 0.10);
+        }
+        // Hit-react: stun + knockback away from player. frost_nova_plus -> 0.5s.
         {
           const _kdx = e.x - p.x, _kdz = e.z - p.z;
           const _km = Math.hypot(_kdx, _kdz) || 1;
-          e.hitStun = isNova ? 0.25 : 0.12;
+          e.hitStun = isNova ? (hasFrostPlus ? 0.5 : 0.25) : 0.12;
           e.kbX = _kdx / _km;
           e.kbZ = _kdz / _km;
         }
         if (e.hp <= 0) {
           e.deathT = 0.6;
-          g.runKills++;
+          g.runKills++; awardXpForKill(g, e.kind);
           // Drop coins (2-4).
           const n = 2 + Math.floor(Math.random() * 3);
           for (let k = 0; k < n; k++) {
@@ -787,35 +1049,58 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       p.iframes = Math.max(p.iframes, 0.22);
       g.hitStop = Math.max(g.hitStop, 0.04);
     } else if (p.classId === "ranger") {
-      // Ranger: two arrows, one straight + one offset ±15° per shot.
-      const sign = Math.random() < 0.5 ? -1 : 1;
-      const ang = (15 * Math.PI) / 180;
-      const cosA = Math.cos(ang * sign);
-      const sinA = Math.sin(ang * sign);
-      const oX = dirX * cosA - dirZ * sinA;
-      const oZ = dirX * sinA + dirZ * cosA;
+      // Phase 5: Triple Shot fires 3 arrows in a fan; otherwise 2.
+      const triple = p.abilities.includes("triple_shot");
       const spd = p.rangedSpeed;
-      g.projectiles.push({
-        id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        x: p.x + dirX * 0.7, z: p.z + dirZ * 0.7,
-        vx: dirX * spd, vz: dirZ * spd,
-        ttl: RANGED_TTL, damage: p.rangedDmg, radius: p.rangedRadius,
-      });
-      g.projectiles.push({
-        id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_b`,
-        x: p.x + oX * 0.7, z: p.z + oZ * 0.7,
-        vx: oX * spd, vz: oZ * spd,
-        ttl: RANGED_TTL, damage: p.rangedDmg, radius: p.rangedRadius,
-      });
+      const fire = (oX: number, oZ: number, tag: string) => {
+        g.projectiles.push({
+          id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${tag}`,
+          x: p.x + oX * 0.7, z: p.z + oZ * 0.7,
+          vx: oX * spd, vz: oZ * spd,
+          ttl: RANGED_TTL, damage: p.rangedDmg, radius: p.rangedRadius,
+        });
+      };
+      const ang = (15 * Math.PI) / 180;
+      if (triple) {
+        fire(dirX, dirZ, "c");
+        const cA = Math.cos(ang), sA = Math.sin(ang);
+        fire(dirX * cA - dirZ * sA, dirX * sA + dirZ * cA, "l");
+        fire(dirX * cA + dirZ * sA, -dirX * sA + dirZ * cA, "r");
+      } else {
+        const sign = Math.random() < 0.5 ? -1 : 1;
+        const cosA = Math.cos(ang * sign);
+        const sinA = Math.sin(ang * sign);
+        fire(dirX, dirZ, "a");
+        fire(dirX * cosA - dirZ * sinA, dirX * sinA + dirZ * cosA, "b");
+      }
       g.hitStop = Math.max(g.hitStop, 0.03);
     } else {
-      // Mage fireball: slow, heavy, fat collision radius.
+      // Phase 5: count shots for meteor cadence.
+      p.shotCount = (p.shotCount | 0) + 1;
+      const _hasMeteor = p.abilities.includes("meteor");
+      const _isMeteor = _hasMeteor && (p.shotCount % 8 === 0);
+      const _hasSplit = p.abilities.includes("fireball_split");
       g.projectiles.push({
         id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         x: p.x + dirX * 0.7, z: p.z + dirZ * 0.7,
-        vx: dirX * p.rangedSpeed, vz: dirZ * p.rangedSpeed,
-        ttl: RANGED_TTL + 0.4, damage: p.rangedDmg, radius: p.rangedRadius,
+        vx: dirX * p.rangedSpeed * (_isMeteor ? 0.6 : 1), vz: dirZ * p.rangedSpeed * (_isMeteor ? 0.6 : 1),
+        ttl: RANGED_TTL + 0.4, damage: p.rangedDmg * (_isMeteor ? 3 : 1), radius: (_isMeteor ? p.rangedRadius * 1.8 : p.rangedRadius),
       });
+      // Fireball Split: scatter 4 mini fireballs in a forward fan.
+      if (_hasSplit && !_isMeteor) {
+        const ang0 = Math.atan2(dirX, dirZ);
+        for (let k = 0; k < 4; k++) {
+          const off = (k - 1.5) * 0.22;
+          const a = ang0 + off;
+          const ox = Math.sin(a), oz = Math.cos(a);
+          g.projectiles.push({
+            id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_s${k}`,
+            x: p.x + ox * 0.9, z: p.z + oz * 0.9,
+            vx: ox * p.rangedSpeed * 0.9, vz: oz * p.rangedSpeed * 0.9,
+            ttl: RANGED_TTL, damage: 12, radius: 0.4,
+          });
+        }
+      }
       g.hitStop = Math.max(g.hitStop, 0.05);
     }
   }
@@ -853,7 +1138,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
         }
         if (e.hp <= 0) {
           e.deathT = 0.6;
-          g.runKills++;
+          g.runKills++; awardXpForKill(g, e.kind);
           const n = 2 + Math.floor(Math.random() * 3);
           for (let k = 0; k < n; k++) {
             g.coins.push({
@@ -874,7 +1159,19 @@ export function step(g: Game, dtRaw: number, input: InputState) {
         break;
       }
     }
-    if (hit) g.projectiles.splice(i, 1);
+    if (hit) {
+      // Phase 5: Pierce lets a projectile pass through 1 enemy.
+      const _hasPierce = g.player.abilities.includes("pierce");
+      const pr2 = g.projectiles[i];
+      if (_hasPierce && pr2 && !(pr2 as any).pierced) {
+        (pr2 as any).pierced = true;
+        // Nudge past the enemy so the next frame doesn't re-collide.
+        pr2.x += pr2.vx * 0.04;
+        pr2.z += pr2.vz * 0.04;
+      } else {
+        g.projectiles.splice(i, 1);
+      }
+    }
   }
 
   // ── Enemies ──
@@ -897,26 +1194,45 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       const dx = p.x - e.x, dz = p.z - e.z;
       const m = Math.hypot(dx, dz);
       if (m > 0.1) {
-        const speed = ENEMY_SPEED * dt;
+        // Phase 5: Chilling Aura slows enemies within 4u by 30%.
+        const _aura = p.abilities.includes("chilling_aura") && m < 4 ? 0.7 : 1.0;
+        const speed = ENEMY_SPEED * dt * _aura;
         tryMove(g.level, e, (dx / m) * speed, (dz / m) * speed, ENEMY_R);
-        // Same facing-fix as the player (was atan2(dx, -dz) — backward).
+        // Same facing-fix as the player.
         e.facing = Math.atan2(dx, dz);
       }
     }
     e.atkCd = Math.max(0, e.atkCd - dt);
     if (e.state === "attack" && e.atkCd <= 0 && p.iframes <= 0) {
-      p.hp -= ENEMY_DAMAGE;
-      p.flashT = 0.32;
-      p.iframes = 0.7;
+      // Phase 5 hit-take pipeline: evasion -> mana_shield -> dmgTakenMult.
+      let _incoming = ENEMY_DAMAGE * (p.dmgTakenMult ?? 1);
+      let _negated = false;
+      if (p.abilities.includes("evasion") && Math.random() < 0.25) {
+        _incoming = 0;
+        _negated = true;
+        p.iframes = 0.4;
+        p.flashT = 0.12;
+      } else if (p.abilities.includes("mana_shield") && !p.manaShieldUsedThisFloor) {
+        _incoming = 0;
+        _negated = true;
+        p.manaShieldUsedThisFloor = true;
+        p.iframes = 0.5;
+        p.flashT = 0.24;
+      }
+      p.hp -= _incoming;
+      if (!_negated) p.flashT = 0.32;
+      p.iframes = Math.max(p.iframes, 0.7);
       g.hitStop = 0.08;
       e.atkCd = 1.0;
       if (p.hp <= 0) {
-        // Kid-friendly respawn at level spawn with reduced HP.
-        p.hp = Math.max(20, Math.floor(p.hpMax * 0.4));
-        p.x = g.level.spawn.x;
-        p.z = g.level.spawn.z;
-        p.iframes = 1.5;
-        p.coins = Math.max(0, p.coins - 5);
+        // Phase 5: real death. Award shards = runKills + floor*5.
+        if (!g.runEnded) {
+          g.runShardsEarned = g.runKills + g.depth * 5;
+          g.runEnded = true;
+        }
+        p.hp = 0;
+        p.iframes = 999;
+        g.state = "cleared"; // re-use existing terminal state for UI gating
       }
     }
   }
