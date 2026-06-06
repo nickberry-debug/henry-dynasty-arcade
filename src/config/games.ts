@@ -173,12 +173,6 @@ export const GAMES: GameEntry[] = [
     emoji: "🏰", accent: "#7e22ce", status: "Session 1 · 3D",
     bg: "linear-gradient(135deg, rgba(40,8,40,0.95), rgba(10,5,15,0.85))",
     route: "/dungeon3d" }),
-  ge({ id: "dungeon", category: "adventure", order: 5,
-    name: "Dungeon Crawler", subtitle: "Top-down 2D action-RPG",
-    description: "Top-down dungeon crawler. Move, swing, loot, descend. Built on tiny-dungeon tiles + animated heroes/monsters. Session 1 — classes & gear coming.",
-    emoji: "⚔️", accent: "#ef4444", status: "Session 1",
-    bg: "linear-gradient(135deg, rgba(40,8,8,0.95), rgba(10,5,5,0.85))",
-    route: "/dungeon" }),
 
   // ── ADVENTURE & RPG ─────────────────────────────────────────────────
   ge({ id: "olympus", category: "adventure", order: 0,

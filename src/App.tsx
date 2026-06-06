@@ -230,8 +230,6 @@ const MechBuilder       = lz(() => import("./mech/pages/MechBuilder"));
 const MechBattle        = lz(() => import("./mech/pages/MechBattle"));
 const MechReplays       = lz(() => import("./mech/pages/MechReplays"));
 const MechShop          = lz(() => import("./mech/pages/MechShop"));
-const DungeonHub        = lz(() => import("./dungeon/pages/DungeonHub"));
-const DungeonRun        = lz(() => import("./dungeon/pages/DungeonRun"));
 const Dungeon3DHub      = lz(() => import("./dungeon3d/pages/Dungeon3DHub"));
 const Dungeon3DRun      = lz(() => import("./dungeon3d/pages/Dungeon3DRun"));
 const CreatureHub       = lz(() => import("./creature/pages/CreatureHub"));
@@ -503,8 +501,6 @@ function Router() {
         <Route path="/mech/battle" element={<R><MechBattle /></R>} />
         <Route path="/mech/replays" element={<R><MechReplays /></R>} />
         <Route path="/mech/shop" element={<R><MechShop /></R>} />
-        <Route path="/dungeon" element={<R><DungeonHub /></R>} />
-        <Route path="/dungeon/run" element={<R><DungeonRun /></R>} />
         <Route path="/dungeon3d" element={<R><Dungeon3DHub /></R>} />
         <Route path="/dungeon3d/run" element={<R><Dungeon3DRun /></R>} />
         <Route path="/creature" element={<R><CreatureHub /></R>} />
