@@ -29,7 +29,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T23:30:00Z";
+const BUILD_STAMP = "2026-06-07T00:10:00Z";  // CLASS_SELECT_HOTFIX_2
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
@@ -960,6 +960,10 @@ export default function Dungeon3DRun() {
              background: "#0a0510", color: "#fef3c7",
              paddingTop: "env(safe-area-inset-top, 0px)",
              paddingBottom: "env(safe-area-inset-bottom, 0px)",
+             position: "relative",
+             zIndex: 9999,
+             pointerEvents: "auto",
+             touchAction: "manipulation",
            }}>
         <header className="absolute top-0 left-0 right-0 px-3 py-2 flex items-center gap-2"
                 style={{ background: "rgba(0,0,0,0.65)" }}>
@@ -978,18 +982,35 @@ export default function Dungeon3DRun() {
         <div className="w-full max-w-md grid gap-3 mt-12">
           {order.map(c => {
             const cd = CLASS_DEFS[c];
+            // CLASS_SELECT_HOTFIX_2: build gameRef.current SYNCHRONOUSLY before
+            // setClassChoice fires. Previous hotfix added onPointerDown+onClick
+            // but the real deadlock was: setClassChoice -> re-render -> g still
+            // null -> early-return class-select -> <main> never mounts ->
+            // containerRef stays null -> setup effect bails. Seeding the ref
+            // here means the very next render passes the (!classChoice || !g)
+            // gate and <main> mounts.
             const _tapClass = (e?: React.SyntheticEvent) => {
               if (e) { e.preventDefault(); e.stopPropagation(); }
-              // HOTFIX: log so remote debugging on iPhone shows handler fired.
-              try { console.log("[d3d] class tapped:", c); } catch { /* noop */ }
-              setEndShown(false);
-              recordedRef.current = false;
-              setRunEndBanner(null);
-              setClassChoice(c);
+              try {
+                console.log("[d3d] class tapped:", c);
+                setEndShown(false);
+                recordedRef.current = false;
+                setRunEndBanner(null);
+                const _unlocks = (meta.unlocks[c] ?? []);
+                const _newG = newGame(1, c, _unlocks);
+                gameRef.current = _newG;
+                setClassChoice(c);
+                console.log("[d3d] game seeded for:", c, "depth=", _newG.depth);
+              } catch (err) {
+                console.error("[d3d] _tapClass FAILED:", err);
+                try { alert("Class select failed: " + (err && (err as any).message || err)); } catch { /* noop */ }
+              }
             };
             return (
               <button key={c}
+                      type="button"
                       onPointerDown={_tapClass}
+                      onPointerUp={_tapClass}
                       onClick={_tapClass}
                       className="text-left rounded-2xl p-4 pressable touch-target"
                       style={{
@@ -998,7 +1019,8 @@ export default function Dungeon3DRun() {
                         color: "#fef3c7",
                         touchAction: "manipulation",
                         pointerEvents: "auto",
-                        WebkitTapHighlightColor: "rgba(253,224,71,0.18)",
+                        cursor: "pointer",
+                        WebkitTapHighlightColor: "rgba(253,224,71,0.28)",
                       }}>
                 <div className="flex items-baseline gap-2">
                   <div className="font-display tracking-widest text-lg"
