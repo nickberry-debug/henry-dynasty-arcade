@@ -90,8 +90,11 @@ export const CHARACTER_MODELS = {
 export async function preloadCriticalModels(): Promise<void> {
   const critical = [
     DUNGEON_MODELS.floor,
+    DUNGEON_MODELS.floorBig,
+    DUNGEON_MODELS.floorDetail,
     DUNGEON_MODELS.wall,
     DUNGEON_MODELS.wallCorner,
+    DUNGEON_MODELS.wallTop,
     DUNGEON_MODELS.stairs,
     DUNGEON_MODELS.gate,
     CHARACTER_MODELS.player,

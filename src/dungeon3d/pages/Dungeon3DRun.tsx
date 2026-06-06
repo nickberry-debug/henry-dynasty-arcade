@@ -95,10 +95,13 @@ export default function Dungeon3DRun() {
     const group = new THREE.Group();
 
     // Load model handles we'll reuse.
-    const [floor, wall, wallCorner, stairs, gate] = await Promise.all([
+    const [floor, floorBig, floorDetail, wall, wallCorner, wallTop, stairs, gate] = await Promise.all([
       loadModel(DUNGEON_MODELS.floor),
+      loadModel(DUNGEON_MODELS.floorBig),
+      loadModel(DUNGEON_MODELS.floorDetail),
       loadModel(DUNGEON_MODELS.wall),
       loadModel(DUNGEON_MODELS.wallCorner),
+      loadModel(DUNGEON_MODELS.wallTop),
       loadModel(DUNGEON_MODELS.stairs),
       loadModel(DUNGEON_MODELS.gate),
     ]);
@@ -116,7 +119,10 @@ export default function Dungeon3DRun() {
 
         // Floor for every walkable cell. Tag with grid coords for
         // fog-of-war reveal in the render loop.
-        const f = floor.scene.clone(true);
+        // Floor variety: occasional floorBig (15%) or floorDetail (10%) for visual interest.
+        const _floorPick = Math.random();
+        const _floorSrc = _floorPick < 0.10 ? floorDetail : _floorPick < 0.25 ? floorBig : floor;
+        const f = _floorSrc.scene.clone(true);
         f.position.set(wx, 0, wz);
         f.userData = { gx: x, gz: z };
         group.add(f);
@@ -143,7 +149,10 @@ export default function Dungeon3DRun() {
         const wz = (z + 0.5) * CELL - WORLD_H / 2;
 
         const useCorner = orient.startsWith("corner-");
-        const piece = useCorner ? wallCorner.scene.clone(true) : wall.scene.clone(true);
+        // Wall variety: 12% of non-corner walls use wallTop for visual interest.
+        const _wallPick = Math.random();
+        const _wallSrc = useCorner ? wallCorner : (_wallPick < 0.12 ? wallTop : wall);
+        const piece = _wallSrc.scene.clone(true);
         piece.position.set(wx, 0, wz);
         // Walls reveal when ANY adjacent floor cell is visible.
         piece.userData = { gx: x, gz: z, isWall: true };
