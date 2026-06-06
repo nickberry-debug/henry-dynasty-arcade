@@ -367,7 +367,7 @@ export default function Dungeon3DRun() {
         if (j.active) {
           const jx = j.x - j.cx, jy = j.y - j.cy;
           const r = Math.hypot(jx, jy);
-          const max = 40;  // tighter than 50 per iPad feedback
+          const max = 50;
           const t = Math.min(1, r / max);
           if (r > 6) { ax += (jx / r) * t; az += (jy / r) * t; }
         }
@@ -678,8 +678,7 @@ export default function Dungeon3DRun() {
           onPointerCancel={onJoyEnd}
           style={{
             position: "absolute",
-            left: "env(safe-area-inset-left, 0px)",
-            bottom: "env(safe-area-inset-bottom, 0px)",
+            left: 0, bottom: 0,
             width: "40%", height: "55%",
             touchAction: "none",
             background: "rgba(255,255,255,0.02)",
@@ -718,8 +717,7 @@ export default function Dungeon3DRun() {
           onClick={attackPress}
           style={{
             position: "absolute",
-            right: "calc(24px + env(safe-area-inset-right, 0px))",
-            bottom: "calc(36px + env(safe-area-inset-bottom, 0px))",
+            right: 24, bottom: 36,
             width: 88, height: 88, borderRadius: "50%",
             background: "linear-gradient(135deg, rgba(248,113,113,0.85), rgba(220,38,38,0.85))",
             border: "3px solid rgba(254,243,199,0.65)",

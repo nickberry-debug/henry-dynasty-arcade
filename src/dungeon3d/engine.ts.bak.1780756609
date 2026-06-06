@@ -372,7 +372,7 @@ export interface InputState {
   attack: boolean;
 }
 
-const PLAYER_SPEED = 7.5;     // world units / sec (bumped from 6.5 per iPad feedback)
+const PLAYER_SPEED = 6.5;     // world units / sec
 const ENEMY_SPEED = 3.0;
 const ATTACK_RANGE = 2.2;
 const ATTACK_DAMAGE = 16;
@@ -534,19 +534,9 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   if (dist2(p, g.level.stairs) < 1.2) g.state = "descending";
 
   // ── Camera lerp ──
-  const camLerp = 1 - Math.exp(-dt * 9);
+  const camLerp = 1 - Math.exp(-dt * 5);
   g.cameraTargetX += (p.x - g.cameraTargetX) * camLerp;
   g.cameraTargetZ += (p.z - g.cameraTargetZ) * camLerp;
-
-  // ── Camera bounds: keep target inside the playable interior so we
-  //    don't show out-of-world void when the player is near a wall.
-  //    Inset of CELL*3 keeps the iso frame inside the map rectangle.
-  const CAM_INSET_X = CELL * 3;
-  const CAM_INSET_Z = CELL * 3;
-  if (g.cameraTargetX < CAM_INSET_X) g.cameraTargetX = CAM_INSET_X;
-  if (g.cameraTargetX > WORLD_W - CAM_INSET_X) g.cameraTargetX = WORLD_W - CAM_INSET_X;
-  if (g.cameraTargetZ < CAM_INSET_Z) g.cameraTargetZ = CAM_INSET_Z;
-  if (g.cameraTargetZ > WORLD_H - CAM_INSET_Z) g.cameraTargetZ = WORLD_H - CAM_INSET_Z;
 
   // ── Fog-of-war reveal ──
   updateFogOfWar(g);
