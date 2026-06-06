@@ -2,7 +2,7 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-06 (Phase 4 shipped — loot drops, gear slots, rarity tiers, interact button, commit `ea0187e`)
+**Last updated:** 2026-06-06 (Phase 5 shipped — XP + level-ups + ability picks + meta progression + class-select hotfix, commit `3be1a5c`)
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
 
 ---
@@ -85,10 +85,10 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| XP + leveling | ❌ todo | XP on kill; level up = stat bump + maybe ability unlock |
-| Ability unlock tree | ❌ todo | 3 abilities per class, unlock by level |
-| Meta-progression between runs | ❌ todo | Currency you keep on death → permanent stat or unlock |
-| Deeper floors = harder/more rewarding | ❌ todo | Scale enemy HP/damage + loot quality with depth |
+| XP + leveling | ✅ done (Phase 5, 2026-06-06, commit `3be1a5c`) | Player gains `xp`/`xpToNext`/`level`. XP per kill: grunt 8×depth, scout 14×depth, brute 22×depth. Curve: `100 × 1.45^(level-1)` → 100/145/210/305/442/... XP bar above bottom HUD, color-coded by class. Level badge in header next to class name. |
+| Ability unlock tree | ✅ done (Phase 5, 2026-06-06, commit `3be1a5c`) | 6 abilities per class (18 total) in `ABILITY_DEFS`. Mix of stat-kind (rolled into `recomputePlayerStats` so they stack with gear) + tag-kind (combat code branches on `p.abilities.includes(...)`). Level-up modal pauses engine, offers 3 random unused choices; empty pool falls back to "Refined Edge" +5% all. |
+| Meta-progression between runs | ✅ done (Phase 5, 2026-06-06, commit `3be1a5c`) | Soul shards earned on death (`runKills + floor*5`). Persisted via `localStorage['henry-dungeon-meta-v1']` w/ defensive parse. Soul Forge button on class-select opens a modal with 3 per-class unlocks (50/75/150 shards). Unlocks applied via `classDefWithMeta(classId, unlockIds)` BEFORE gear/ability math in `newPlayer`. |
+| Deeper floors = harder/more rewarding | 🟡 partial (Phase 5) | XP per kill scales with depth (`base * depth`). Enemies per room already scale with depth (1 + rand(0..min(2, depth))). Future passes: enemy HP/dmg scaling + per-depth loot quality floor lift. |
 
 ---
 
@@ -156,7 +156,7 @@
 
 When you re-fire "continue the dungeon roadmap":
 1. Read this file.
-2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 5 (progression/meta — XP/levels/ability tree) OR Phase 6 (bosses) — Phase 4 (loot/gear/interact) shipped 2026-06-06 commit `ea0187e`.** Bot should ASK before starting; don't auto-roll.
+2. **Awaiting Nick's pick: Phase 6 (bosses) OR Phase 1c (themed biomes by depth) OR Phase 7 (final polish) — Phase 5 (XP + level-ups + abilities + meta progression) shipped 2026-06-06 commit `3be1a5c`.** Bot should ASK before starting; don't auto-roll.
 3. Otherwise resume at the first ❌ item.
 4. Complete & verify it. Update this file.
 5. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
@@ -298,3 +298,46 @@ When you re-fire "continue the dungeon roadmap":
 - Sell/salvage for currency.
 - Per-class default kits or starter-item bias would feel nice (warrior leans weapons, ranger trinkets, mage armor).
 - Drop chance could scale with depth so deeper floors feel more rewarding.
+
+## Phase 5 session notes (2026-06-06)
+
+- Commit `3be1a5c` on `main`. Vercel deploy URL captured in iPhone test summary (see chat).
+- Patch script: `C:\Projects\patch_dungeon3d_phase5.py` — 17 engine edits + 12 tsx edits = 29 total, sentinel `PHASE5_APPLIED` makes it idempotent on re-runs.
+- **In-run progression:**
+  - `Player` gains `xp`, `xpToNext`, `level`, `abilities[]`, `metaUnlocks[]`, `dmgTakenMult`, `meleeBelow40Mult`, `manaShieldUsedThisFloor`, `shotCount`.
+  - `Game` gains `pendingLevelUp`, `levelUpChoices[]`, `runShardsEarned`, `runEnded`.
+  - `awardXpForKill(g, kind)` called from all 3 kill paths (dash, melee, projectile). Level-up loops in case one kill crosses multiple thresholds.
+  - Level-up modal renders 3 ability cards in class-color gradient; tap one → `applyAbilityChoice(p, id)` → recompute → resume.
+- **Ability pools (`ABILITY_DEFS`, 18 total):**
+  - Warrior: bulwark (stat +20% hp), vampiric (tag, 10% lifesteal on melee/dash), cleave (tag, 90° cone), momentum (tag, dash refunds 50% CD on hit), ironhide (stat -15% dmg taken), berserker (stat +30% melee below 40% hp).
+  - Ranger: swift (stat +15% spd), pierce (tag, projectiles pass through 1 enemy), triple_shot (tag, 3 arrows), eagle_eye (stat +30% rng dmg / +50% rng range), evasion (tag 25% dodge), quickdraw (stat -20% rng CD).
+  - Mage: arcane_battery (stat -25% rng CD), frost_nova_plus (tag, 0.5s nova stun), fireball_split (tag, 4 mini fireballs), mana_shield (tag, first hit/floor negated), meteor (tag, every 8th shot = 3× dmg + 1.8× radius), chilling_aura (tag, slow 30% within 4u).
+- **Meta progression (cross-run):**
+  - localStorage key `henry-dungeon-meta-v1` = `{ shards: number; unlocks: Record<ClassId, string[]> }` with defensive parse (malformed → defaults).
+  - `META_UNLOCKS` (9 total, 3 per class at 50/75/150 shards):
+    - Warrior: Veteran +10% hp, Sharpened +10% melee dmg, Ironclad -10% dmg taken.
+    - Ranger: Trained +10% spd, Marksman +10% rng dmg, Eagle Scout -10% rng CD.
+    - Mage: Apprentice +10% hp, Adept +10% nova dmg, Archmage -10% rng CD.
+  - Apply chain: `CLASS_DEFS[id]` → `classDefWithMeta(id, unlocks)` → ability stat bumps → gear affixes.
+  - Run-end shards = `runKills + floor * 5`, persisted automatically when `g.runEnded` flips.
+- **UI:**
+  - XP bar (h-1) below the existing HP bar, color-coded by class tint.
+  - Level badge in header: `· Floor N · Lv M` (Floor = depth, Lv = player.level).
+  - Level-up modal full-screen translucent, 3 class-tinted cards with center one pulsing (`@keyframes phase5pulse` 1.025× scale loop).
+  - Soul Forge button on class-select (bottom of card list) opens a modal with per-class unlock grid. Owned items lock in green; affordable in yellow border; unaffordable dimmed.
+  - Run-end banner appears on class-select screen after death: kills + floor + shards earned.
+- **HOTFIX (bundled, priority #1):**
+  - iPhone class-select tap fix: cards now bind BOTH `onPointerDown` AND `onClick`, plus explicit `touchAction: "manipulation"` + `pointerEvents: "auto"` + `WebkitTapHighlightColor` for visual feedback.
+  - `console.log("[d3d] class tapped:", c)` for remote-debugging confirmation.
+  - Same belt-and-suspenders pattern applied to all Phase 5 buttons (level-up cards, Soul Forge button + modal entries + close).
+- **What to test on iPhone:**
+  1. Tap a hero on class-select → run starts immediately (no frozen screen).
+  2. Kill enemies → XP bar fills → level-up modal appears at threshold → tap an ability → effect applies (e.g. Berserker dmg jumps when hp drops; Mana Shield negates first hit on the next floor).
+  3. Die → return to class-select → see the run-end banner with shards count.
+  4. Tap Soul Forge → buy an unlock (start with Veteran for warrior, 50 shards) → return → start a new warrior run → notice the +10% hp on the new run baseline.
+- **Phase 5 leftovers (not blocking):**
+  - Enemy HP/dmg scaling by depth — currently only count scales.
+  - Loot quality floor lift on deeper floors — currently same global weights.
+  - Multi-level-up queueing UX (more than 1 level in a single frame) currently re-rolls choices on each resolution; could be smoother.
+  - No HUD indicator for currently-active abilities (player has to remember what they picked).
+
