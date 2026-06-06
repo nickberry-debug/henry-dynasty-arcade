@@ -26,3 +26,6 @@ MEMORY.md
 workspace-state.json
 .vercel
 .env*
+
+# bot backup files
+*.bak.*
