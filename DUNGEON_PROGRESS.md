@@ -2,7 +2,7 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-06 (Phase 2b shipped — combat anims + hit-react + sword trail + iPhone fixes)
+**Last updated:** 2026-06-06 (Phase 3 shipped — hero classes Warrior/Ranger/Mage + class-select screen, commit `b2d3839`)
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
 
 ---
@@ -60,10 +60,12 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| 3+ playable classes (Warrior / Ranger / Mage) | ❌ todo | Warrior: heavy melee + block. Ranger: ranged + dodge. Mage: AoE spells + slow walk |
-| Different character models per class | ❌ todo | Pull from 18 character GLBs — assign distinct silhouettes |
-| Class select screen at run start | ❌ todo | Pre-run screen showing 3 cards |
-| Per-class stats + attacks + feel | ❌ todo | Each class has own attack timing, HP, speed |
+| 3+ playable classes (Warrior / Ranger / Mage) | ✅ done (Phase 3, 2026-06-06, commit `b2d3839`) | All three live with distinct kits. Warrior: HP 120, SPD 6.8, melee 22, Zap = 4u/0.2s dash w/ contact damage. Ranger: HP 80, SPD 8.5, melee 10, Zap = 2 arrows in ±15° cone @ 0.32s cd. Mage: HP 70, SPD 6.5, Sword = 360° frost nova (15dmg + 0.25s slow), Zap = fat fireball (32 dmg, radius 0.9, 1.1s cd). |
+| Different character models per class | ✅ done (Phase 3, 2026-06-06, commit `b2d3839`) | Warrior = `character-a.glb`, Ranger = `character-b.glb`, Mage = `character-e.glb`. `tintModel` applies class color at load (warm red/gold, emerald, soft violet). |
+| Class select screen at run start | ✅ done (Phase 3, 2026-06-06, commit `b2d3839`) | Three full-bleed cards with class name, tagline, HP/SPD/MELEE/DASH-or-RANGED stats, and one-line flavor. `classChoice` state gates the scene setup useEffect; `newRun()` returns to the picker. |
+| Per-class stats + attacks + feel | ✅ done (Phase 3, 2026-06-06, commit `b2d3839`) | Player carries `classId/speed/attackDmg/attackRange/rangedDmg/rangedSpeed/rangedRadius` from `CLASS_DEFS`. `step()` movement reads `p.speed`; warrior dash adds `dashT/Vx/Vz/Hit`; mage melee is 360° AoE with hitStun slow; ranger spawns two projectiles per shot. Projectile gained optional `radius` for mage fireball. |
+
+**Phase 3 entrance status:** Shipped 2026-06-06 (commit `b2d3839`, build stamp `06-06 21:45`, deploy `https://henry-dynasty.vercel.app/dungeon3d/run`). Patch: `C:\Projects\patch_dungeon3d_phase3.py` — 10 engine edits + 17 tsx edits, all single-anchored find/replace with idempotent skip-if-already-applied.
 
 ---
 
@@ -154,7 +156,7 @@
 
 When you re-fire "continue the dungeon roadmap":
 1. Read this file.
-2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 3 (hero classes — Warrior / Ranger / Mage with class-select screen).** Bot should ASK before starting; don't auto-roll.
+2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 4 (loot/gear) — Phase 3 (hero classes) shipped 2026-06-06 commit `b2d3839`.** Bot should ASK before starting; don't auto-roll.
 3. Otherwise resume at the first ❌ item.
 4. Complete & verify it. Update this file.
 5. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
@@ -200,3 +202,47 @@ When you re-fire "continue the dungeon roadmap":
 - Enemy AI variety (chargers/ranged/swarmers/tanky).
 - Dodge-roll or block.
 - Full JuiceKit: particles, screen shake on heavy hits, slow-mo on kills.
+
+
+## Phase 3 session notes (2026-06-06)
+
+- Commit `b2d3839` on `main`, deployed by Vercel as `dpl_D6emfhX3sKXLUpeyr6YapoWaMKVg` (READY at 1780775517).
+- Aliases: `henry-dynasty.vercel.app`, `henry-dynasty-git-main-nickberry-debugs-projects.vercel.app`.
+- BUILD_STAMP bumped to `2026-06-06T21:45:00Z`.
+- Patch script: `C:\Projects\patch_dungeon3d_phase3.py` (idempotent — re-runnable). 10 engine edits + 17 tsx edits, single-anchored find/replace with `.bak` per file. First run got through engine but crashed on tsx because of a description-string encoding (cp1252 vs utf-8) and a mojibake `Â·` in the file vs clean `·` in the patch; fixes folded into the same script.
+
+### What landed (engine.ts)
+
+- New `ClassId = "warrior" | "ranger" | "mage"` type + `ClassDef` interface + `CLASS_DEFS` const table holding HP/SPD/melee/ranged stats + color tint per class.
+- `Player` gained `classId`, `speed`, `attackDmg`, `attackRange`, `rangedDmg`, `rangedSpeed`, `rangedRadius`, and warrior dash state (`dashT`, `dashVx`, `dashVz`, `dashHit: Set<string>`).
+- `Projectile` gained optional `radius?` so the mage fireball's fat 0.9-unit collider can override the default 0.6.
+- `newPlayer(level, classId)` + `newGame(depth, classId)` signatures both default to `"warrior"`. `descendLevel` resets dash state on level transition.
+- `step()` movement: reads `p.speed`; while `p.dashT > 0` overrides input and damages any enemy whose hitbox the dash crosses (`dashHit` tracks IDs so one dash doesn't tick twice).
+- `step()` melee: warrior/ranger frontal cone uses `p.attackDmg` + `p.attackRange`; mage triggers a 360° AoE centered on the player with 0.25s hitStun slow (vs 0.12s for the other two).
+- `step()` ranged: warrior fires a `dashT = 0.2s` forward burst (no projectile); ranger spawns two arrows in a randomized ±15° cone; mage spits one fat slow heavy fireball with `radius = p.rangedRadius` (0.9) and `ttl + 0.4s`.
+
+### What landed (Dungeon3DRun.tsx)
+
+- `gameRef` is now `Ref<Game | null>`. `classChoice: ClassId | null` state gates the scene setup.
+- Setup `useEffect` now keys on `[classChoice]`: early-returns when null, lazily constructs `gameRef.current = newGame(1, classChoice)`, loads the class-specific GLB, and applies `tintModel(playerObj, CLASS_DEFS[classChoice].tint)`.
+- Per-class GLB map: warrior = `character-a.glb` (existing), ranger = `character-b.glb`, mage = `character-e.glb`. None overlap with grunt/scout/brute pools.
+- Class-select overlay: three vertical cards with class name in the class tint, tagline, HP/SPD/MELEE/DASH-or-RANGED stat grid, and a one-line "how it plays" blurb. Tapping a card sets `classChoice` → setup effect mounts the scene with the right model.
+- Header: `DUNGEON · {CLASSNAME} · Lv {depth}` with the class name colored to match the class tint.
+- Zap button background gradient now follows the class (warm orange for warrior dash, emerald for ranger arrows, fire-orange for mage fireball).
+- `newRun()` calls `threeRef.current?.dispose()`, nulls both refs, and resets `classChoice` to null → user lands back on class-select, picks again, scene rebuilds.
+- Loop guard: `if (!g) return;` inside the rAF closure so a stale frame mid-teardown can't blow up.
+
+### What to test on iPhone
+
+1. **Class-select first**: when the app routes to `/dungeon3d/run`, the three-card screen should appear before any dungeon mesh loads. Tap a card → loading indicator → dungeon mounts with the chosen class's model + tint.
+2. **Warrior feel**: Sword (red button) is the standard frontal cone, 22 damage, slightly bigger 2.6u reach. Zap (orange) should kick a 4-unit forward dash over 0.2s with iframes; any enemy in the dash path takes 22 damage and gets knocked back. Cooldown ~0.7s.
+3. **Ranger feel**: Sword does only 10 damage. Zap (green) should fire **two** arrows per press — one straight at the nearest target, one offset ±15° — at a snappy 0.32s cooldown. Player moves noticeably faster (8.5 vs warrior 6.8).
+4. **Mage feel**: Sword (still red) should now visibly hit every enemy within 3 units around the player, not just in front, and slow them noticeably (0.25s hitStun). Zap (orange) is slow but heavy — a single fat 32-damage fireball every 1.1s with a wider hit radius.
+5. **Restart loop**: dying or pressing the header refresh icon should drop back to class-select, not auto-respawn into the same class.
+6. **Header**: should always show the active class name in its class color next to the depth indicator.
+
+### Still TODO
+
+- Distinct projectile mesh per class would be a nice juice pass (currently all projectiles render with the same blue glow from Phase 2a). Could be Phase 3b polish.
+- No per-class run stats yet — Phase 5 (progression/meta) territory.
+- Sword/Zap button icons still generic. Could swap to a Bow icon for ranger or a Flame icon for mage if Nick wants more visual delta.
