@@ -12,13 +12,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Heart, RotateCcw, Trophy, Skull, Coins, Swords, Sparkles, Zap } from "lucide-react";
+import { ArrowLeft, Heart, RotateCcw, Trophy, Skull, Coins, Swords, Sparkles, Zap, Hand, Backpack } from "lucide-react";
 import * as THREE from "three";
 import {
   newGame, step, descendLevel, CELL, COLS, ROWS, WORLD_W, WORLD_H,
   isCellVisible,
-  CLASS_DEFS,
-  type Game, type InputState, type ClassId,
+  CLASS_DEFS, RARITY_COLORS, RARITY_HEX, recomputePlayerStats,
+  type Game, type InputState, type ClassId, type Item, type Rarity,
 } from "../engine";
 import {
   loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
@@ -27,7 +27,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T21:45:00Z";
+const BUILD_STAMP = "2026-06-06T22:30:00Z";
 
 export default function Dungeon3DRun() {
   const navigate = useNavigate();
@@ -42,7 +42,7 @@ export default function Dungeon3DRun() {
   const [loading, setLoading] = useState(true);
 
   // Input snapshot.
-  const inputRef = useRef<InputState>({ ax: 0, az: 0, attack: false, ranged: false });
+  const inputRef = useRef<InputState>({ ax: 0, az: 0, attack: false, ranged: false, interact: false });
   // Camera tuning recomputed on resize/orientationchange so portrait gets
   // a wider frustum + larger lookAt offset (player stays nicely framed).
   const camTuningRef = useRef({ d: 14, lookAtZ: 1.5 });
@@ -50,7 +50,7 @@ export default function Dungeon3DRun() {
     w: typeof window === "undefined" ? 0 : window.innerWidth,
     h: typeof window === "undefined" ? 0 : window.innerHeight,
   });
-  const keys = useRef({ up: false, down: false, left: false, right: false, attack: false, ranged: false });
+  const keys = useRef({ up: false, down: false, left: false, right: false, attack: false, ranged: false, interact: false });
   const joyRef = useRef<{ active: boolean; cx: number; cy: number; x: number; y: number; id: number | null }>({
     active: false, cx: 0, cy: 0, x: 0, y: 0, id: null,
   });
@@ -85,6 +85,7 @@ export default function Dungeon3DRun() {
       else if (e.key === "ArrowRight" || e.key === "d") k.right = true;
       else if (e.key === " " || e.key === "j" || e.key === "Enter") k.attack = true;
       else if (e.code === "KeyF" || e.code === "KeyL") { k.ranged = true; e.preventDefault(); }
+      else if (e.code === "KeyE") { k.interact = true; e.preventDefault(); }
     }
     function onUp(e: KeyboardEvent) {
       const k = keys.current;
@@ -94,6 +95,7 @@ export default function Dungeon3DRun() {
       else if (e.key === "ArrowRight" || e.key === "d") k.right = false;
       else if (e.key === " " || e.key === "j" || e.key === "Enter") k.attack = false;
       else if (e.code === "KeyF" || e.code === "KeyL") k.ranged = false;
+      else if (e.code === "KeyE") k.interact = false;
     }
     window.addEventListener("keydown", onDown);
     window.addEventListener("keyup", onUp);
@@ -120,6 +122,7 @@ export default function Dungeon3DRun() {
     dungeonGroup: THREE.Group;
     coinGroup: THREE.Group;
     chestGroup: THREE.Group;
+    itemGroup: THREE.Group;
     dispose: () => void;
   }>(null);
 
@@ -355,6 +358,8 @@ export default function Dungeon3DRun() {
       if (cancelled) return;
       const coinGroup = buildCoinMeshes(scene);
       const chestGroup = buildChestMeshes(scene, gameRef.current!.level);
+      const itemGroup = new THREE.Group();
+      scene.add(itemGroup);
 
       // Player character. Phase 3: model + tint vary by class.
       const _classUrl: Record<ClassId, string> = {
@@ -410,6 +415,7 @@ export default function Dungeon3DRun() {
         dungeonGroup,
         coinGroup,
         chestGroup,
+        itemGroup,
         dispose: () => {
           renderer.dispose();
           if (renderer.domElement.parentElement === container) container.removeChild(renderer.domElement);
@@ -447,6 +453,7 @@ export default function Dungeon3DRun() {
         inputRef.current.az = az;
         inputRef.current.attack = k.attack;
         inputRef.current.ranged = k.ranged;
+        inputRef.current.interact = k.interact;
 
         const g = gameRef.current;
         if (!g) return;
@@ -695,6 +702,37 @@ export default function Dungeon3DRun() {
             }
           }
 
+          // ── Phase 4: loot prism meshes — rebuild each frame (low count). ──
+          while (t3.itemGroup.children.length > 0) {
+            const child = t3.itemGroup.children[0] as THREE.Mesh;
+            t3.itemGroup.remove(child);
+            if (child.geometry) child.geometry.dispose();
+            const _mat = child.material as THREE.Material | THREE.Material[] | undefined;
+            if (_mat && !Array.isArray(_mat)) _mat.dispose();
+            else if (Array.isArray(_mat)) _mat.forEach(m => m.dispose());
+          }
+          for (const it of g.items) {
+            if (it.pickedUp) continue;
+            const igeo = new THREE.OctahedronGeometry(0.32, 0);
+            const ihex = RARITY_COLORS[it.rarity];
+            const imat = new THREE.MeshStandardMaterial({
+              color: ihex,
+              emissive: ihex,
+              emissiveIntensity: 0.85,
+              metalness: 0.45,
+              roughness: 0.35,
+            });
+            const imesh = new THREE.Mesh(igeo, imat);
+            const _bob = Math.sin(g.elapsed * 2 + it.id.charCodeAt(3) * 0.7) * 0.1;
+            imesh.position.set(it.x, 0.85 + _bob, it.z);
+            imesh.rotation.y = g.elapsed * 1.2 + it.id.charCodeAt(3) * 0.3;
+            imesh.castShadow = true;
+            const igx = Math.floor((it.x + WORLD_W / 2) / CELL);
+            const igz = Math.floor((it.z + WORLD_H / 2) / CELL);
+            imesh.visible = isCellVisible(g, igx, igz);
+            t3.itemGroup.add(imesh);
+          }
+
           renderer.render(scene, camera);
         }
 
@@ -782,6 +820,11 @@ export default function Dungeon3DRun() {
     e.preventDefault();
     keys.current.ranged = true;
     setTimeout(() => { keys.current.ranged = false; }, 80);
+  }
+  function interactPress(e: React.SyntheticEvent) {
+    e.preventDefault();
+    keys.current.interact = true;
+    setTimeout(() => { keys.current.interact = false; }, 120);
   }
 
   const g = gameRef.current;
@@ -941,6 +984,71 @@ export default function Dungeon3DRun() {
       <main className="flex-1 relative">
         <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
+        {/* Phase 4: equipment HUD — three slots, color-coded by rarity. */}
+        <div style={{
+          position: "absolute",
+          left: "max(8px, env(safe-area-inset-left, 0px))",
+          top: 8,
+          pointerEvents: "none",
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+          fontSize: 9,
+          fontFamily: "monospace",
+          letterSpacing: 1,
+          background: "rgba(0,0,0,0.55)",
+          padding: "6px 8px",
+          borderRadius: 8,
+          border: "1px solid rgba(254,243,199,0.18)",
+          color: "#fef3c7",
+          minWidth: 132,
+          maxWidth: 168,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 4, opacity: 0.7, marginBottom: 2 }}>
+            <Backpack size={10} aria-hidden="true" />
+            <span style={{ fontSize: 8, letterSpacing: 2 }}>GEAR</span>
+          </div>
+          {(["weapon", "armor", "trinket"] as const).map(slot => {
+            const it = g.player.equipped[slot];
+            const color = it ? RARITY_HEX[it.rarity] : "rgba(254,243,199,0.35)";
+            return (
+              <div key={slot} style={{ display: "flex", alignItems: "baseline", gap: 6, color }}>
+                <span style={{ opacity: 0.55, width: 44 }}>{slot.toUpperCase()}</span>
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {it ? it.name : "—"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Phase 4: pickup toast — fades via g.toast.ttl. */}
+        {g.toast && (
+          <div style={{
+            position: "absolute",
+            left: "50%",
+            top: 60,
+            transform: "translateX(-50%)",
+            pointerEvents: "none",
+            background: "rgba(0,0,0,0.82)",
+            border: `1.5px solid ${RARITY_HEX[g.toast.rarity]}`,
+            color: RARITY_HEX[g.toast.rarity],
+            padding: "6px 12px",
+            borderRadius: 8,
+            fontSize: 11,
+            fontFamily: "monospace",
+            letterSpacing: 1,
+            whiteSpace: "nowrap",
+            opacity: Math.min(1, g.toast.ttl / 0.6),
+            transition: "opacity 0.2s ease",
+            maxWidth: "90%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}>
+            {g.toast.text}
+          </div>
+        )}
+
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.75)", color: "#fde047" }}>
@@ -1024,6 +1132,58 @@ export default function Dungeon3DRun() {
           aria-label="Ranged Attack">
           <Zap size={24} aria-hidden="true" />
         </button>
+        {/* Phase 4: Interact / Pick up button — faded until something's nearby. */}
+        <button
+          onPointerDown={interactPress}
+          onTouchStart={interactPress}
+          onClick={interactPress}
+          style={{
+            position: "absolute",
+            right: "max(15%, calc(58px + env(safe-area-inset-right, 0px)))",
+            bottom: "max(18%, calc(110px + env(safe-area-inset-bottom, 0px)))",
+            width: 50, height: 50, borderRadius: "50%",
+            background: g.nearestPickable
+              ? `linear-gradient(135deg, ${RARITY_HEX[g.nearestPickable.rarity]}d0, ${RARITY_HEX[g.nearestPickable.rarity]}90)`
+              : "linear-gradient(135deg, rgba(214,182,128,0.85), rgba(160,128,84,0.85))",
+            border: g.nearestPickable
+              ? `2px solid ${RARITY_HEX[g.nearestPickable.rarity]}`
+              : "2px solid rgba(214,182,128,0.55)",
+            color: "#1a0505",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            touchAction: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            WebkitTapHighlightColor: "transparent",
+            opacity: g.nearestPickable ? 1.0 : 0.3,
+            transition: "opacity 0.15s ease, border 0.15s ease, box-shadow 0.15s ease",
+            boxShadow: g.nearestPickable
+              ? `0 6px 16px ${RARITY_HEX[g.nearestPickable.rarity]}88`
+              : "0 4px 10px rgba(0,0,0,0.4)",
+          }}
+          aria-label="Interact / Pick up">
+          <Hand size={20} aria-hidden="true" />
+        </button>
+        {g.nearestPickable && (
+          <div style={{
+            position: "absolute",
+            right: "max(15%, calc(58px + env(safe-area-inset-right, 0px)))",
+            bottom: "max(18%, calc(168px + env(safe-area-inset-bottom, 0px)))",
+            transform: "translateX(50%)",
+            pointerEvents: "none",
+            background: "rgba(0,0,0,0.82)",
+            border: `1.5px solid ${RARITY_HEX[g.nearestPickable.rarity]}`,
+            color: RARITY_HEX[g.nearestPickable.rarity],
+            padding: "4px 8px",
+            borderRadius: 6,
+            fontSize: 10,
+            fontFamily: "monospace",
+            letterSpacing: 1,
+            whiteSpace: "nowrap",
+            textShadow: "0 1px 2px rgba(0,0,0,0.7)",
+          }}>
+            [E] {g.nearestPickable.name}
+          </div>
+        )}
         <button
           onPointerDown={attackPress}
           onTouchStart={attackPress}

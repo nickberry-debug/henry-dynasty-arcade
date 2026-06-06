@@ -44,6 +44,44 @@ export type EnemyKind = "grunt" | "brute" | "scout";
 
 export type ClassId = "warrior" | "ranger" | "mage";
 
+// ── Phase 4: loot rarity + item interface ──────────────────────────
+export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+
+export interface Item {
+  id: string;
+  kind: "weapon" | "armor" | "trinket";
+  name: string;
+  rarity: Rarity;
+  affixes: {
+    dmgPct?: number;
+    speedPct?: number;
+    hpPct?: number;
+    rangedCdPct?: number;
+    meleeRangePct?: number;
+  };
+  x: number;
+  z: number;
+  pickedUp: boolean;
+}
+
+/** Three.js hex colors for the glowing prism + button glow. */
+export const RARITY_COLORS: Record<Rarity, number> = {
+  common: 0xffffff,
+  uncommon: 0x6ee07a,
+  rare: 0x60a5fa,
+  epic: 0xc8a0ff,
+  legendary: 0xffa040,
+};
+
+/** CSS hex strings for HUD / toast / button styling. */
+export const RARITY_HEX: Record<Rarity, string> = {
+  common: "#ffffff",
+  uncommon: "#6ee07a",
+  rare: "#60a5fa",
+  epic: "#c8a0ff",
+  legendary: "#ffa040",
+};
+
 export interface ClassDef {
   id: ClassId;
   label: string;
@@ -112,6 +150,9 @@ export interface Player {
   dashVx: number;
   dashVz: number;
   dashHit: Set<string>;
+  // ── Phase 4: equipped gear + interact debounce ─────────────────
+  equipped: { weapon?: Item; armor?: Item; trinket?: Item };
+  interactCd: number;
 }
 
 export interface Enemy {
@@ -162,6 +203,10 @@ export interface Game {
   elapsed: number;
   runCoins: number;
   runKills: number;
+  // ── Phase 4: loot on the ground + interact state ───────────────
+  items: Item[];
+  toast: { text: string; rarity: Rarity; ttl: number } | null;
+  nearestPickable: Item | null;
 }
 
 // ── Random utilities ─────────────────────────────────────────────────
@@ -375,6 +420,8 @@ export function newPlayer(level: DungeonLevel, classId: ClassId = "warrior"): Pl
     rangedSpeed: cd.rangedSpeed,
     rangedRadius: cd.rangedRadius,
     dashT: 0, dashVx: 0, dashVz: 0, dashHit: new Set<string>(),
+    equipped: {},
+    interactCd: 0,
   };
 }
 
@@ -388,6 +435,7 @@ export function newGame(depth = 1, classId: ClassId = "warrior"): Game {
     state: "playing",
     cameraTargetX: player.x, cameraTargetZ: player.z,
     hitStop: 0, elapsed: 0, runCoins: 0, runKills: 0,
+    items: [], toast: null, nearestPickable: null,
   };
 }
 
@@ -410,7 +458,14 @@ export function descendLevel(g: Game): Game {
     x: next.spawn.x, z: next.spawn.z,
     attackT: 0, iframes: 1.0, flashT: 0, anim: "idle",
     dashT: 0, dashVx: 0, dashVz: 0, dashHit: new Set<string>(),
+    interactCd: 0,
   };
+  // Phase 4: floor-clear bonus — guaranteed uncommon+ drop near the new spawn.
+  const _bonusItem = rollLoot(
+    next.spawn.x + (Math.random() - 0.5) * 2,
+    next.spawn.z + (Math.random() - 0.5) * 2,
+    pickRarityMin("uncommon"),
+  );
   return {
     level: next, depth: g.depth + 1, player,
     enemies: next.enemies.map(mkEnemy),
@@ -419,6 +474,7 @@ export function descendLevel(g: Game): Game {
     cameraTargetX: player.x, cameraTargetZ: player.z,
     hitStop: 0, elapsed: 0,
     runCoins: g.runCoins, runKills: g.runKills,
+    items: [_bonusItem], toast: null, nearestPickable: null,
   };
 }
 
@@ -450,6 +506,112 @@ function tryMove(level: DungeonLevel, ent: { x: number; z: number }, dx: number,
   }
 }
 
+// ── Phase 4: Loot generation + helpers ───────────────────────────────
+
+const LOOT_BASE_CHANCE_PCT = 18;
+const PICKUP_LOOT_RANGE = 1.2;
+
+const ITEM_NAMES: Record<Item["kind"], string[]> = {
+  weapon: ["Iron Sword", "Hunter's Bow", "Frost Staff", "Reaver Blade", "Stalker's Edge", "Ember Wand", "Thorn Spike"],
+  armor: ["Hunter's Cloak", "Plate Vest", "Mage Robe", "Shadow Wraps", "Bulwark Vest", "Wraith Mantle"],
+  trinket: ["Ember Charm", "Sigil of Sight", "Howling Talisman", "Stone of Brawn", "Whisper Stone", "Ember Pendant"],
+};
+
+function pickRarity(): Rarity {
+  // Weights: common 55, uncommon 25, rare 13, epic 6, legendary 1.
+  const r = Math.random() * 100;
+  if (r < 1) return "legendary";
+  if (r < 7) return "epic";
+  if (r < 20) return "rare";
+  if (r < 45) return "uncommon";
+  return "common";
+}
+
+function pickRarityMin(min: Rarity): Rarity {
+  const order: Rarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
+  const minIdx = order.indexOf(min);
+  // Bounded reroll — keeps natural distribution above the floor.
+  for (let i = 0; i < 8; i++) {
+    const r = pickRarity();
+    if (order.indexOf(r) >= minIdx) return r;
+  }
+  return min;
+}
+
+function rollAffixes(rarity: Rarity): Item["affixes"] {
+  const cfg: Record<Rarity, { count: [number, number]; range: [number, number] }> = {
+    common:    { count: [1, 1], range: [3, 6] },
+    uncommon:  { count: [1, 2], range: [5, 10] },
+    rare:      { count: [2, 2], range: [10, 15] },
+    epic:      { count: [2, 3], range: [15, 25] },
+    legendary: { count: [3, 3], range: [25, 40] },
+  };
+  const c = cfg[rarity];
+  const n = randint(c.count[0], c.count[1]);
+  const keys: Array<keyof Item["affixes"]> = ["dmgPct", "speedPct", "hpPct", "rangedCdPct", "meleeRangePct"];
+  const shuffled = [...keys].sort(() => Math.random() - 0.5);
+  const aff: Item["affixes"] = {};
+  for (let i = 0; i < n && i < shuffled.length; i++) {
+    const v = c.range[0] + Math.random() * (c.range[1] - c.range[0]);
+    aff[shuffled[i]] = Math.round(v);
+  }
+  return aff;
+}
+
+/** Spawn a fresh ground item at (x, z). Optional rarity override is used
+ *  by the descend-bonus path; otherwise picks per the global weights. */
+export function rollLoot(x: number, z: number, rarityOverride?: Rarity): Item {
+  const rarity = rarityOverride ?? pickRarity();
+  const kinds: Array<Item["kind"]> = ["weapon", "armor", "trinket"];
+  const kind = kinds[Math.floor(Math.random() * kinds.length)];
+  const pool = ITEM_NAMES[kind];
+  const name = pool[Math.floor(Math.random() * pool.length)];
+  return {
+    id: `it_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    kind, name, rarity,
+    affixes: rollAffixes(rarity),
+    x, z,
+    pickedUp: false,
+  };
+}
+
+function tryEnemyLoot(g: Game, e: Enemy) {
+  // Base 18%, +5% on brutes, +3% on scouts.
+  const base = LOOT_BASE_CHANCE_PCT;
+  const bonus = e.kind === "brute" ? 5 : e.kind === "scout" ? 3 : 0;
+  if (Math.random() * 100 < base + bonus) {
+    g.items.push(rollLoot(e.x, e.z));
+  }
+}
+
+/** Apply equipped affixes as percentage multipliers on top of class base
+ *  stats. Call after every equip / unequip so the next frame sees the
+ *  new derived values. Current HP scales with new max so a heal effect
+ *  doesn't pop the player below 1 HP. */
+export function recomputePlayerStats(p: Player) {
+  const base = CLASS_DEFS[p.classId];
+  let dmg = 0, spd = 0, hp = 0, rcd = 0, mrange = 0;
+  for (const slot of ["weapon", "armor", "trinket"] as const) {
+    const it = p.equipped[slot];
+    if (!it) continue;
+    if (it.affixes.dmgPct) dmg += it.affixes.dmgPct;
+    if (it.affixes.speedPct) spd += it.affixes.speedPct;
+    if (it.affixes.hpPct) hp += it.affixes.hpPct;
+    if (it.affixes.rangedCdPct) rcd += it.affixes.rangedCdPct;
+    if (it.affixes.meleeRangePct) mrange += it.affixes.meleeRangePct;
+  }
+  const prevMax = p.hpMax || base.hpMax;
+  const newMax = Math.max(1, Math.round(base.hpMax * (1 + hp / 100)));
+  p.hp = Math.max(1, Math.min(newMax, Math.round((p.hp || base.hpMax) * (newMax / prevMax))));
+  p.hpMax = newMax;
+  p.speed = base.speed * (1 + spd / 100);
+  p.attackDmg = base.attackDmg * (1 + dmg / 100);
+  p.attackRange = base.attackRange * (1 + mrange / 100);
+  p.rangedDmg = base.rangedDmg * (1 + dmg / 100);
+  p.rangedCdDur = Math.max(0.05, base.rangedCdDur * (1 - rcd / 100));
+}
+
+
 // ── Step ─────────────────────────────────────────────────────────────
 
 export interface InputState {
@@ -457,6 +619,7 @@ export interface InputState {
   az: number;
   attack: boolean;
   ranged: boolean;
+  interact: boolean;
 }
 
 const PLAYER_SPEED = 7.5;     // world units / sec (bumped from 6.5 per iPad feedback)
@@ -515,6 +678,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
               ttl: 14,
             });
           }
+          tryEnemyLoot(g, e);
           g.hitStop = Math.max(g.hitStop, 0.10);
         } else {
           g.hitStop = Math.max(g.hitStop, 0.04);
@@ -579,6 +743,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
               ttl: 14,
             });
           }
+          tryEnemyLoot(g, e);
           g.hitStop = 0.10;
         } else {
           g.hitStop = 0.04;
@@ -702,6 +867,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
               ttl: 14,
             });
           }
+          tryEnemyLoot(g, e);
           g.hitStop = Math.max(g.hitStop, 0.10);
         }
         hit = true;
@@ -825,6 +991,52 @@ export function step(g: Game, dtRaw: number, input: InputState) {
 
   // ── Stairs / descend ──
   if (dist2(p, g.level.stairs) < 1.2) g.state = "descending";
+
+  // ── Phase 4: nearest pickable + interact press ──
+  {
+    let nearest: Item | null = null;
+    let nearestD = PICKUP_LOOT_RANGE;
+    for (const it of g.items) {
+      if (it.pickedUp) continue;
+      const d = Math.hypot(it.x - p.x, it.z - p.z);
+      if (d < nearestD) { nearestD = d; nearest = it; }
+    }
+    g.nearestPickable = nearest;
+    p.interactCd = Math.max(0, p.interactCd - dt);
+    if (input.interact && nearest && p.interactCd <= 0) {
+      p.interactCd = 0.3;
+      const slot = nearest.kind;
+      const prev = p.equipped[slot];
+      if (prev) {
+        // Replacing: drop the OLD item at the new pickup location for re-pickup.
+        prev.x = nearest.x + (Math.random() - 0.5) * 0.6;
+        prev.z = nearest.z + (Math.random() - 0.5) * 0.6;
+        prev.pickedUp = false;
+        g.items.push(prev);
+      }
+      nearest.pickedUp = true;
+      p.equipped[slot] = nearest;
+      g.items = g.items.filter(i => !i.pickedUp);
+      g.nearestPickable = null;
+      recomputePlayerStats(p);
+      const a = nearest.affixes;
+      const aStr: string[] = [];
+      if (a.dmgPct)         aStr.push(`+${a.dmgPct}% dmg`);
+      if (a.speedPct)       aStr.push(`+${a.speedPct}% spd`);
+      if (a.hpPct)          aStr.push(`+${a.hpPct}% hp`);
+      if (a.rangedCdPct)    aStr.push(`+${a.rangedCdPct}% fire rate`);
+      if (a.meleeRangePct)  aStr.push(`+${a.meleeRangePct}% reach`);
+      g.toast = {
+        text: `${nearest.rarity.toUpperCase()} ${nearest.name} — ${aStr.join(", ")}`,
+        rarity: nearest.rarity,
+        ttl: 2.0,
+      };
+    }
+    if (g.toast) {
+      g.toast.ttl -= dt;
+      if (g.toast.ttl <= 0) g.toast = null;
+    }
+  }
 
   // ── Camera lerp ──
   const camLerp = 1 - Math.exp(-dt * 9);
