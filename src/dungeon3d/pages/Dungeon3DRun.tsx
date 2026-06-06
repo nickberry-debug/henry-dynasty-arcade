@@ -1,7 +1,7 @@
-// Dungeon 3D — main run page.
+// Dungeon 3D â€” main run page.
 //
 // Three.js scene with an orthographic isometric camera matching the
-// Kenney promo render look (high pitch, ~45° yaw, soft shadows,
+// Kenney promo render look (high pitch, ~45Â° yaw, soft shadows,
 // purple-stone palette). Player + enemies are blocky-characters GLBs;
 // dungeon pieces are real Kenney modular-dungeon-kit GLBs.
 //
@@ -20,10 +20,13 @@ import {
   type Game, type InputState,
 } from "../engine";
 import {
-  loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, tintModel,
+  loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
 } from "../modelCache";
 import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
+
+// BUILD_STAMP updated automatically by patch â€” confirms which build is live
+const BUILD_STAMP = "2026-06-06T15:24:33Z";
 
 export default function Dungeon3DRun() {
   const navigate = useNavigate();
@@ -70,7 +73,7 @@ export default function Dungeon3DRun() {
     };
   }, []);
 
-  // ── THREE.JS SCENE — mounted once, never re-created across renders ─
+  // â”€â”€ THREE.JS SCENE â€” mounted once, never re-created across renders â”€
   //
   // The whole scene lives inside this ref-bound effect. We keep handles
   // to the renderer / camera / scene + the per-frame draw + the level
@@ -106,7 +109,7 @@ export default function Dungeon3DRun() {
       loadModel(DUNGEON_MODELS.gate),
     ]);
 
-    // Each Kenney piece is ~4×4 units; pieces are centered at origin
+    // Each Kenney piece is ~4Ã—4 units; pieces are centered at origin
     // with their footprint covering [-2, 2]. We place at grid-cell
     // center (cell_x*CELL + CELL/2 - WORLD_W/2).
     for (let z = 0; z < ROWS; z++) {
@@ -138,7 +141,7 @@ export default function Dungeon3DRun() {
       }
     }
 
-    // Walls — placed AROUND floor cells. We iterate every wall cell that
+    // Walls â€” placed AROUND floor cells. We iterate every wall cell that
     // borders a floor and place a flat wall facing inward.
     for (let z = 0; z < ROWS; z++) {
       for (let x = 0; x < COLS; x++) {
@@ -188,7 +191,7 @@ export default function Dungeon3DRun() {
   }
 
   function buildCoinMeshes(scene: THREE.Scene): THREE.Group {
-    // Coins use simple geometry (no GLB needed — keeps draw calls low).
+    // Coins use simple geometry (no GLB needed â€” keeps draw calls low).
     const group = new THREE.Group();
     scene.add(group);
     return group;
@@ -222,7 +225,7 @@ export default function Dungeon3DRun() {
   async function loadCharacter(url: string, tint?: number): Promise<{ obj: THREE.Object3D; mixer: THREE.AnimationMixer; actions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction; attack?: THREE.AnimationAction } }> {
     const { scene: obj, animations } = await loadModel(url);
     if (tint !== undefined) tintModel(obj, tint);
-    // Kenney blocky-characters typically come at ~2 units tall — fine
+    // Kenney blocky-characters typically come at ~2 units tall â€” fine
     // for our 4-unit cells. No global scale needed.
     const mixer = new THREE.AnimationMixer(obj);
     const idleClip = pickClip(animations, ["idle", "rest", "stand"]);
@@ -252,7 +255,7 @@ export default function Dungeon3DRun() {
       await preloadCriticalModels();
       if (cancelled) return;
 
-      // ── Scene + lighting ──────────────────────────────────────────
+      // â”€â”€ Scene + lighting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0x140510);
       scene.fog = new THREE.Fog(0x140510, 30, 65);
@@ -277,22 +280,25 @@ export default function Dungeon3DRun() {
       fill.position.set(-8, 10, -8);
       scene.add(fill);
 
-      // ── Camera (orthographic isometric) ─────────────────────────────
+      // â”€â”€ Camera (orthographic isometric) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // The Kenney promos use a 30-ish degree look-down with slight
       // perspective. We use orthographic to keep the chunky kit pieces
       // looking clean at any screen size. d controls zoom level.
       const aspect = container.clientWidth / container.clientHeight;
-      // Pulled back from d=8 to d=14 — user feedback said too close.
+      // Pulled back from d=8 to d=14 â€” user feedback said too close.
       // Bigger d = more world visible in the orthographic frustum.
       const d = 14;
       const camera = new THREE.OrthographicCamera(-d * aspect, d * aspect, d, -d, 0.1, 100);
-      // Iso angle: 35.264° pitch + 45° yaw is the "true" isometric
+      // Iso angle: 35.264Â° pitch + 45Â° yaw is the "true" isometric
       // angle. Camera offset proportional to d so the pitch stays
       // consistent as we zoom.
       camera.position.set(18, 22, 18);
       camera.lookAt(0, 0, 0);
+      // Initial position is at world origin; the first RAF frame will snap to the
+      // player via cameraTargetX/Z. On the very first frame this could flash, but
+      // the snap below in rebuildLevel-after-genLevel mitigates it.
 
-      // ── Renderer ──────────────────────────────────────────────────
+      // â”€â”€ Renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
       renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
       renderer.setSize(container.clientWidth, container.clientHeight);
@@ -307,7 +313,7 @@ export default function Dungeon3DRun() {
       renderer.domElement.style.width = "100%";
       renderer.domElement.style.height = "100%";
 
-      // ── Build initial dungeon + entities ──────────────────────────
+      // â”€â”€ Build initial dungeon + entities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const dungeonGroup = await buildDungeon(scene, gameRef.current.level);
       if (cancelled) return;
       const coinGroup = buildCoinMeshes(scene);
@@ -321,13 +327,14 @@ export default function Dungeon3DRun() {
       playerRes.obj.scale.setScalar(0.9);
       scene.add(playerRes.obj);
 
-      // Enemy meshes — load on demand and keyed by enemy.id.
+      // Enemy meshes â€” load on demand and keyed by enemy.id.
       const enemyObjs = new Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }>();
       async function ensureEnemyMesh(eId: string, kind: string, color: number) {
         if (enemyObjs.has(eId)) return;
-        const url = kind === "brute" ? CHARACTER_MODELS.enemy3
-                  : kind === "scout" ? CHARACTER_MODELS.enemy2
-                  : CHARACTER_MODELS.enemy1;
+        // Variant pool per kind â€” each spawn picks randomly so a room of grunts
+        // doesn't look like clones. Falls back to first variant if pool missing.
+        const _pool = (ENEMY_VARIANTS as Record<string, readonly string[]>)[kind] ?? [CHARACTER_MODELS.enemy1];
+        const url = _pool[Math.floor(Math.random() * _pool.length)] ?? CHARACTER_MODELS.enemy1;
         const res = await loadCharacter(url, color);
         if (cancelled) return;
         res.obj.scale.setScalar(0.9);
@@ -356,7 +363,7 @@ export default function Dungeon3DRun() {
       };
       setLoading(false);
 
-      // ── Game loop ─────────────────────────────────────────────────
+      // â”€â”€ Game loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       let last = performance.now();
       const loop = (now: number) => {
         raf = requestAnimationFrame(loop);
@@ -365,7 +372,7 @@ export default function Dungeon3DRun() {
         if (dt > 0.05) dt = 0.05;
         last = now;
 
-        // ── Compose input from keyboard + joystick ──
+        // â”€â”€ Compose input from keyboard + joystick â”€â”€
         const k = keys.current;
         const j = joyRef.current;
         let ax = 0, az = 0;
@@ -403,12 +410,19 @@ export default function Dungeon3DRun() {
           // Camera follows player at the iso offset matching the
           // zoomed-out d=14 framing.
           const cam = t3.camera;
+          // LOOKAT_Z_OFFSET pushes the player higher in the frame on portrait iPhone
+          // (negative Z is "north" on the iso projection, which appears higher on screen,
+          // but the camera looks from +Z so a target shifted +Z appears lower; we want
+          // the player to appear higher â†’ shift target +Z by ~CELL/3 from the player's
+          // actual world position so the camera looks slightly "past" the player into +Z,
+          // making the player render higher in the frame).
+          const LOOKAT_Z_OFFSET = 1.5;  // ~CELL/3, tuned for iPhone portrait
           cam.position.x = g.cameraTargetX + 18;
-          cam.position.z = g.cameraTargetZ + 18;
+          cam.position.z = g.cameraTargetZ + 18 + LOOKAT_Z_OFFSET;
           cam.position.y = 22;
-          cam.lookAt(g.cameraTargetX, 0, g.cameraTargetZ);
+          cam.lookAt(g.cameraTargetX, 0, g.cameraTargetZ + LOOKAT_Z_OFFSET);
 
-          // ── Fog of war: toggle visibility on each tile mesh based
+          // â”€â”€ Fog of war: toggle visibility on each tile mesh based
           //    on whether the player has discovered its cell. Walls
           //    are tagged with `isWall: true` and are revealed when
           //    ANY adjacent floor cell is visible (otherwise the
@@ -434,14 +448,14 @@ export default function Dungeon3DRun() {
           t3.playerObj.position.set(g.player.x, 0, g.player.z);
           t3.playerObj.rotation.y = g.player.facing;
           if (t3.playerMixer) t3.playerMixer.update(dt);
-          // Crossfade idle ↔ walk via weight.
+          // Crossfade idle â†” walk via weight.
           if (t3.playerActions.idle && t3.playerActions.walk) {
             const walking = g.player.anim === "walk" || g.player.anim === "attack";
             const tw = walking ? 1 : 0;
             t3.playerActions.walk.weight = lerp(t3.playerActions.walk.weight, tw, 0.2);
             t3.playerActions.idle.weight = 1 - t3.playerActions.walk.weight;
           }
-          // Hit-flash overlay on player — tint the materials.
+          // Hit-flash overlay on player â€” tint the materials.
           if (g.player.flashT > 0) {
             t3.playerObj.traverse(o => {
               const mesh = o as THREE.Mesh;
@@ -497,7 +511,7 @@ export default function Dungeon3DRun() {
           }
 
           // Refresh coins (small spinning gold cylinders).
-          // Rebuild the group each frame for simplicity — the cost is
+          // Rebuild the group each frame for simplicity â€” the cost is
           // low since there are usually <20 coins at once.
           while (t3.coinGroup.children.length > 0) {
             t3.coinGroup.remove(t3.coinGroup.children[0]);
@@ -534,7 +548,7 @@ export default function Dungeon3DRun() {
         // throttle so we don't constantly re-render the React tree).
         force(n => (n + 1) % 1_000_000);
 
-        // ── Descend ──
+        // â”€â”€ Descend â”€â”€
         if (g.state === "descending") {
           playSfx("powerUp", { volume: 0.5 });
           rebuildLevel(descendLevel(g));
@@ -576,9 +590,8 @@ export default function Dungeon3DRun() {
     // Load enemies for new level.
     for (const e of nextGame.enemies) {
       const color = e.kind === "brute" ? 0xff7777 : e.kind === "scout" ? 0x77ff77 : 0xff9944;
-      const url = e.kind === "brute" ? CHARACTER_MODELS.enemy3
-                : e.kind === "scout" ? CHARACTER_MODELS.enemy2
-                : CHARACTER_MODELS.enemy1;
+      const _pool2 = (ENEMY_VARIANTS as Record<string, readonly string[]>)[e.kind] ?? [CHARACTER_MODELS.enemy1];
+      const url = _pool2[Math.floor(Math.random() * _pool2.length)] ?? CHARACTER_MODELS.enemy1;
       const res = await loadCharacter(url, color);
       res.obj.scale.setScalar(0.9);
       t3.scene.add(res.obj);
@@ -586,7 +599,7 @@ export default function Dungeon3DRun() {
     }
   }
 
-  // ── Touch joystick handlers ─────────────────────────────────────────
+  // â”€â”€ Touch joystick handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function onJoyStart(e: React.PointerEvent<HTMLDivElement>) {
     const j = joyRef.current;
     j.active = true; j.id = e.pointerId;
@@ -644,13 +657,17 @@ export default function Dungeon3DRun() {
         </button>
         <div className="flex-1 flex items-center gap-2 text-[11px]">
           <div className="font-display tracking-widest" style={{ color: "#fde047" }}>DUNGEON</div>
-          <div className="opacity-70">·  Lv {g.depth}</div>
+          <div className="opacity-70">Â·  Lv {g.depth}</div>
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-mono" style={{ color: "#fca5a5" }}>
           <Heart size={11} fill="#fca5a5" /> {Math.max(0, Math.ceil(g.player.hp))}
         </div>
         <div className="flex items-center gap-1.5 text-[11px] font-mono ml-2" style={{ color: "#fbbf24" }}>
           <Coins size={11} /> {g.player.coins}
+        </div>
+        <div className="text-[9px] font-mono ml-2 opacity-60" style={{ color: "#fde047" }}
+             title={`Build stamp: ${BUILD_STAMP}`}>
+          {BUILD_STAMP.slice(5, 16).replace("T", " ")}
         </div>
         <button onClick={newRun} aria-label="Restart"
           className="w-9 h-9 rounded-full flex items-center justify-center pressable touch-target ml-2"
@@ -674,7 +691,7 @@ export default function Dungeon3DRun() {
             style={{ background: "rgba(0,0,0,0.75)", color: "#fde047" }}>
             <div className="text-center">
               <div className="text-[11px] tracking-[0.4em] font-display">LOADING DUNGEON</div>
-              <div className="text-[10px] opacity-70 mt-1">Streaming Kenney models…</div>
+              <div className="text-[10px] opacity-70 mt-1">Streaming Kenney modelsâ€¦</div>
             </div>
           </div>
         )}
@@ -764,7 +781,7 @@ export default function Dungeon3DRun() {
               </div>
             </div>
             <div className="text-[11px] font-mono mt-2" style={{ color: "#fef3c7" }}>
-              Depth {g.depth}  ·  {g.runKills} foes felled  ·  {g.runCoins} coins
+              Depth {g.depth}  Â·  {g.runKills} foes felled  Â·  {g.runCoins} coins
             </div>
             <div className="flex gap-2 justify-center mt-4">
               <button onClick={() => navigate("/dungeon3d")}
@@ -785,7 +802,7 @@ export default function Dungeon3DRun() {
   );
 }
 
-// Module-scope coin geometry/material — reused per frame for all coins.
+// Module-scope coin geometry/material â€” reused per frame for all coins.
 const coinGeom = new THREE.CylinderGeometry(0.25, 0.25, 0.08, 16);
 const coinMat = new THREE.MeshStandardMaterial({
   color: 0xfbbf24,

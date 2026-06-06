@@ -79,9 +79,28 @@ const BC = "/assets/kenney/blocky-characters/Models/GLB%20format";
  *  others for enemies (tinted via material color tweaks). */
 export const CHARACTER_MODELS = {
   player:    `${BC}/character-a.glb`,
+  // Three variants per enemy kind so the same kind can look distinctly different
+  // when multiple spawn in one dungeon. Picked at spawn time in ensureEnemyMesh.
+  grunt1:    `${BC}/character-h.glb`,
+  grunt2:    `${BC}/character-d.glb`,
+  grunt3:    `${BC}/character-i.glb`,
+  scout1:    `${BC}/character-k.glb`,
+  scout2:    `${BC}/character-l.glb`,
+  scout3:    `${BC}/character-c.glb`,
+  brute1:    `${BC}/character-p.glb`,
+  brute2:    `${BC}/character-r.glb`,
+  brute3:    `${BC}/character-q.glb`,
+  // Aliases kept for any legacy code paths still using enemy1/2/3
   enemy1:    `${BC}/character-h.glb`,
   enemy2:    `${BC}/character-k.glb`,
   enemy3:    `${BC}/character-p.glb`,
+} as const;
+
+// Per-kind variant pools used by ensureEnemyMesh to vary enemy silhouettes.
+export const ENEMY_VARIANTS = {
+  grunt: [CHARACTER_MODELS.grunt1, CHARACTER_MODELS.grunt2, CHARACTER_MODELS.grunt3],
+  scout: [CHARACTER_MODELS.scout1, CHARACTER_MODELS.scout2, CHARACTER_MODELS.scout3],
+  brute: [CHARACTER_MODELS.brute1, CHARACTER_MODELS.brute2, CHARACTER_MODELS.brute3],
 } as const;
 
 /** Preload everything we need at scene boot so the first few frames
