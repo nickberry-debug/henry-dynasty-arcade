@@ -4,8 +4,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
-  "cleanUrls": true,
-  "trailingSlash": false,
   "rewrites": [
     { "source": "/((?!assets/|sw\\.js|workbox-.*|manifest\\.webmanifest|favicon\\.svg|icon-.*\\.png|registerSW\\.js).*)", "destination": "/index.html" }
   ],
