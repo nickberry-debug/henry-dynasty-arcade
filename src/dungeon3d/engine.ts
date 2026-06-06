@@ -52,6 +52,8 @@ export interface Player {
   attackDur: number;
   iframes: number;
   flashT: number;
+  rangedCd: number;
+  rangedCdDur: number;
   anim: "idle" | "walk" | "attack" | "hurt";
 }
 
@@ -75,12 +77,21 @@ export interface Coin {
   ttl: number;
 }
 
+export interface Projectile {
+  id: string;
+  x: number; z: number;
+  vx: number; vz: number;
+  ttl: number;    // seconds remaining
+  damage: number;
+}
+
 export interface Game {
   level: DungeonLevel;
   depth: number;
   player: Player;
   enemies: Enemy[];
   coins: Coin[];
+  projectiles: Projectile[];
   state: "playing" | "descending" | "cleared";
   /** Camera target in world coords — usually trails the player. */
   cameraTargetX: number;
@@ -290,7 +301,7 @@ export function newPlayer(level: DungeonLevel): Player {
     x: level.spawn.x, z: level.spawn.z, facing: 0,
     hp: 100, hpMax: 100, coins: 0,
     attackT: 0, attackDur: 0.34,
-    iframes: 0, flashT: 0, anim: "idle",
+    iframes: 0, flashT: 0, rangedCd: 0, rangedCdDur: 0.55, anim: "idle",
   };
 }
 
@@ -300,7 +311,7 @@ export function newGame(depth = 1): Game {
   const enemies: Enemy[] = level.enemies.map(mkEnemy);
   return {
     level, depth, player,
-    enemies, coins: [],
+    enemies, coins: [], projectiles: [],
     state: "playing",
     cameraTargetX: player.x, cameraTargetZ: player.z,
     hitStop: 0, elapsed: 0, runCoins: 0, runKills: 0,
@@ -328,7 +339,7 @@ export function descendLevel(g: Game): Game {
   return {
     level: next, depth: g.depth + 1, player,
     enemies: next.enemies.map(mkEnemy),
-    coins: [],
+    coins: [], projectiles: [],
     state: "playing",
     cameraTargetX: player.x, cameraTargetZ: player.z,
     hitStop: 0, elapsed: 0,
@@ -370,12 +381,18 @@ export interface InputState {
   ax: number;   // -1..1
   az: number;
   attack: boolean;
+  ranged: boolean;
 }
 
 const PLAYER_SPEED = 7.5;     // world units / sec (bumped from 6.5 per iPad feedback)
 const ENEMY_SPEED = 3.0;
 const ATTACK_RANGE = 2.2;
 const ATTACK_DAMAGE = 16;
+const RANGED_RANGE = 9;
+const RANGED_SPEED = 18;
+const RANGED_DAMAGE = 12;
+const RANGED_TTL = 1.2;
+const RANGED_RADIUS = 0.6;
 const ENEMY_DAMAGE = 10;
 const ENEMY_ATTACK_RANGE = 1.4;
 const COIN_MAGNET_RANGE = 3.5;
@@ -445,6 +462,89 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   if (p.attackT > 0) p.attackT -= dt;
   if (p.iframes > 0) p.iframes -= dt;
   if (p.flashT > 0) p.flashT -= dt;
+
+  // ── Player ranged auto-aim ──
+  p.rangedCd = Math.max(0, p.rangedCd - dt);
+  if (input.ranged && p.rangedCd <= 0 && p.iframes <= 0) {
+    p.rangedCd = p.rangedCdDur;
+    // Nearest living enemy within RANGED_RANGE.
+    let nearest: Enemy | null = null;
+    let nearestD = RANGED_RANGE;
+    for (const e of g.enemies) {
+      if (e.deathT > 0) continue;
+      const d = Math.hypot(e.x - p.x, e.z - p.z);
+      if (d < nearestD) { nearestD = d; nearest = e; }
+    }
+    let dirX: number, dirZ: number;
+    if (nearest) {
+      const dx = nearest.x - p.x, dz = nearest.z - p.z;
+      const m = Math.hypot(dx, dz) || 1;
+      dirX = dx / m; dirZ = dz / m;
+      p.facing = Math.atan2(dirX, dirZ);
+    } else {
+      dirX = Math.sin(p.facing);
+      dirZ = Math.cos(p.facing);
+    }
+    g.projectiles.push({
+      id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      x: p.x + dirX * 0.7,
+      z: p.z + dirZ * 0.7,
+      vx: dirX * RANGED_SPEED,
+      vz: dirZ * RANGED_SPEED,
+      ttl: RANGED_TTL,
+      damage: RANGED_DAMAGE,
+    });
+    g.hitStop = Math.max(g.hitStop, 0.04);
+  }
+
+  // ── Projectile step ──
+  for (let i = g.projectiles.length - 1; i >= 0; i--) {
+    const pr = g.projectiles[i];
+    pr.ttl -= dt;
+    if (pr.ttl <= 0) { g.projectiles.splice(i, 1); continue; }
+    pr.x += pr.vx * dt;
+    pr.z += pr.vz * dt;
+    // Wall collision.
+    const cx = Math.floor((pr.x + WORLD_W / 2) / CELL);
+    const cz = Math.floor((pr.z + WORLD_H / 2) / CELL);
+    if (cx < 0 || cx >= COLS || cz < 0 || cz >= ROWS
+        || g.level.grid[cz][cx] === "wall") {
+      g.projectiles.splice(i, 1);
+      continue;
+    }
+    // Enemy collision (squared distance, same pattern as melee).
+    let hit = false;
+    for (const e of g.enemies) {
+      if (e.deathT > 0) continue;
+      const dx = e.x - pr.x, dz = e.z - pr.z;
+      const rsum = RANGED_RADIUS + ENEMY_R;
+      if (dx * dx + dz * dz < rsum * rsum) {
+        e.hp -= pr.damage;
+        e.flashT = 0.18;
+        if (e.hp <= 0) {
+          e.deathT = 0.6;
+          g.runKills++;
+          const n = 2 + Math.floor(Math.random() * 3);
+          for (let k = 0; k < n; k++) {
+            g.coins.push({
+              id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+              x: e.x + (Math.random() - 0.5) * 1.2,
+              z: e.z + (Math.random() - 0.5) * 1.2,
+              y: 0.5,
+              vx: (Math.random() - 0.5) * 2,
+              vz: (Math.random() - 0.5) * 2,
+              vy: 2 + Math.random() * 1.5,
+              ttl: 14,
+            });
+          }
+          g.hitStop = Math.max(g.hitStop, 0.10);
+        }
+        hit = true;
+        break;
+      }
+    }
+    if (hit) g.projectiles.splice(i, 1);
+  }
 
   // ── Enemies ──
   for (const e of g.enemies) {

@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Heart, RotateCcw, Trophy, Skull, Coins, Swords, Sparkles } from "lucide-react";
+import { ArrowLeft, Heart, RotateCcw, Trophy, Skull, Coins, Swords, Sparkles, Zap } from "lucide-react";
 import * as THREE from "three";
 import {
   newGame, step, descendLevel, CELL, COLS, ROWS, WORLD_W, WORLD_H,
@@ -26,7 +26,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T15:24:33Z";
+const BUILD_STAMP = "2026-06-06T18:00:00Z";
 
 export default function Dungeon3DRun() {
   const navigate = useNavigate();
@@ -39,8 +39,8 @@ export default function Dungeon3DRun() {
   const [loading, setLoading] = useState(true);
 
   // Input snapshot.
-  const inputRef = useRef<InputState>({ ax: 0, az: 0, attack: false });
-  const keys = useRef({ up: false, down: false, left: false, right: false, attack: false });
+  const inputRef = useRef<InputState>({ ax: 0, az: 0, attack: false, ranged: false });
+  const keys = useRef({ up: false, down: false, left: false, right: false, attack: false, ranged: false });
   const joyRef = useRef<{ active: boolean; cx: number; cy: number; x: number; y: number; id: number | null }>({
     active: false, cx: 0, cy: 0, x: 0, y: 0, id: null,
   });
@@ -56,6 +56,7 @@ export default function Dungeon3DRun() {
       else if (e.key === "ArrowLeft" || e.key === "a") k.left = true;
       else if (e.key === "ArrowRight" || e.key === "d") k.right = true;
       else if (e.key === " " || e.key === "j" || e.key === "Enter") k.attack = true;
+      else if (e.code === "KeyF" || e.code === "KeyL") { k.ranged = true; e.preventDefault(); }
     }
     function onUp(e: KeyboardEvent) {
       const k = keys.current;
@@ -64,6 +65,7 @@ export default function Dungeon3DRun() {
       else if (e.key === "ArrowLeft" || e.key === "a") k.left = false;
       else if (e.key === "ArrowRight" || e.key === "d") k.right = false;
       else if (e.key === " " || e.key === "j" || e.key === "Enter") k.attack = false;
+      else if (e.code === "KeyF" || e.code === "KeyL") k.ranged = false;
     }
     window.addEventListener("keydown", onDown);
     window.addEventListener("keyup", onUp);
@@ -392,6 +394,7 @@ export default function Dungeon3DRun() {
         inputRef.current.ax = ax;
         inputRef.current.az = az;
         inputRef.current.attack = k.attack;
+        inputRef.current.ranged = k.ranged;
 
         const g = gameRef.current;
         step(g, dt, inputRef.current);
@@ -448,6 +451,38 @@ export default function Dungeon3DRun() {
           t3.playerObj.position.set(g.player.x, 0, g.player.z);
           t3.playerObj.rotation.y = g.player.facing;
           if (t3.playerMixer) t3.playerMixer.update(dt);
+
+          // ── Projectile meshes ──
+          if (!(t3 as any).projectileMeshes) {
+            (t3 as any).projectileMeshes = new Map<string, THREE.Mesh>();
+          }
+          const projectileMeshes: Map<string, THREE.Mesh> = (t3 as any).projectileMeshes;
+          const liveProjectileIds = new Set<string>();
+          for (const pr of g.projectiles) {
+            liveProjectileIds.add(pr.id);
+            let pmesh = projectileMeshes.get(pr.id);
+            if (!pmesh) {
+              const pgeo = new THREE.SphereGeometry(0.28, 12, 12);
+              const pmat = new THREE.MeshStandardMaterial({
+                color: 0x60a5fa,
+                emissive: 0x3b82f6,
+                emissiveIntensity: 1.0,
+              });
+              pmesh = new THREE.Mesh(pgeo, pmat);
+              t3.scene.add(pmesh);
+              projectileMeshes.set(pr.id, pmesh);
+            }
+            pmesh.position.set(pr.x, 1.0, pr.z);
+          }
+          for (const [pid, pmesh] of Array.from(projectileMeshes.entries())) {
+            if (!liveProjectileIds.has(pid)) {
+              t3.scene.remove(pmesh);
+              (pmesh.geometry as THREE.BufferGeometry).dispose();
+              (pmesh.material as THREE.Material).dispose();
+              projectileMeshes.delete(pid);
+            }
+          }
+
           // Crossfade idle â†” walk via weight.
           if (t3.playerActions.idle && t3.playerActions.walk) {
             const walking = g.player.anim === "walk" || g.player.anim === "attack";
@@ -624,6 +659,11 @@ export default function Dungeon3DRun() {
     keys.current.attack = true;
     setTimeout(() => { keys.current.attack = false; }, 80);
   }
+  function rangedPress(e: React.SyntheticEvent) {
+    e.preventDefault();
+    keys.current.ranged = true;
+    setTimeout(() => { keys.current.ranged = false; }, 80);
+  }
 
   const g = gameRef.current;
   const hpPct = Math.max(0, g.player.hp / g.player.hpMax);
@@ -738,6 +778,29 @@ export default function Dungeon3DRun() {
           )}
         </div>
 
+        <button
+          onPointerDown={rangedPress}
+          onTouchStart={rangedPress}
+          onClick={rangedPress}
+          style={{
+            position: "absolute",
+            right: "calc(132px + env(safe-area-inset-right, 0px))",
+            bottom: "calc(36px + env(safe-area-inset-bottom, 0px))",
+            width: 72, height: 72, borderRadius: "50%",
+            background: "linear-gradient(135deg, rgba(96,165,250,0.85), rgba(37,99,235,0.85))",
+            border: "3px solid rgba(191,219,254,0.65)",
+            color: "#dbeafe",
+            fontSize: 24,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            touchAction: "none",
+            userSelect: "none",
+            WebkitUserSelect: "none",
+            WebkitTapHighlightColor: "transparent",
+            boxShadow: "0 6px 16px rgba(96,165,250,0.45)",
+          }}
+          aria-label="Ranged Attack">
+          <Zap size={24} aria-hidden="true" />
+        </button>
         <button
           onPointerDown={attackPress}
           onTouchStart={attackPress}
