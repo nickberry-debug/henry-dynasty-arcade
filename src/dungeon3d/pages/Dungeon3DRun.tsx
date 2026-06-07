@@ -27,6 +27,7 @@ import {
 } from "../engine";
 import {
   loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
+  USE_V2_CHARACTERS, V2_CLASS_MODELS, PLAYER_SCALE, ENEMY_SCALE, BOSS_SCALE_MULT, resolveCharacterClips,
 } from "../modelCache";
 import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio, isMuted, setMuted } from "../../art";
@@ -259,10 +260,17 @@ export default function Dungeon3DRun() {
     camera: THREE.OrthographicCamera;
     playerObj: THREE.Object3D;
     playerMixer: THREE.AnimationMixer | null;
-    playerActions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction; attack?: THREE.AnimationAction };
-    enemyObjs: Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }>;
+    playerActions: CharActions;
+    /** Engine state-driven anim layer we crossfade to ("idle"|"walk"|"attack"|"hurt"|"death").
+     *  Used to dedupe state changes so we don't restart the clip every frame. */
+    playerAnimState: AnimState;
+    enemyObjs: Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null; actions: CharActions; animState: AnimState }>;
     bossObj: THREE.Object3D | null;
     bossMixer: THREE.AnimationMixer | null;
+    bossActions: CharActions;
+    bossAnimState: AnimState;
+    /** > 0 while a boss telegraph windup is firing the attack clip. */
+    bossTelegraphT: number;
     telegraphObjs: Map<string, THREE.Mesh>;
     lastBiomeId: string;
     ambientLight: THREE.AmbientLight | null;
@@ -393,31 +401,84 @@ export default function Dungeon3DRun() {
     return group;
   }
 
-  /** Pick first matching animation by name (case-insensitive). */
-  function pickClip(clips: THREE.AnimationClip[], names: string[]): THREE.AnimationClip | null {
-    for (const wanted of names) {
-      const got = clips.find(c => c.name.toLowerCase().includes(wanted.toLowerCase()));
-      if (got) return got;
+  // ── v2.1 character animation plumbing ──────────────────────────────
+  type AnimState = "idle" | "walk" | "attack" | "hurt" | "death";
+  type CharActions = {
+    idle?:   THREE.AnimationAction;
+    walk?:   THREE.AnimationAction;
+    attack?: THREE.AnimationAction;
+    hurt?:   THREE.AnimationAction;
+    death?:  THREE.AnimationAction;
+  };
+
+  /** Crossfade between named animation states.  One-shot intents
+   *  (attack/hurt/death) reset + LoopOnce so they don't loop; idle/walk
+   *  loop.  Returns the toState as the new current state (or fromState
+   *  if no clip exists for toState). */
+  function crossFadeTo(
+    actions: CharActions,
+    fromState: AnimState,
+    toState: AnimState,
+    duration = 0.2,
+  ): AnimState {
+    if (fromState === toState) return fromState;
+    const from = actions[fromState];
+    const to   = actions[toState];
+    if (!to) return fromState;
+    const oneShot = toState === "attack" || toState === "hurt" || toState === "death";
+    if (oneShot) {
+      to.reset();
+      to.setLoop(THREE.LoopOnce, 1);
+      to.clampWhenFinished = toState === "death";
+    } else {
+      to.setLoop(THREE.LoopRepeat, Infinity);
+      to.clampWhenFinished = false;
     }
-    return clips[0] ?? null;
+    to.enabled = true;
+    to.setEffectiveTimeScale(1);
+    to.setEffectiveWeight(1);
+    if (from) to.crossFadeFrom(from, duration, false).play();
+    else to.play();
+    return toState;
   }
 
-  async function loadCharacter(url: string, tint?: number): Promise<{ obj: THREE.Object3D; mixer: THREE.AnimationMixer; actions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction; attack?: THREE.AnimationAction } }> {
+  async function loadCharacter(
+    url: string,
+    tint?: number,
+  ): Promise<{ obj: THREE.Object3D; mixer: THREE.AnimationMixer; actions: CharActions }> {
     const { scene: obj, animations } = await loadModel(url);
     if (tint !== undefined) tintModel(obj, tint);
     // Kenney blocky-characters typically come at ~2 units tall â€” fine
     // for our 4-unit cells. No global scale needed.
     const mixer = new THREE.AnimationMixer(obj);
-    const idleClip = pickClip(animations, ["idle", "rest", "stand"]);
-    const walkClip = pickClip(animations, ["walk", "run", "move"]);
-    const attackClip = pickClip(animations, ["attack", "hit", "punch", "swing"]);
-    const actions: any = {};
-    if (idleClip) { actions.idle = mixer.clipAction(idleClip); actions.idle.play(); }
-    if (walkClip) { actions.walk = mixer.clipAction(walkClip); actions.walk.setEffectiveWeight(0); actions.walk.play(); }
-    if (attackClip) {
-      actions.attack = mixer.clipAction(attackClip);
+    const resolved = resolveCharacterClips(animations);
+    const actions: CharActions = {};
+    if (resolved.idle) {
+      actions.idle = mixer.clipAction(resolved.idle);
+      actions.idle.setLoop(THREE.LoopRepeat, Infinity);
+      actions.idle.setEffectiveWeight(1);
+      actions.idle.play();
+    }
+    if (resolved.walk) {
+      actions.walk = mixer.clipAction(resolved.walk);
+      actions.walk.setLoop(THREE.LoopRepeat, Infinity);
+      actions.walk.setEffectiveWeight(0);
+    }
+    if (resolved.attack) {
+      actions.attack = mixer.clipAction(resolved.attack);
+      actions.attack.setLoop(THREE.LoopOnce, 1);
       actions.attack.setEffectiveWeight(0);
-      actions.attack.play();
+    }
+    if (resolved.hurt) {
+      actions.hurt = mixer.clipAction(resolved.hurt);
+      actions.hurt.setLoop(THREE.LoopOnce, 1);
+      actions.hurt.setEffectiveWeight(0);
+    }
+    if (resolved.death) {
+      actions.death = mixer.clipAction(resolved.death);
+      actions.death.setLoop(THREE.LoopOnce, 1);
+      actions.death.clampWhenFinished = true;
+      actions.death.setEffectiveWeight(0);
     }
     return { obj, mixer, actions };
   }
@@ -511,33 +572,44 @@ export default function Dungeon3DRun() {
       scene.add(itemGroup);
 
       // Player character. Phase 3: model + tint vary by class.
-      const _classUrl: Record<ClassId, string> = {
-        warrior: CHARACTER_MODELS.player,
-        ranger:  "/assets/kenney/blocky-characters/Models/GLB%20format/character-b.glb",
-        mage:    "/assets/kenney/blocky-characters/Models/GLB%20format/character-e.glb",
-      };
+      // v2.1: switch to KayKit Knight/Rogue/Mage GLBs when the v2 flag is on.
+      const _classUrl: Record<ClassId, string> = USE_V2_CHARACTERS
+        ? {
+            warrior: V2_CLASS_MODELS.warrior,
+            ranger:  V2_CLASS_MODELS.ranger,
+            mage:    V2_CLASS_MODELS.mage,
+          }
+        : {
+            warrior: CHARACTER_MODELS.player,
+            ranger:  "/assets/kenney/blocky-characters/Models/GLB%20format/character-b.glb",
+            mage:    "/assets/kenney/blocky-characters/Models/GLB%20format/character-e.glb",
+          };
       const _classTint = CLASS_DEFS[classChoice].tint;
       const playerRes = await loadCharacter(_classUrl[classChoice]);
       if (cancelled) return;
-      tintModel(playerRes.obj, _classTint);
+      // v2.1: skip tinting the player so the KayKit material colors (steel,
+      // leather, robe) read clearly.  v1 Kenney rigs still get the class tint.
+      if (!USE_V2_CHARACTERS) tintModel(playerRes.obj, _classTint);
       playerRes.obj.position.set(gameRef.current!.player.x, 0, gameRef.current!.player.z);
-      // Slightly smaller than the dungeon to match the iso scale.
-      playerRes.obj.scale.setScalar(0.9);
+      // PLAYER_SCALE is 0.9 for v1 (Kenney) and 0.55 for v2 (KayKit ~1.8u tall).
+      playerRes.obj.scale.setScalar(PLAYER_SCALE);
       scene.add(playerRes.obj);
 
-      // Enemy meshes â€” load on demand and keyed by enemy.id.
-      const enemyObjs = new Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }>();
+      // Enemy meshes - load on demand and keyed by enemy.id.
+      const enemyObjs = new Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null; actions: CharActions; animState: AnimState }>();
       async function ensureEnemyMesh(eId: string, kind: string, color: number) {
         if (enemyObjs.has(eId)) return;
-        // Variant pool per kind â€” each spawn picks randomly so a room of grunts
+        // Variant pool per kind - each spawn picks randomly so a room of grunts
         // doesn't look like clones. Falls back to first variant if pool missing.
         const _pool = (ENEMY_VARIANTS as Record<string, readonly string[]>)[kind] ?? [CHARACTER_MODELS.enemy1];
         const url = _pool[Math.floor(Math.random() * _pool.length)] ?? CHARACTER_MODELS.enemy1;
-        const res = await loadCharacter(url, color);
+        // v2 skeleton rigs have stark white materials we want to keep, so we
+        // only tint the v1 Kenney enemy meshes here.
+        const res = await loadCharacter(url, USE_V2_CHARACTERS ? undefined : color);
         if (cancelled) return;
-        res.obj.scale.setScalar(0.9);
+        res.obj.scale.setScalar(ENEMY_SCALE);
         scene.add(res.obj);
-        enemyObjs.set(eId, { obj: res.obj, mixer: res.mixer });
+        enemyObjs.set(eId, { obj: res.obj, mixer: res.mixer, actions: res.actions, animState: "idle" });
       }
       // Kick off all enemy loads at once.
       for (const e of gameRef.current!.enemies) {
@@ -559,10 +631,14 @@ export default function Dungeon3DRun() {
         renderer, scene, camera,
         playerObj: playerRes.obj,
         playerMixer: playerRes.mixer,
-        playerActions: { idle: playerRes.actions.idle, walk: playerRes.actions.walk, attack: playerRes.actions.attack },
+        playerActions: playerRes.actions,
+        playerAnimState: "idle",
         enemyObjs,
         bossObj: null,
         bossMixer: null,
+        bossActions: {},
+        bossAnimState: "idle",
+        bossTelegraphT: 0,
         telegraphObjs: new Map<string, THREE.Mesh>(),
         lastBiomeId: "",
         ambientLight,
@@ -579,9 +655,11 @@ export default function Dungeon3DRun() {
       if (gameRef.current!.boss) {
         const _b = gameRef.current!.boss;
         const _bdef = BOSS_DEFS[_b.kind];
-        const _bres = await loadCharacter(_bdef.modelUrl, _bdef.tint);
+        // v2 skeleton bosses keep their natural look; v1 Kenney bosses still
+        // get the def's tint applied for differentiation.
+        const _bres = await loadCharacter(_bdef.modelUrl, USE_V2_CHARACTERS ? undefined : _bdef.tint);
         if (!cancelled) {
-          _bres.obj.scale.setScalar(0.9 * _bdef.scale);
+          _bres.obj.scale.setScalar(BOSS_SCALE_MULT * _bdef.scale);
           _bres.obj.position.set(_b.x, 0, _b.z);
           if (_bdef.emissive) {
             _bres.obj.traverse(o => {
@@ -592,6 +670,8 @@ export default function Dungeon3DRun() {
           scene.add(_bres.obj);
           threeRef.current!.bossObj = _bres.obj;
           threeRef.current!.bossMixer = _bres.mixer;
+          threeRef.current!.bossActions = _bres.actions;
+          threeRef.current!.bossAnimState = "idle";
         }
       }
       setLoading(false);
@@ -905,6 +985,31 @@ export default function Dungeon3DRun() {
             t3.bossObj.rotation.y = g.boss.facing;  // FACING_FIX: revert +PI
             t3.bossObj.visible = !g.boss.tpHidden;
             if (t3.bossMixer) t3.bossMixer.update(dt);
+            // v2.1: drive boss anim state.  Telegraphs schedule the attack
+            // clip to fire 0.3s into the 0.8s windup — we set a small timer
+            // when a telegraph appears, then trigger when it expires.
+            {
+              const isDead = g.boss.hp <= 0;
+              const isHurt = g.boss.flashT > 0;
+              const liveTelegraph = g.telegraphs.find(tg => tg.delay > 0 && tg.delay < 0.8);
+              // Schedule attack: 0.3s into the 0.8s telegraph window means we
+              // fire the attack when telegraph.delay drops below ~0.5s.
+              const shouldAttack = !!(liveTelegraph && liveTelegraph.delay <= 0.5 && liveTelegraph.delay > 0.25);
+              let desired: AnimState = "idle";
+              if (isDead) desired = "death";
+              else if (isHurt) desired = "hurt";
+              else if (shouldAttack) desired = "attack";
+              else desired = "idle";
+              const cur = t3.bossAnimState;
+              const inOneShot = cur === "attack" || cur === "hurt";
+              if (inOneShot && desired !== "death" && t3.bossActions[cur]) {
+                const a = t3.bossActions[cur]!;
+                if (a.isRunning() && a.time < a.getClip().duration - 0.05) {
+                  desired = cur;
+                }
+              }
+              t3.bossAnimState = crossFadeTo(t3.bossActions, cur, desired, 0.18);
+            }
             if (g.boss.flashT > 0) {
               t3.bossObj.traverse(o => {
                 const m = (o as THREE.Mesh).material as any;
@@ -922,6 +1027,8 @@ export default function Dungeon3DRun() {
             t3.scene.remove(t3.bossObj);
             t3.bossObj = null;
             t3.bossMixer = null;
+            t3.bossActions = {};
+            t3.bossAnimState = "idle";
           }
 
           // ── Phase 6: Telegraph meshes (circles + expanding rings) ──
@@ -970,25 +1077,37 @@ export default function Dungeon3DRun() {
             }
           }
 
-          // Attack action dominates when attackT > 0; otherwise crossfade idle/walk.
-          const isAttacking = g.player.attackT > 0;
-          const isWalking = g.player.anim === "walk";
-          if (t3.playerActions.attack) {
-            const targetAtk = isAttacking ? 1 : 0;
-            t3.playerActions.attack.weight = lerp(t3.playerActions.attack.weight, targetAtk, 0.4);
-          } else if (isAttacking) {
-            // Procedural fallback: rotate rig ±20° as a half-sine pulse across the swing.
-            // HOTFIX_FACING_INV_ZOOM: keep +PI on procedural fallback so model facing matches.
-            const _atkProg = 1 - (g.player.attackT / g.player.attackDur);
-            const _swing = Math.sin(_atkProg * Math.PI) * (20 * Math.PI / 180);
-            t3.playerObj.rotation.y = g.player.facing + _swing;  // FACING_FIX: revert +PI
-          }
-          if (t3.playerActions.idle && t3.playerActions.walk) {
-            const atkW = t3.playerActions.attack?.weight ?? 0;
-            const remaining = Math.max(0, 1 - atkW);
-            const tw = (isWalking ? 1 : 0) * remaining;
-            t3.playerActions.walk.weight = lerp(t3.playerActions.walk.weight, tw, 0.2);
-            t3.playerActions.idle.weight = Math.max(0, remaining - t3.playerActions.walk.weight);
+          // ── Player animation state machine ─────────────────────────
+          // Death > Hurt > Attack > Walk > Idle precedence.  crossFadeTo
+          // dedupes when the desired state already matches.
+          {
+            const isAttacking = g.player.attackT > 0;
+            const isHurt = g.player.flashT > 0 && !isAttacking;
+            const isDead = g.player.hp <= 0;
+            const isWalking = g.player.anim === "walk" || (g.player.anim !== "idle" && (Math.abs(inputRef.current.ax) + Math.abs(inputRef.current.az)) > 0.05);
+            let desired: AnimState = "idle";
+            if (isDead) desired = "death";
+            else if (isAttacking) desired = "attack";
+            else if (isHurt) desired = "hurt";
+            else if (isWalking) desired = "walk";
+            // Don't break out of an in-progress one-shot until it ends — but
+            // we still allow death to override everything.
+            const cur = t3.playerAnimState;
+            const inOneShot = cur === "attack" || cur === "hurt";
+            if (inOneShot && desired !== "death" && t3.playerActions[cur]) {
+              const a = t3.playerActions[cur]!;
+              if (a.isRunning() && a.time < a.getClip().duration - 0.05) {
+                desired = cur;  // hold the one-shot to completion
+              }
+            }
+            t3.playerAnimState = crossFadeTo(t3.playerActions, cur, desired, 0.18);
+            // v1 procedural-swing fallback: if no attack clip exists, keep the
+            // ±20° half-sine rotation pulse so attacks still feel like a swing.
+            if (isAttacking && !t3.playerActions.attack) {
+              const _atkProg = 1 - (g.player.attackT / g.player.attackDur);
+              const _swing = Math.sin(_atkProg * Math.PI) * (20 * Math.PI / 180);
+              t3.playerObj.rotation.y = g.player.facing + _swing;
+            }
           }
 
           // ── Sword swing trail (additive arc, fades over the swing window). ──
@@ -1056,12 +1175,36 @@ export default function Dungeon3DRun() {
             const egz = Math.floor((e.z + WORLD_H / 2) / CELL);
             handle.obj.visible = isCellVisible(g, egx, egz);
             if (handle.mixer) handle.mixer.update(dt);
+            // v2.1: drive enemy anim state.  flashT > 0 plays hurt clip,
+            // deathT > 0 plays death clip, else walk/idle by movement.
+            {
+              const isDead = e.deathT > 0;
+              const isHurt = e.flashT > 0 && !isDead;
+              // Engine sets e.state to "chase" / "attack" / "idle".  Treat
+              // chase as walking and attack as the attack clip.
+              const isAttacking = (e as any).state === "attack";
+              const isWalking = (e as any).state === "chase";
+              let desired: AnimState = "idle";
+              if (isDead) desired = "death";
+              else if (isHurt) desired = "hurt";
+              else if (isAttacking) desired = "attack";
+              else if (isWalking) desired = "walk";
+              const cur = handle.animState;
+              const inOneShot = cur === "attack" || cur === "hurt";
+              if (inOneShot && desired !== "death" && handle.actions[cur]) {
+                const a = handle.actions[cur]!;
+                if (a.isRunning() && a.time < a.getClip().duration - 0.05) {
+                  desired = cur;
+                }
+              }
+              handle.animState = crossFadeTo(handle.actions, cur, desired, 0.18);
+            }
             if (e.deathT > 0) {
               // Death window: scale Y 1→0.3, fade opacity 1→0 over 0.6s.
               const deathProg = 1 - (e.deathT / 0.6);  // 0→1
-              handle.obj.scale.x = 0.9;
-              handle.obj.scale.z = 0.9;
-              handle.obj.scale.y = 0.9 * lerp(1, 0.3, deathProg);
+              handle.obj.scale.x = ENEMY_SCALE;
+              handle.obj.scale.z = ENEMY_SCALE;
+              handle.obj.scale.y = ENEMY_SCALE * lerp(1, 0.3, deathProg);
               handle.obj.traverse(o => {
                 const mesh = o as THREE.Mesh;
                 if (!mesh.isMesh) return;
@@ -1074,7 +1217,7 @@ export default function Dungeon3DRun() {
                 else if (m) apply(m);
               });
             } else {
-              handle.obj.scale.setScalar(0.9);
+              handle.obj.scale.setScalar(ENEMY_SCALE);
             }
             // Hit-flash.
             if (e.flashT > 0) {
@@ -1201,7 +1344,7 @@ export default function Dungeon3DRun() {
     for (const handle of t3.enemyObjs.values()) t3.scene.remove(handle.obj);
     t3.enemyObjs.clear();
     // Phase 6: drop the previous-floor boss mesh + any telegraph meshes.
-    if (t3.bossObj) { t3.scene.remove(t3.bossObj); t3.bossObj = null; t3.bossMixer = null; }
+    if (t3.bossObj) { t3.scene.remove(t3.bossObj); t3.bossObj = null; t3.bossMixer = null; t3.bossActions = {}; t3.bossAnimState = "idle"; }
     for (const tm of t3.telegraphObjs.values()) {
       t3.scene.remove(tm);
       (tm.geometry as THREE.BufferGeometry).dispose();
@@ -1222,17 +1365,17 @@ export default function Dungeon3DRun() {
       const color = e.kind === "brute" ? 0xff7777 : e.kind === "scout" ? 0x77ff77 : 0xff9944;
       const _pool2 = (ENEMY_VARIANTS as Record<string, readonly string[]>)[e.kind] ?? [CHARACTER_MODELS.enemy1];
       const url = _pool2[Math.floor(Math.random() * _pool2.length)] ?? CHARACTER_MODELS.enemy1;
-      const res = await loadCharacter(url, color);
-      res.obj.scale.setScalar(0.9);
+      const res = await loadCharacter(url, USE_V2_CHARACTERS ? undefined : color);
+      res.obj.scale.setScalar(ENEMY_SCALE);
       t3.scene.add(res.obj);
-      t3.enemyObjs.set(e.id, { obj: res.obj, mixer: res.mixer });
+      t3.enemyObjs.set(e.id, { obj: res.obj, mixer: res.mixer, actions: res.actions, animState: "idle" });
     }
     // Phase 6: load boss for the new floor (descendLevel populates g.boss).
     if (nextGame.boss) {
       const _b = nextGame.boss;
       const _bdef = BOSS_DEFS[_b.kind];
-      const _bres = await loadCharacter(_bdef.modelUrl, _bdef.tint);
-      _bres.obj.scale.setScalar(0.9 * _bdef.scale);
+      const _bres = await loadCharacter(_bdef.modelUrl, USE_V2_CHARACTERS ? undefined : _bdef.tint);
+      _bres.obj.scale.setScalar(BOSS_SCALE_MULT * _bdef.scale);
       _bres.obj.position.set(_b.x, 0, _b.z);
       if (_bdef.emissive) {
         _bres.obj.traverse(o => {
@@ -1243,6 +1386,8 @@ export default function Dungeon3DRun() {
       t3.scene.add(_bres.obj);
       t3.bossObj = _bres.obj;
       t3.bossMixer = _bres.mixer;
+      t3.bossActions = _bres.actions;
+      t3.bossAnimState = "idle";
     }
   }
 

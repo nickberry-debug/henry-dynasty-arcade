@@ -380,11 +380,23 @@ export interface BossDef {
   emissive?: number;
 }
 
+// v2.1: boss model URLs come from V2_BOSS_MODELS when USE_V2_CHARACTERS is on
+// (defined in modelCache).  We inline the lookup so this module stays free
+// of TS circular imports between engine and renderer.
+import { USE_V2_CHARACTERS, V2_BOSS_MODELS } from "./modelCache";
+
+const _v1BossUrl: Record<BossKind, string> = {
+  iron_tyrant: "/assets/kenney/blocky-characters/Models/GLB%20format/character-p.glb",
+  hexblade:    "/assets/kenney/blocky-characters/Models/GLB%20format/character-k.glb",
+  hollowmage:  "/assets/kenney/blocky-characters/Models/GLB%20format/character-e.glb",
+};
+const _bossUrl = (k: BossKind) => USE_V2_CHARACTERS ? V2_BOSS_MODELS[k] : _v1BossUrl[k];
+
 export const BOSS_DEFS: Record<BossKind, BossDef> = {
   iron_tyrant: {
     kind: "iron_tyrant",
     name: "THE IRON TYRANT",
-    modelUrl: "/assets/kenney/blocky-characters/Models/GLB%20format/character-p.glb",
+    modelUrl: _bossUrl("iron_tyrant"),
     scale: 2.5,
     baseHp: 2000,
     speed: 4.5,
@@ -393,7 +405,7 @@ export const BOSS_DEFS: Record<BossKind, BossDef> = {
   hexblade: {
     kind: "hexblade",
     name: "THE HEXBLADE",
-    modelUrl: "/assets/kenney/blocky-characters/Models/GLB%20format/character-k.glb",
+    modelUrl: _bossUrl("hexblade"),
     scale: 2.0,
     baseHp: 1500,
     speed: 7.5,
@@ -402,7 +414,7 @@ export const BOSS_DEFS: Record<BossKind, BossDef> = {
   hollowmage: {
     kind: "hollowmage",
     name: "THE HOLLOWMAGE",
-    modelUrl: "/assets/kenney/blocky-characters/Models/GLB%20format/character-e.glb",
+    modelUrl: _bossUrl("hollowmage"),
     scale: 2.0,
     baseHp: 1200,
     speed: 3.5,
