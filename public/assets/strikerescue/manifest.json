@@ -1,0 +1,36 @@
+{
+  "name": "Strike Rescue — Asset Manifest",
+  "version": "1.0.0",
+  "ip_policy": {
+    "halo_master_chief_warthog": "PROHIBITED — original armored soldier + original buggy ONLY",
+    "jackal_nes": "PROHIBITED — genre-inspired only, original enemies/bosses/levels"
+  },
+  "asset_strategy": {
+    "current": "procedural canvas-drawn sprites + Web Audio synth",
+    "rationale": "Direct web fetches to Kenney mirrors are blocked in this build environment. To ship a playable end-to-end game on the agreed overnight timeline, all sprites are drawn procedurally on the canvas at render time and all SFX are synthesized via the Web Audio API (matches the precedent set by Hardball Phase 0).",
+    "kenney_upgrade_path": "When network access is available, drop in: kenney.nl/assets/topdown-shooter-redux (CC0), kenney.nl/assets/tank-pack (CC0), and a Kenney audio pack. Map them to the categories below and swap renderers to drawImage(). Each procedural function is named after the slot it will replace."
+  },
+  "sprites": {
+    "vehicles": { "player_buggy": "drawPlayerBuggy" },
+    "soldiers": { "hero_topdown": "drawHero" },
+    "enemies":  { "foot_soldier": "drawFootSoldier", "turret": "drawTurret", "enemy_jeep": "drawEnemyJeep",
+      "boss_tank": "drawBossTank", "boss_chopper": "drawBossChopper", "boss_bunker": "drawBossBunker", "boss_mega": "drawBossMegaTank" },
+    "pows":     { "pow_waving": "drawPOW" },
+    "chopper":  { "extraction_chopper": "drawExtractionChopper" },
+    "terrain":  { "grass": "drawGrass", "dirt": "drawDirt", "road": "drawRoad", "water": "drawWater",
+      "bridge": "drawBridge", "concrete": "drawConcrete", "hut": "drawHut", "fortress_wall": "drawFortressWall" },
+    "projectiles": { "bullet": "drawBullet", "enemy_bullet": "drawEnemyBullet", "grenade": "drawGrenade", "boss_shell": "drawBossShell" },
+    "effects":  { "muzzle_flash": "drawMuzzleFlash", "explosion": "drawExplosion", "hit_burst": "drawHitBurst", "pickup_glow": "drawPickupGlow" }
+  },
+  "audio": {
+    "gunfire": "sfxGun (square wave + noise click)",
+    "grenade_throw": "sfxGrenadeThrow (sine sweep)",
+    "explosion": "sfxExplosion (noise burst + low triangle)",
+    "engine_idle": "startEngine (continuous sawtooth, RPM ride-along)",
+    "hit_metal": "sfxHit (square pitch down)",
+    "pickup_jingle": "sfxPickup (2-note triangle arp)",
+    "pow_rescued_cheer": "sfxPowRescued (4-note fanfare)",
+    "boss_music_loop": "startBossMusic (8-step square riff)",
+    "victory_sting": "sfxVictory (4-note major chord sweep)"
+  }
+}
