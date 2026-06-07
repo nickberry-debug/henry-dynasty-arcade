@@ -397,17 +397,19 @@ export function computeHeadSocketY(body: THREE.Object3D, bbox: THREE.Box3): numb
 
 // ── Eye socket helper ──────────────────────────────────────────────────
 // The eye socket sits on the FRONT of the FACE (not on the head crown),
-// so it's distinct from computeHeadSocketY. For winged/serpentine/non-
-// standard bodies, bbox.max.y overshoots into wings/tentacles, and
-// bbox.max.z may grab a snout-tip or tail-tip rather than the face.
+// so it's distinct from computeHeadSocketY. For winged/serpentine/horned
+// bodies, bbox.max.y overshoots into wings/tentacles/horns and bbox.max.z
+// may grab a snout-tip or tail-tip rather than the face.
 //
-// Strategy:
-//   1. Prefer a named "Eye" / "EyeSocket" / "Face" bone, offset slightly
-//      forward in body-local +Z (so the eye sphere doesn't intersect the
-//      face mesh).
-//   2. Fall back to per-body manifest hint (eyeSocket: {y, z, x?}) — each
-//      component is a signed fraction of the corresponding bbox dimension.
-//   3. Default for unspecified bodies: y = 0.7 * height, z = +0.15 * depth.
+// Strategy (most precise → least precise):
+//   1. Named "Eye" / "EyeSocket" / "Face" bone, offset slightly forward.
+//   2. Named "Head" bone — Quaternius rigs typically place it at the
+//      neck-skull joint, which is a reliable face-height anchor that
+//      ignores horns/wings extending the bbox.
+//   3. Per-body manifest hint (eyeSocket: {y, z, x?}) — bbox-relative
+//      fractions. Lets us hand-tune bodies whose rigs lack a clean Head
+//      bone or have an unusual geometry (e.g. Squidle's low dome face).
+//   4. Default for unspecified bodies: y = 0.7 * height, z = +0.15 * depth.
 export function findEyeBone(body: THREE.Object3D): THREE.Object3D | null {
   let exact: THREE.Object3D | null = null;
   body.traverse((o) => {
@@ -424,12 +426,28 @@ export function findEyeBone(body: THREE.Object3D): THREE.Object3D | null {
   return exact;
 }
 
+/** Locate the base "Head" bone (NOT Head_End/_Top — that's the crown). */
+export function findHeadBaseBone(body: THREE.Object3D): THREE.Object3D | null {
+  let headBase: THREE.Object3D | null = null;
+  body.traverse((o) => {
+    if (!o.name || headBase) return;
+    const n = o.name.toLowerCase();
+    if (n === "head") headBase = o;
+  });
+  return headBase;
+}
+
 export interface EyeSocketHint { y: number; z: number; x?: number }
 
 /**
  * Compute the world-space position to anchor eye accessories.
  * Caller must have already called body.updateMatrixWorld(true) and applied
  * the body.position.y normalization (so bbox.min.y ≈ 0).
+ *
+ * Manifest hint takes precedence over the named "Head" bone because hand-
+ * tuned values capture per-model quirks (face is on the lower dome for
+ * Squidle; the snout extends far forward for Dragon) that the bone alone
+ * can't express.
  */
 export function computeEyeSocket(
   body: THREE.Object3D,
@@ -439,24 +457,50 @@ export function computeEyeSocket(
   const size = new THREE.Vector3(); bbox.getSize(size);
   const center = new THREE.Vector3(); bbox.getCenter(center);
 
-  // 1) Named bone, if the GLB rig has one — most precise.
-  const bone = findEyeBone(body);
-  if (bone) {
+  // 1) Named eye/face bone, if the GLB rig has one — most precise.
+  const eyeBone = findEyeBone(body);
+  if (eyeBone) {
     const wp = new THREE.Vector3();
-    bone.getWorldPosition(wp);
-    // Nudge slightly forward so the eye spheres sit on the surface, not
-    // inside the face mesh.
+    eyeBone.getWorldPosition(wp);
     return new THREE.Vector3(wp.x, wp.y, wp.z + size.z * 0.05);
   }
 
-  // 2) Manifest hint (bbox-relative fractions).
-  const y = hint?.y ?? 0.7;
-  const z = hint?.z ?? 0.15;
-  const x = hint?.x ?? 0;
+  // 2) Manifest hint (bbox-relative fractions). Hand-tuned values win when
+  //    present because they encode per-model face geometry that's hard to
+  //    derive from rigging alone.
+  if (hint) {
+    return new THREE.Vector3(
+      center.x + (hint.x ?? 0) * size.x,
+      bbox.min.y + hint.y * size.y,
+      center.z + hint.z * size.z,
+    );
+  }
+
+  // 3) Named "Head" bone — robust anchor for biped/quadruped/winged rigs
+  //    when no manifest hint is present. The head bone sits at the head-
+  //    neck joint, so a small upward + forward offset lands eyes on the
+  //    face, ignoring horns/wings that inflate the bbox.
+  const headBone = findHeadBaseBone(body);
+  if (headBone) {
+    const wp = new THREE.Vector3();
+    headBone.getWorldPosition(wp);
+    const relativeY = (wp.y - bbox.min.y) / Math.max(size.y, 1e-6);
+    // Trust the Head bone only when it's in the upper half (otherwise it
+    // may be a mushroom-cap neck joint that buries eyes in the body).
+    if (relativeY > 0.45) {
+      return new THREE.Vector3(
+        wp.x,
+        wp.y + size.y * 0.05,
+        wp.z + size.z * 0.12,
+      );
+    }
+  }
+
+  // 4) Default bbox-relative.
   return new THREE.Vector3(
-    center.x + x * size.x,
-    bbox.min.y + y * size.y,
-    center.z + z * size.z,
+    center.x,
+    bbox.min.y + 0.7 * size.y,
+    center.z + 0.15 * size.z,
   );
 }
 
