@@ -11,6 +11,9 @@ import { BASEBALL_TEAMS, FOOTBALL_TEAMS } from "../teams";
 import { BOXING_FIGHTERS } from "../boxers";
 import { WRESTLING_FIGHTERS } from "../wrestlers";
 import { useProfiles } from "../../profiles/store";
+import { SpriteBanner } from "../components/SpriteBanner";
+import { FamilyLeaderboard } from "../components/FamilyLeaderboard";
+import { unlockAudio, playFx } from "../audio";
 
 interface Pending {
   sport: Sport;
@@ -51,6 +54,9 @@ export default function VersusHub() {
       return;
     }
     if (!ready) return;
+    // Phase 3: unlock Web Audio on this gesture so the first bell / hit
+    // is actually audible (iOS Safari requires a user gesture to resume).
+    try { unlockAudio(); if (p.sport === "boxing" || p.sport === "wrestling") playFx("bell"); } catch { /* ignore */ }
     // Pass & Play and vs-CPU both go through the local game pages,
     // reading the setup blob from sessionStorage.
     try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(p)); } catch { /* ignore */ }
@@ -81,6 +87,11 @@ export default function VersusHub() {
       </header>
 
       <main className="flex-1 px-4 pb-8 max-w-3xl mx-auto w-full space-y-4">
+        {/* Phase 3 honesty banner: combat sprites are still procedural placeholders. */}
+        {(p.sport === "boxing" || p.sport === "wrestling") && (
+          <SpriteBanner sport={p.sport} />
+        )}
+
         {/* Sport */}
         <Section title="SPORT" accent={accent}>
           <div className="grid grid-cols-2 gap-2">
@@ -228,6 +239,9 @@ export default function VersusHub() {
                  : "Pick a different profile + team for each player.")}
           </div>
         )}
+
+        {/* Phase 3: family leaderboard — boxing + wrestling W/L + KOs/finishers. */}
+        <FamilyLeaderboard />
       </main>
     </div>
   );

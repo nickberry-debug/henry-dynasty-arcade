@@ -6,6 +6,8 @@ import type { Sport, VersusStats } from "./types";
 import { emptyStats } from "./types";
 import { getActiveProfileId, profileKey } from "../profiles/store";
 import { setBlob as cloudSet, subscribeBlob as cloudSubscribe } from "../sync/cloudBlob";
+import { recordMatch as recordCombatRecord } from "./records";
+import { playFx } from "./audio";
 
 const BASE_KEY = "dd_versus_stats";
 const BLOB_KEY = "versus_stats_v1";
@@ -66,6 +68,34 @@ export function useVersusStats() {
     finishersScored?: number;
     pickAccuracy?: { hits: number; total: number };
   }) {
+    // Phase 3: parallel write to per-profile combat-sports record book
+    // (henry-versus-records-v1) for boxing + wrestling. Lives alongside
+    // the cloud-synced VersusStats but indexed by ${profileId}-${sport}
+    // so the family leaderboard can read everyone's records at once.
+    if ((args.sport === "boxing" || args.sport === "wrestling") && pid) {
+      try {
+        recordCombatRecord(pid, args.sport, {
+          won: args.youWon,
+          byKO:       args.sport === "boxing"    && !!args.kosScored,
+          byFinisher: args.sport === "wrestling" && !!args.finishersScored,
+        });
+      } catch { /* records.ts already swallows quota — belt + suspenders */ }
+    }
+    // Phase 3 audio: fanfare on win, crowd-boo on loss for combat sports.
+    if (args.sport === "boxing" || args.sport === "wrestling") {
+      try {
+        if (args.youWon) {
+          if (args.kosScored || args.finishersScored) {
+            playFx(args.sport === "wrestling" ? "finisher_fanfare" : "ko_fanfare");
+          } else {
+            playFx("crowd_cheer");
+          }
+        } else {
+          playFx("crowd_boo");
+        }
+      } catch { /* audio is best-effort */ }
+    }
+
     setStats(prev => {
       const next: VersusStats = JSON.parse(JSON.stringify(prev));
       next.matches[args.sport] = (next.matches[args.sport] ?? 0) + 1;
