@@ -5,6 +5,8 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Plus, Trash2, FlaskConical } from "lucide-react";
 import { deleteMonster, loadSaved } from "../engine";
 import type { SavedMonster } from "../partsManifest";
+import { STAT_LABELS, STAT_COLORS, STAT_ORDER, statTotal } from "../engine/stats";
+import { getPotion } from "../data/potions";
 
 export default function MonsterForgeHub() {
   const navigate = useNavigate();
@@ -37,7 +39,7 @@ export default function MonsterForgeHub() {
         <div className="flex-1">
           <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: "#fda4af" }}>BERRY KIDS' ARCADE</div>
           <h1 className="font-display text-2xl tracking-wider" style={{ color: "#fde047" }}>MONSTER FORGE</h1>
-          <div className="text-[10px] mt-0.5" style={{ color: "rgba(229,231,235,0.65)" }}>Build & customize your own 3D monsters</div>
+          <div className="text-[10px] mt-0.5" style={{ color: "rgba(229,231,235,0.65)" }}>Build, brew & customize 3D monsters</div>
         </div>
       </header>
 
@@ -52,9 +54,9 @@ export default function MonsterForgeHub() {
             <div className="flex-1">
               <div className="text-[10px] tracking-[0.3em] font-display mb-1" style={{ color: "#fda4af" }}>ABOUT</div>
               <p className="text-[12px] leading-relaxed">
-                Pick a body, layer on horns, wings, tails, spikes & eyes, then recolor.
-                Live 3D preview &mdash; rotate, zoom, save. Phase 1 of a multi-session build
-                (potions, powers, and battles arrive in later sessions).
+                Pick a body, layer on horns, wings, tails, spikes & eyes, then brew up
+                potions for stats, auras, mutations and craft recipes. Live 3D preview &mdash;
+                rotate, zoom, save.
               </p>
             </div>
           </div>
@@ -83,29 +85,67 @@ export default function MonsterForgeHub() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {list.map(m => (
-                <div key={m.id} className="rounded-xl p-3 flex items-center gap-3"
+                <div key={m.id} className="rounded-xl p-3"
                   style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  <div className="w-12 h-12 rounded-lg flex items-center justify-center text-2xl"
-                    style={{ background: "rgba(180,80,80,0.18)", border: "1px solid rgba(180,80,80,0.35)" }}>
-                    👹
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-display tracking-wide truncate text-[14px]" style={{ color: "#fde047" }}>{m.name}</div>
-                    <div className="text-[10px] truncate" style={{ color: "rgba(229,231,235,0.55)" }}>
-                      {m.config.body} · {m.config.eyes} eyes · {m.config.color}
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-12 h-12 rounded-lg flex items-center justify-center text-2xl"
+                      style={{ background: "rgba(180,80,80,0.18)", border: "1px solid rgba(180,80,80,0.35)" }}>
+                      👹
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-display tracking-wide truncate text-[14px]" style={{ color: "#fde047" }}>{m.name}</div>
+                      <div className="text-[10px] truncate" style={{ color: "rgba(229,231,235,0.55)" }}>
+                        {m.config.body} · {m.config.eyes} eyes · {m.config.color}
+                      </div>
+                      <div className="text-[9px] mt-0.5" style={{ color: "rgba(254,243,199,0.45)" }}>
+                        Power {statTotal(m.stats)} · {m.activePotions.length} potion{m.activePotions.length === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/monster-forge/build?id=${m.id}`)}
+                      className="px-3 py-2 rounded-lg text-[11px] pressable touch-target font-display tracking-wider"
+                      style={{ background: "rgba(125,80,180,0.25)", border: "1px solid rgba(180,80,200,0.4)", color: "#fef3c7" }}>
+                      EDIT
+                    </button>
+                    <button onClick={() => remove(m.id)} aria-label="Delete"
+                      className="w-9 h-9 rounded-lg flex items-center justify-center pressable touch-target"
+                      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                      <Trash2 size={14} style={{ color: "#fda4af" }} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => navigate(`/monster-forge/build?id=${m.id}`)}
-                    className="px-3 py-2 rounded-lg text-[11px] pressable touch-target font-display tracking-wider"
-                    style={{ background: "rgba(125,80,180,0.25)", border: "1px solid rgba(180,80,200,0.4)", color: "#fef3c7" }}>
-                    EDIT
-                  </button>
-                  <button onClick={() => remove(m.id)} aria-label="Delete"
-                    className="w-9 h-9 rounded-lg flex items-center justify-center pressable touch-target"
-                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                    <Trash2 size={14} style={{ color: "#fda4af" }} />
-                  </button>
+                  {/* Stat sparkline */}
+                  <div className="flex gap-1 mt-1">
+                    {STAT_ORDER.map(k => {
+                      const v = m.stats[k];
+                      const pct = Math.max(0.05, Math.min(1, v / 30));
+                      return (
+                        <div key={k} className="flex-1 flex flex-col items-center">
+                          <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                            <div style={{ width: `${pct * 100}%`, height: "100%", background: STAT_COLORS[k] }} />
+                          </div>
+                          <div className="text-[8px] font-display tracking-wider mt-0.5" style={{ color: STAT_COLORS[k] }}>
+                            {STAT_LABELS[k]} {v}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Active potion icon row */}
+                  {m.activePotions.length > 0 && (
+                    <div className="flex gap-1 mt-2">
+                      {m.activePotions.map(pid => {
+                        const p = getPotion(pid);
+                        if (!p) return null;
+                        return (
+                          <div key={pid} title={p.name}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-[12px]"
+                            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                            {p.emoji}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

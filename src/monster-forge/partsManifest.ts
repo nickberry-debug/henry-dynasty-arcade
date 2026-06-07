@@ -2,6 +2,8 @@
 // The manifest lives at /public/assets/monster-parts/manifest.json so the
 // Vite build serves it as a static file. This module just types it.
 
+import type { StatBlock } from "./engine/stats";
+
 export type CategoryId =
   | "body" | "headOverlay" | "horns" | "wings" | "tail" | "spikes" | "eyes" | "colors";
 
@@ -84,6 +86,10 @@ export interface SavedMonster {
   id: string;
   name: string;
   config: MonsterConfig;
+  /** Phase 2 — active potion ids currently applied to this monster. Max 5. */
+  activePotions: string[];
+  /** Phase 2 — final stat block (base + potion deltas, clamped). */
+  stats: StatBlock;
   createdAt: number;
   updatedAt: number;
 }

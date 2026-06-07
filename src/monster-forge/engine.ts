@@ -23,9 +23,9 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { MonsterConfig, Manifest, BodyPart, HeadOverlayPart, ColorPart } from "./partsManifest";
+import type { MonsterConfig, Manifest, ColorPart } from "./partsManifest";
 
-// ── GLTF cache ──────────────────────────────────────────────────────────
+// ── GLTF cache ─────────────────────────────────────────────────────────
 // Re-loading a 500kb GLB on every part swap would feel laggy. Cache by URL.
 
 const _glbCache = new Map<string, Promise<THREE.Group>>();
@@ -49,7 +49,7 @@ function loadGLB(url: string): Promise<THREE.Group> {
   return p.then((scene) => scene.clone(true));
 }
 
-// ── Color tint helper ───────────────────────────────────────────────────
+// ── Color tint helper ──────────────────────────────────────────────────
 // Tints every MeshStandardMaterial in the body to the chosen swatch by
 // mixing the original color toward the swatch in HSL (preserves shading).
 
@@ -71,7 +71,7 @@ function tintMonster(root: THREE.Object3D, hex: string | null) {
   });
 }
 
-// ── Procedural accessory builders ───────────────────────────────────────
+// ── Procedural accessory builders ──────────────────────────────────────
 //
 // All accessories return a Group anchored at (0,0,0). The caller positions
 // the group at a socket on the body.
@@ -149,6 +149,7 @@ export function buildWings(id: string, bodyHeight: number, bodyWidth: number): T
   const g = new THREE.Group();
   if (id === "none") return g;
   const span = bodyHeight * 0.9;
+  void bodyWidth;
   switch (id) {
     case "bat": {
       // Triangle shape using ShapeGeometry, scalloped via 4 vertices.
@@ -351,7 +352,7 @@ export function buildEyes(id: string, bodyHeight: number): THREE.Group {
   return g;
 }
 
-// ── Build a full monster (returns a Group) ──────────────────────────────
+// ── Build a full monster (returns a Group) ─────────────────────────────
 
 export interface AssembledMonster {
   root: THREE.Group;
@@ -392,8 +393,6 @@ export async function assembleMonster(
   const size = new THREE.Vector3(); bbox.getSize(size);
   const center = new THREE.Vector3(); bbox.getCenter(center);
   const bodyHeight = Math.max(size.y, 0.5);
-  const bodyWidth  = Math.max(size.x, 0.5);
-  const bodyLength = Math.max(size.z, 0.5);
 
   // Normalize: scale so the body stands roughly 1.6 units tall (player POV
   // is comfortable). Smaller monsters scale up, giants scale down.
@@ -456,35 +455,58 @@ export async function assembleMonster(
   root.add(eyes);
 
   // 7) Animation mixer (idle if any clip)
-  let mixer: THREE.AnimationMixer | null = null;
+  const mixer: THREE.AnimationMixer | null = null;
   // We loaded body via clone, but mixerCompatible clips live on the cached
   // source. For Phase 1 we don't animate the clone — the player sees the
   // monster in a static pose. (Phase 3 hooks idle animations.)
   return { root, bodyClone: body, bbox, mixer };
 }
 
-// ── Save / load (per-profile localStorage) ──────────────────────────────
+// ── Save / load (per-profile localStorage) ─────────────────────────────
 
 import { profileKey } from "../profiles/store";
 import type { SavedMonster } from "./partsManifest";
+import { baseStatsFor } from "./engine/stats";
 
 const SAVE_KEY = "henry-monster-forge-monsters-v1";
 
+/** Load saved monsters. Backward-compatible: any monster missing Phase 2
+ *  fields (activePotions, stats) gets sensible defaults. */
 export function loadSaved(): SavedMonster[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(profileKey(SAVE_KEY));
     if (!raw) return [];
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr.filter(isSavedMonster) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr.filter(isSavedMonsterLoose).map(normalize);
   } catch { return []; }
 }
 
-function isSavedMonster(v: unknown): v is SavedMonster {
+function isSavedMonsterLoose(v: unknown): v is Partial<SavedMonster> {
   if (!v || typeof v !== "object") return false;
   const m = v as SavedMonster;
   return typeof m.id === "string" && typeof m.name === "string"
     && !!m.config && typeof m.config.body === "string";
+}
+
+function normalize(raw: Partial<SavedMonster>): SavedMonster {
+  const config = raw.config!;
+  const activePotions = Array.isArray(raw.activePotions)
+    ? raw.activePotions.filter((s): s is string => typeof s === "string")
+    : [];
+  const stats = raw.stats && typeof raw.stats === "object"
+    ? raw.stats
+    : baseStatsFor(config.body);
+  return {
+    id: raw.id!,
+    name: raw.name!,
+    config,
+    activePotions,
+    stats,
+    createdAt: raw.createdAt ?? Date.now(),
+    updatedAt: raw.updatedAt ?? Date.now(),
+  };
 }
 
 export function saveAll(list: SavedMonster[]) {

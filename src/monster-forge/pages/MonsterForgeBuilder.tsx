@@ -1,21 +1,23 @@
-// Monster Forge — Builder. Three.js live preview + part picker tabs.
+// Monster Forge — Builder. Three.js live preview + part picker + Phase 2 potions.
 //
-// Phase 1 deliverables:
-//  - WebGL canvas with orbit-style rotate/zoom (touch + mouse)
-//  - Real-time monster assembly: change part -> rebuild scene <30ms
-//  - Side panel (bottom-sheet on mobile) with category tabs:
-//      Body / Head / Horns / Wings / Tail / Spikes / Eyes / Color
-//  - Name input + Save button -> profile-scoped localStorage
+// Phase 1 deliverables (still active):
+//   - WebGL canvas with orbit-style rotate/zoom (touch + mouse)
+//   - Real-time monster assembly: change part -> rebuild scene <30ms
+//   - Side panel (bottom-sheet on mobile) with category tabs:
+//       Body / Head / Horns / Wings / Tail / Spikes / Eyes / Color
+//   - Name input + Save button -> profile-scoped localStorage
 //
-// Notes on Three.js wiring (matches dungeon3d patterns):
-//  - DPR clamped to 2 (avoids brutal pixel cost on iPad Retina)
-//  - Single ResizeObserver drives renderer + camera aspect
-//  - Cleanup disposes geometries + textures on unmount to avoid GPU leaks
+// Phase 2 additions:
+//   - New "Potions" tab with potion grid, active potion stack, stats panel,
+//     and crafting bench.
+//   - Potions visibly + statistically modify the monster (effects.ts).
+//   - Stats panel (HP/ATK/DEF/SPD/MAG) with delta indicators.
+//   - Crafting bench: drag 2 potions in to discover a new recipe.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
-import { ArrowLeft, Save, Shuffle, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Shuffle, Loader2, X, FlaskConical, Lock } from "lucide-react";
 import {
   assembleMonster, loadSaved, newId, upsertMonster,
 } from "../engine";
@@ -23,33 +25,71 @@ import {
   defaultMonsterConfig, loadManifest,
   type Manifest, type MonsterConfig, type SavedMonster,
 } from "../partsManifest";
+import {
+  POTIONS, getPotion, listVisiblePotions, MAX_ACTIVE_POTIONS,
+  type Potion, type PotionCategory,
+} from "../data/potions";
+import {
+  computeStats, baseStatsFor, totalDelta,
+  STAT_LABELS, STAT_COLORS, STAT_ORDER,
+  type StatBlock,
+} from "../engine/stats";
+import {
+  tryCraft, loadDiscovered, addDiscovered,
+} from "../engine/crafting";
+import { applyPotionsToMonster } from "../engine/effects";
 
-type Tab = "body" | "head" | "horns" | "wings" | "tail" | "spikes" | "eyes" | "color";
+type Tab = "body" | "head" | "horns" | "wings" | "tail" | "spikes" | "eyes" | "color" | "potions";
 
 const TABS: { id: Tab; label: string; emoji: string }[] = [
-  { id: "body",   label: "Body",   emoji: "🦖" },
-  { id: "head",   label: "Head",   emoji: "💀" },
-  { id: "horns",  label: "Horns",  emoji: "👹" },
-  { id: "wings",  label: "Wings",  emoji: "🪽" },
-  { id: "tail",   label: "Tail",   emoji: "🐍" },
-  { id: "spikes", label: "Spikes", emoji: "⚡" },
-  { id: "eyes",   label: "Eyes",   emoji: "👀" },
-  { id: "color",  label: "Color",  emoji: "🎨" },
+  { id: "body",    label: "Body",    emoji: "🦖" },
+  { id: "head",    label: "Head",    emoji: "💀" },
+  { id: "horns",   label: "Horns",   emoji: "👹" },
+  { id: "wings",   label: "Wings",   emoji: "🪽" },
+  { id: "tail",    label: "Tail",    emoji: "🐍" },
+  { id: "spikes",  label: "Spikes",  emoji: "⚡" },
+  { id: "eyes",    label: "Eyes",    emoji: "👀" },
+  { id: "color",   label: "Color",   emoji: "🎨" },
+  { id: "potions", label: "Potions", emoji: "🧪" },
 ];
+
+const CATEGORY_LABELS: Record<PotionCategory, string> = {
+  size: "SIZE",
+  color: "COLOR / GLOW",
+  elemental: "ELEMENTAL",
+  mutation: "MUTATION",
+  stat: "STAT BOOST",
+  texture: "TEXTURE / SKIN",
+};
+
+const RARITY_COLORS: Record<Potion["rarity"], string> = {
+  common:    "rgba(180,180,180,0.7)",
+  rare:      "#60a5fa",
+  legendary: "#fbbf24",
+};
 
 export default function MonsterForgeBuilder() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const editingId = params.get("id");
 
-  // ── Manifest load ─────────────────────────────────────────────
+  // ── Manifest + config + potion state ──────────────────────────────────
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [config, setConfig] = useState<MonsterConfig | null>(null);
+  const [activePotions, setActivePotions] = useState<string[]>([]);
+  const [discovered, setDiscovered] = useState<string[]>([]);
   const [name, setName] = useState<string>("");
   const [savedId, setSavedId] = useState<string | null>(editingId);
   const [tab, setTab] = useState<Tab>("body");
   const [busy, setBusy] = useState<boolean>(false);
   const [savedToast, setSavedToast] = useState<string>("");
+  const [craftSlotA, setCraftSlotA] = useState<string | null>(null);
+  const [craftSlotB, setCraftSlotB] = useState<string | null>(null);
+  const [craftMessage, setCraftMessage] = useState<{ kind: "ok" | "fail"; text: string } | null>(null);
+
+  useEffect(() => {
+    setDiscovered(loadDiscovered());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +100,7 @@ export default function MonsterForgeBuilder() {
         const existing = loadSaved().find(x => x.id === editingId);
         if (existing) {
           setConfig(existing.config);
+          setActivePotions(existing.activePotions ?? []);
           setName(existing.name);
           return;
         }
@@ -72,14 +113,24 @@ export default function MonsterForgeBuilder() {
     return () => { cancelled = true; };
   }, [editingId]);
 
-  // ── Three.js scene (refs to keep things out of React's re-render path) ─
+  // ── Computed stats ────────────────────────────────────────────────────
+  const stats: StatBlock = useMemo(() => {
+    if (!config) return baseStatsFor("alien");
+    return computeStats(config.body, activePotions);
+  }, [config, activePotions]);
+
+  const base: StatBlock = useMemo(() => baseStatsFor(config?.body ?? "alien"), [config?.body]);
+  const delta: StatBlock = useMemo(() => totalDelta(base, stats), [base, stats]);
+
+  // ── Three.js scene refs ───────────────────────────────────────────────
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const monsterRootRef = useRef<THREE.Group | null>(null);
   const animFrameRef = useRef<number>(0);
-  // Camera orbit state — yaw, pitch, distance (touch-friendly own impl)
+  const clockRef = useRef<THREE.Clock>(new THREE.Clock());
+  const auraUpdatesRef = useRef<((t: number) => void)[]>([]);
   const orbitRef = useRef({ yaw: 0.6, pitch: 0.45, dist: 4.5, targetY: 0.8 });
 
   // Bootstrap renderer once
@@ -89,11 +140,9 @@ export default function MonsterForgeBuilder() {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x12081a);
 
-    // Camera
     const cam = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     scene.add(cam);
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
@@ -105,7 +154,6 @@ export default function MonsterForgeBuilder() {
     renderer.domElement.style.display = "block";
     renderer.domElement.style.touchAction = "none";
 
-    // Lights — soft ambient + warm key + cool fill, all with shadows on key
     scene.add(new THREE.AmbientLight(0xffffff, 0.55));
     const key = new THREE.DirectionalLight(0xfff1c4, 1.1);
     key.position.set(4, 6, 3); key.castShadow = true;
@@ -121,13 +169,11 @@ export default function MonsterForgeBuilder() {
     rim.position.set(0, 2, -5);
     scene.add(rim);
 
-    // Ground plane (round disc with soft purple)
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x261339, roughness: 0.9, metalness: 0.0 });
     const ground = new THREE.Mesh(new THREE.CircleGeometry(2.5, 48), groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
-    // Subtle ring accent
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(2.45, 2.6, 48),
       new THREE.MeshStandardMaterial({ color: 0x8b5cf6, emissive: 0x5b21b6, emissiveIntensity: 0.5, side: THREE.DoubleSide }),
@@ -140,7 +186,6 @@ export default function MonsterForgeBuilder() {
     sceneRef.current = scene;
     cameraRef.current = cam;
 
-    // Resize handling
     const resize = () => {
       const w = host.clientWidth;
       const h = host.clientHeight;
@@ -153,7 +198,7 @@ export default function MonsterForgeBuilder() {
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    // Render loop — orbit camera around target each frame.
+    // Render loop — orbit camera + tick aura particle animations.
     const tick = () => {
       const o = orbitRef.current;
       const tx = 0;
@@ -165,12 +210,14 @@ export default function MonsterForgeBuilder() {
         tz + o.dist * Math.cos(o.pitch) * Math.cos(o.yaw),
       );
       cam.lookAt(tx, ty, tz);
+      const t = clockRef.current.getElapsedTime();
+      const updates = auraUpdatesRef.current;
+      for (let i = 0; i < updates.length; i++) updates[i](t);
       renderer.render(scene, cam);
       animFrameRef.current = requestAnimationFrame(tick);
     };
     animFrameRef.current = requestAnimationFrame(tick);
 
-    // Pointer drag → orbit
     let dragging = false; let lastX = 0; let lastY = 0;
     const onDown = (e: PointerEvent) => {
       dragging = true; lastX = e.clientX; lastY = e.clientY;
@@ -191,7 +238,6 @@ export default function MonsterForgeBuilder() {
       const o = orbitRef.current;
       o.dist = Math.max(2, Math.min(8, o.dist + e.deltaY * 0.003));
     };
-    // Pinch (2-finger touch zoom)
     let pinchStart = 0; let pinchDistStart = 0;
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 2) {
@@ -228,7 +274,6 @@ export default function MonsterForgeBuilder() {
       renderer.domElement.removeEventListener("touchmove", onTouchMove);
       renderer.domElement.removeEventListener("touchend", onTouchEnd);
       try { host.removeChild(renderer.domElement); } catch { /* ignore */ }
-      // Dispose geometries / materials in the scene.
       scene.traverse(o => {
         const m = o as THREE.Mesh;
         if (m.geometry) m.geometry.dispose();
@@ -241,36 +286,40 @@ export default function MonsterForgeBuilder() {
       rendererRef.current = null;
       sceneRef.current = null;
       cameraRef.current = null;
+      auraUpdatesRef.current = [];
     };
   }, []);
 
-  // ── Rebuild monster every time config changes ─────────────────
+  // ── Rebuild monster on config OR activePotions change ─────────────────
   useEffect(() => {
     if (!manifest || !config || !sceneRef.current) return;
     let cancelled = false;
     setBusy(true);
-    assembleMonster(config, manifest).then(({ root }) => {
+    assembleMonster(config, manifest).then(am => {
       if (cancelled || !sceneRef.current) return;
-      // Remove old monster
+      // Apply potions (mutation geometry, auras, material mods, scale).
+      const applied = applyPotionsToMonster(am, activePotions);
+      // Swap aura update callbacks before re-mounting the new root.
+      auraUpdatesRef.current = applied.updates;
+      // Remove + dispose old monster
       if (monsterRootRef.current) {
         sceneRef.current.remove(monsterRootRef.current);
-        // Dispose its meshes
         monsterRootRef.current.traverse(o => {
           const m = o as THREE.Mesh;
           if (m.geometry) m.geometry.dispose();
         });
       }
-      sceneRef.current.add(root);
-      monsterRootRef.current = root;
+      sceneRef.current.add(am.root);
+      monsterRootRef.current = am.root;
       setBusy(false);
     }).catch(err => {
       console.error("[monster-forge] assemble failed", err);
       setBusy(false);
     });
     return () => { cancelled = true; };
-  }, [config, manifest]);
+  }, [config, manifest, activePotions]);
 
-  // ── Action handlers ─────────────────────────────────────────────
+  // ── Part-picker action handlers ───────────────────────────────────────
   const update = (k: keyof MonsterConfig, v: string) => {
     setConfig(prev => prev ? { ...prev, [k]: v } : prev);
   };
@@ -291,6 +340,53 @@ export default function MonsterForgeBuilder() {
     setName(randomMonsterName());
   };
 
+  // ── Potion action handlers ────────────────────────────────────────────
+  const applyPotion = (potionId: string) => {
+    if (activePotions.includes(potionId)) return;
+    if (activePotions.length >= MAX_ACTIVE_POTIONS) {
+      setSavedToast(`Max ${MAX_ACTIVE_POTIONS} potions per monster`);
+      setTimeout(() => setSavedToast(""), 1800);
+      return;
+    }
+    setActivePotions(prev => [...prev, potionId]);
+  };
+
+  const removePotion = (potionId: string) => {
+    setActivePotions(prev => prev.filter(p => p !== potionId));
+  };
+
+  // ── Crafting bench ────────────────────────────────────────────────────
+  const placeInSlot = (slot: "a" | "b", potionId: string) => {
+    if (slot === "a") setCraftSlotA(potionId);
+    else setCraftSlotB(potionId);
+    setCraftMessage(null);
+  };
+
+  const clearCraftSlot = (slot: "a" | "b") => {
+    if (slot === "a") setCraftSlotA(null);
+    else setCraftSlotB(null);
+    setCraftMessage(null);
+  };
+
+  const doCraft = () => {
+    if (!craftSlotA || !craftSlotB) return;
+    const out = tryCraft(craftSlotA, craftSlotB);
+    if (out) {
+      const wasNew = !discovered.includes(out);
+      const next = addDiscovered(out);
+      setDiscovered(next);
+      const potion = getPotion(out);
+      setCraftMessage({
+        kind: "ok",
+        text: wasNew
+          ? `★ Discovered ${potion?.name ?? out}!`
+          : `${potion?.name ?? out} (already known)`,
+      });
+    } else {
+      setCraftMessage({ kind: "fail", text: "💨 Nothing happened — try another combination!" });
+    }
+  };
+
   const save = () => {
     if (!config) return;
     const id = savedId ?? newId();
@@ -300,6 +396,8 @@ export default function MonsterForgeBuilder() {
       id,
       name: trimmed,
       config,
+      activePotions,
+      stats,
       createdAt: savedId ? (loadSaved().find(m => m.id === id)?.createdAt ?? now) : now,
       updatedAt: now,
     };
@@ -309,11 +407,9 @@ export default function MonsterForgeBuilder() {
     setTimeout(() => setSavedToast(""), 2000);
   };
 
-  // ── Render ─────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────
   // IMPORTANT: render the host div unconditionally — the Three.js bootstrap
-  // useEffect needs hostRef.current to be live on first mount. If we early-
-  // return a loading screen here, the canvas never gets created and the
-  // preview is permanently blank.
+  // useEffect needs hostRef.current to be live on first mount.
   const loading = !manifest || !config;
 
   return (
@@ -350,9 +446,30 @@ export default function MonsterForgeBuilder() {
         </button>
       </header>
 
-      {/* 3D preview + busy spinner */}
-      <div className="relative flex-1 min-h-0" style={{ minHeight: 320 }}>
+      {/* 3D preview + active potion stack + busy spinner */}
+      <div className="relative flex-1 min-h-0" style={{ minHeight: 280 }}>
         <div ref={hostRef} className="absolute inset-0" />
+
+        {/* Active potion stack — top center */}
+        {activePotions.length > 0 && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 flex gap-1.5 px-2 py-1.5 rounded-full"
+            style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
+            {activePotions.map(pid => {
+              const p = getPotion(pid);
+              if (!p) return null;
+              return (
+                <button key={pid} onClick={() => removePotion(pid)} title={`Remove ${p.name}`}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-lg pressable touch-target relative"
+                  style={{ background: "rgba(255,255,255,0.08)", border: `1px solid ${RARITY_COLORS[p.rarity]}` }}>
+                  <span>{p.emoji}</span>
+                  <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px]"
+                    style={{ background: "#ef4444", color: "#fff" }}>×</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)", color: "#fef3c7" }}>
             <Loader2 size={20} className="animate-spin" />&nbsp; Loading parts…
@@ -375,7 +492,7 @@ export default function MonsterForgeBuilder() {
         </div>
       </div>
 
-      {/* Part picker — bottom sheet */}
+      {/* Bottom sheet */}
       <div className="flex-shrink-0"
         style={{ background: "rgba(10,5,20,0.95)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         {/* Tab strip */}
@@ -392,26 +509,42 @@ export default function MonsterForgeBuilder() {
             </button>
           ))}
         </div>
-        {/* Choices */}
-        <div className="px-2 pb-3 pt-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-          {!loading && manifest && config && (
-            <Choices tab={tab} config={config} manifest={manifest} onPick={update} />
-          )}
-        </div>
+
+        {/* Tab content */}
+        {!loading && manifest && config && (
+          tab === "potions" ? (
+            <PotionPanel
+              activePotions={activePotions}
+              stats={stats} base={base} delta={delta}
+              discovered={discovered}
+              onApply={applyPotion}
+              onRemove={removePotion}
+              craftSlotA={craftSlotA} craftSlotB={craftSlotB}
+              onPlaceCraftSlot={placeInSlot}
+              onClearCraftSlot={clearCraftSlot}
+              onCraft={doCraft}
+              craftMessage={craftMessage}
+            />
+          ) : (
+            <div className="px-2 pb-3 pt-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+              <Choices tab={tab} config={config} manifest={manifest} onPick={update} />
+            </div>
+          )
+        )}
       </div>
     </div>
   );
 }
 
-// ── Choices row ───────────────────────────────────────────────────────
+// ── Standard part choices row ───────────────────────────────────────────
 
 function Choices({
   tab, config, manifest, onPick,
 }: {
-  tab: Tab; config: MonsterConfig; manifest: Manifest;
+  tab: Exclude<Tab, "potions">; config: MonsterConfig; manifest: Manifest;
   onPick: (k: keyof MonsterConfig, v: string) => void;
 }) {
-  const mapping: Record<Tab, { configKey: keyof MonsterConfig; list: { id: string; label: string; hex?: string | null }[] }> = useMemo(() => ({
+  const mapping: Record<Exclude<Tab, "potions">, { configKey: keyof MonsterConfig; list: { id: string; label: string; hex?: string | null }[] }> = useMemo(() => ({
     body:   { configKey: "body",        list: manifest.parts.body },
     head:   { configKey: "headOverlay", list: manifest.parts.headOverlay },
     horns:  { configKey: "horns",       list: manifest.parts.horns },
@@ -446,7 +579,7 @@ function Choices({
                 }} />
             ) : (
               <div className="text-[10px] tracking-[0.18em] font-display mb-0.5" style={{ color: selected ? "#fde047" : "rgba(254,243,199,0.55)" }}>
-                {item.id === "none" ? "—" : "●"}
+                {item.id === "none" ? "—" : "◉"}
               </div>
             )}
             <div className="text-[10px] font-display tracking-wider truncate max-w-[68px] text-center"
@@ -460,7 +593,224 @@ function Choices({
   );
 }
 
-// ── Random name generator (kid-friendly, fits in 30 chars) ─────────
+// ── Potion panel (active + stats + grid + craft bench) ─────────────────
+
+function PotionPanel({
+  activePotions, stats, base, delta, discovered,
+  onApply, onRemove,
+  craftSlotA, craftSlotB, onPlaceCraftSlot, onClearCraftSlot, onCraft,
+  craftMessage,
+}: {
+  activePotions: string[];
+  stats: StatBlock; base: StatBlock; delta: StatBlock;
+  discovered: string[];
+  onApply: (id: string) => void;
+  onRemove: (id: string) => void;
+  craftSlotA: string | null; craftSlotB: string | null;
+  onPlaceCraftSlot: (slot: "a" | "b", id: string) => void;
+  onClearCraftSlot: (slot: "a" | "b") => void;
+  onCraft: () => void;
+  craftMessage: { kind: "ok" | "fail"; text: string } | null;
+}) {
+  const [pickingFor, setPickingFor] = useState<"a" | "b" | null>(null);
+  const visiblePotions = useMemo(() => listVisiblePotions(discovered), [discovered]);
+
+  // Group potions by category for the grid section.
+  const byCategory = useMemo(() => {
+    const groups: Record<PotionCategory, Potion[]> = {
+      size: [], color: [], elemental: [], mutation: [], stat: [], texture: [],
+    };
+    for (const p of visiblePotions) groups[p.category].push(p);
+    return groups;
+  }, [visiblePotions]);
+
+  // Locked potion count for the "?" silhouettes at the end of each section.
+  const lockedCount = POTIONS.filter(p => p.crafted && !discovered.includes(p.id)).length;
+
+  return (
+    <div className="px-3 pt-1 pb-3 overflow-y-auto" style={{ maxHeight: "min(60vh, 420px)" }}>
+      {/* Stats panel */}
+      <div className="mb-3 px-3 py-2 rounded-xl"
+        style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+        <div className="flex items-center justify-between mb-1.5">
+          <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: "#fda4af" }}>STATS</div>
+          <div className="text-[10px]" style={{ color: "rgba(254,243,199,0.55)" }}>
+            potions: {activePotions.length} / {MAX_ACTIVE_POTIONS}
+          </div>
+        </div>
+        {STAT_ORDER.map(k => {
+          const cur = stats[k]; const b = base[k]; const d = delta[k];
+          const pct = Math.max(0, Math.min(1, cur / 30));
+          return (
+            <div key={k} className="flex items-center gap-2 mb-0.5">
+              <div className="text-[10px] font-display tracking-wider w-9" style={{ color: STAT_COLORS[k] }}>{STAT_LABELS[k]}</div>
+              <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                <div style={{ width: `${pct * 100}%`, height: "100%", background: STAT_COLORS[k], transition: "width 0.3s" }} />
+              </div>
+              <div className="text-[10px] font-mono w-7 text-right" style={{ color: "#fef3c7" }}>{cur}</div>
+              <div className="text-[10px] font-mono w-8 text-right"
+                style={{ color: d > 0 ? "#4ade80" : d < 0 ? "#f87171" : "rgba(255,255,255,0.25)" }}>
+                {d === 0 ? "" : (d > 0 ? `+${d}` : `${d}`)}
+              </div>
+              <div className="text-[9px] font-mono w-7 text-right" style={{ color: "rgba(255,255,255,0.35)" }}>({b})</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Crafting bench */}
+      <div className="mb-3 px-3 py-2 rounded-xl"
+        style={{ background: "linear-gradient(135deg, rgba(125,80,180,0.18), rgba(0,0,0,0.4))", border: "1px solid rgba(180,80,200,0.4)" }}>
+        <div className="flex items-center gap-1 mb-1.5">
+          <FlaskConical size={12} style={{ color: "#fda4af" }} />
+          <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: "#fda4af" }}>CRAFTING BENCH</div>
+        </div>
+        <div className="flex items-center gap-2 mb-1.5">
+          <CraftSlot
+            potionId={craftSlotA}
+            label="A"
+            onTap={() => setPickingFor(pickingFor === "a" ? null : "a")}
+            picking={pickingFor === "a"}
+            onClear={() => onClearCraftSlot("a")}
+          />
+          <div className="text-[14px] font-display" style={{ color: "#fda4af" }}>+</div>
+          <CraftSlot
+            potionId={craftSlotB}
+            label="B"
+            onTap={() => setPickingFor(pickingFor === "b" ? null : "b")}
+            picking={pickingFor === "b"}
+            onClear={() => onClearCraftSlot("b")}
+          />
+          <button onClick={onCraft}
+            disabled={!craftSlotA || !craftSlotB}
+            className="ml-auto px-3 py-1.5 rounded-lg text-[11px] font-display tracking-wider pressable touch-target"
+            style={{
+              background: craftSlotA && craftSlotB
+                ? "linear-gradient(135deg, #f59e0b, #b45309)"
+                : "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              color: craftSlotA && craftSlotB ? "#fff" : "rgba(255,255,255,0.4)",
+            }}>
+            CRAFT
+          </button>
+        </div>
+        {pickingFor && (
+          <div className="px-2 py-1.5 rounded-lg mb-1.5"
+            style={{ background: "rgba(0,0,0,0.45)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="text-[9px] tracking-[0.2em] mb-1" style={{ color: "rgba(254,243,199,0.55)" }}>
+              PICK POTION FOR SLOT {pickingFor.toUpperCase()}
+            </div>
+            <div className="flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+              {visiblePotions.filter(p => !p.crafted).map(p => (
+                <button key={p.id} onClick={() => { onPlaceCraftSlot(pickingFor, p.id); setPickingFor(null); }}
+                  title={p.name}
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0 pressable touch-target"
+                  style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${RARITY_COLORS[p.rarity]}` }}>
+                  {p.emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {craftMessage && (
+          <div className="text-[11px] px-2 py-1 rounded font-display tracking-wider"
+            style={{
+              background: craftMessage.kind === "ok" ? "rgba(22,163,74,0.25)" : "rgba(255,255,255,0.04)",
+              color: craftMessage.kind === "ok" ? "#86efac" : "rgba(254,243,199,0.65)",
+              border: `1px solid ${craftMessage.kind === "ok" ? "rgba(74,222,128,0.4)" : "rgba(255,255,255,0.08)"}`,
+            }}>
+            {craftMessage.text}
+          </div>
+        )}
+        <div className="text-[9px] mt-1" style={{ color: "rgba(254,243,199,0.45)" }}>
+          Discovered recipes: {discovered.length} / 7 · Try unusual combinations.
+        </div>
+      </div>
+
+      {/* Potion grid by category */}
+      {(Object.keys(byCategory) as PotionCategory[]).map(cat => {
+        const items = byCategory[cat];
+        if (items.length === 0) return null;
+        return (
+          <div key={cat} className="mb-3">
+            <div className="text-[10px] tracking-[0.3em] font-display mb-1.5" style={{ color: "#fda4af" }}>
+              {CATEGORY_LABELS[cat]}
+            </div>
+            <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+              {items.map(p => {
+                const active = activePotions.includes(p.id);
+                return (
+                  <button key={p.id} onClick={() => active ? onRemove(p.id) : onApply(p.id)}
+                    title={`${p.name} — ${p.description}`}
+                    className="px-1.5 py-2 rounded-lg pressable touch-target flex flex-col items-center text-center"
+                    style={{
+                      background: active
+                        ? "linear-gradient(135deg, rgba(22,163,74,0.3), rgba(126,34,206,0.25))"
+                        : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${active ? "rgba(74,222,128,0.5)" : RARITY_COLORS[p.rarity]}`,
+                      minHeight: 58,
+                    }}>
+                    <div className="text-lg leading-tight">{p.emoji}</div>
+                    <div className="text-[9px] font-display tracking-wider mt-0.5 leading-tight" style={{ color: active ? "#86efac" : "#fef3c7" }}>
+                      {p.name}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {lockedCount > 0 && (
+        <div className="mb-3">
+          <div className="text-[10px] tracking-[0.3em] font-display mb-1.5" style={{ color: "rgba(254,243,199,0.45)" }}>
+            UNDISCOVERED ({lockedCount})
+          </div>
+          <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+            {Array.from({ length: lockedCount }).map((_, i) => (
+              <div key={i} className="px-1.5 py-2 rounded-lg flex flex-col items-center text-center"
+                style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.15)", minHeight: 58 }}>
+                <Lock size={16} style={{ color: "rgba(255,255,255,0.25)" }} />
+                <div className="text-[9px] font-display tracking-wider mt-1" style={{ color: "rgba(255,255,255,0.25)" }}>???</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CraftSlot({
+  potionId, label, picking, onTap, onClear,
+}: {
+  potionId: string | null; label: string; picking: boolean;
+  onTap: () => void; onClear: () => void;
+}) {
+  const p = potionId ? getPotion(potionId) : null;
+  return (
+    <div className="relative">
+      <button onClick={onTap}
+        className="w-12 h-12 rounded-lg flex items-center justify-center text-xl pressable touch-target"
+        style={{
+          background: p ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.03)",
+          border: `1px ${p ? "solid" : "dashed"} ${picking ? "#fbbf24" : "rgba(255,255,255,0.18)"}`,
+        }}>
+        {p ? p.emoji : <span style={{ color: "rgba(255,255,255,0.35)", fontSize: 11 }}>{label}</span>}
+      </button>
+      {p && (
+        <button onClick={(e) => { e.stopPropagation(); onClear(); }}
+          className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center"
+          style={{ background: "#ef4444", color: "#fff" }}>
+          <X size={9} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── Random name generator (kid-friendly, fits in 30 chars) ─────────────
 
 const ADJ = ["Spooky","Grumpy","Sparkly","Fuzzy","Cosmic","Tiny","Mighty","Wobbly","Frosty","Burning","Sneaky","Dizzy","Royal","Bouncy","Toxic","Lucky"];
 const NOUN = ["Blorp","Snorgle","Fizz","Crumble","Wibble","Boop","Gribble","Glob","Snik","Murk","Zorp","Plop","Squish","Pog","Drak","Vomp"];
