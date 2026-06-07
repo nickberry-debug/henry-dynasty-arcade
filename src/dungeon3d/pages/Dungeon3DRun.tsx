@@ -33,7 +33,12 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio, isMuted, setMuted } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T01:55:31Z";  // HOTFIX_ZOOM_FACING_TUTORIAL_QUIT_BOSSHP
+const BUILD_STAMP = "2026-06-07T14:30:00Z";  // CONTROLS_HOTFIX_v3 + ADVENTURE_CONTENT
+// Add ?dbg=facing to the URL to print per-second player.facing / rotation.y /
+// input.ax|az to the console.  Used to verify the controls regression fix.
+const DBG_FACING =
+  typeof window !== "undefined" &&
+  /[?&]dbg=facing\b/.test(window.location.search);
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
@@ -726,6 +731,23 @@ export default function Dungeon3DRun() {
         inputRef.current.attack = k.attack;
         inputRef.current.ranged = k.ranged;
         inputRef.current.interact = k.interact;
+        // CONTROLS_HOTFIX_v3 (debug-only): emit facing/input every ~1s when
+        // ?dbg=facing is set. Lets Nick verify joystick→world mapping live.
+        if (DBG_FACING) {
+          (window as any).__d3dDbg = ((window as any).__d3dDbg ?? 0) + dt;
+          if ((window as any).__d3dDbg >= 1) {
+            (window as any).__d3dDbg = 0;
+            const _gp = gameRef.current?.player;
+            // eslint-disable-next-line no-console
+            console.log("[d3d/facing]", {
+              raw: { ax: _ax.toFixed(3), az: _az.toFixed(3) },
+              world: { ax: ax.toFixed(3), az: az.toFixed(3) },
+              facing: _gp ? _gp.facing.toFixed(3) : "n/a",
+              rotY:   _gp ? (_gp.facing + MODEL_FACING_OFFSET).toFixed(3) : "n/a",
+              offs:   MODEL_FACING_OFFSET.toFixed(3),
+            });
+          }
+        }
 
         const g = gameRef.current;
         if (!g) return;
