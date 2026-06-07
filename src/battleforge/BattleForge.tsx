@@ -12,6 +12,8 @@ import BattleCanvas from "./BattleCanvas";
 import type { TeamSlot, PlaybackData } from "./BattleCanvas";
 import { getAnthropicKey } from "../arcade/keys";
 import { MiniAvatar, MiniSample, ArenaProp } from "./MiniAvatar";
+import { archetypeFor } from "./spriteFactory";
+import { getLuizmeloSheet, preloadAllLuizmeloPacks } from "./luizmeloSprites";
 import { ParticleSystem } from "../art";
 import { getActiveProfileId, recordGameSession, loadProfiles } from "../profiles/store";
 import { addMemory } from "../profiles/memory";
@@ -172,6 +174,130 @@ function speak(text: string, rate = 0.88, pitch = 1.05) {
   speechSynthesis.speak(u);
 }
 
+// ── Live fighter preview (animated luizmelo idle) ─────────────────────────────
+// Used by the redesigned character-select to show the active fighter big
+// and animated. Falls back to a big emoji if the luizmelo pack isn't
+// loaded yet — kicks the loader the first time it's mounted.
+
+interface FighterPreviewProps {
+  fighter: CharacterDef | null;
+  team: "A" | "B";
+  size?: number;
+}
+
+function FighterPreview({ fighter, team, size = 168 }: FighterPreviewProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => { preloadAllLuizmeloPacks(); }, []);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !fighter) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    let raf = 0;
+    let frame = 0;
+    let last = performance.now();
+    function draw(now: number) {
+      raf = requestAnimationFrame(draw);
+      if (!fighter || !ctx || !canvas) return;
+      // Advance frame at ~8fps for idle (sprite cycles every ~500ms).
+      if (now - last > 125) {
+        frame = (frame + 1) % 4;
+        last = now;
+      }
+      const arch = archetypeFor(fighter);
+      const sheet = getLuizmeloSheet(fighter, team, arch);
+      const cw = canvas.width, chh = canvas.height;
+      ctx.clearRect(0, 0, cw, chh);
+      ctx.imageSmoothingEnabled = false;
+      if (sheet.ready) {
+        // Use facing index 1 (SE — right-facing canonical) for the preview.
+        const src = sheet.idle[1];
+        // Scale source 64×64 → canvas size while preserving aspect.
+        const sc = cw / 64;
+        ctx.drawImage(src, 0, 0, 64, 64, 0, 0, 64 * sc, 64 * sc);
+      } else {
+        // Placeholder: big emoji centered.
+        ctx.font = `${cw * 0.55}px serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(fighter.emoji || "⚔️", cw / 2, chh / 2);
+      }
+      // Suppress unused-var warning for frame variable (used by future
+      // multi-frame preview; currently we render just idle[0] but keep
+      // the counter for when we expand to all 8 idle frames).
+      void frame;
+    }
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [fighter, team]);
+
+  const accent = team === "A" ? "#5599FF" : "#FF5544";
+  if (!fighter) {
+    return (
+      <div
+        className="flex items-center justify-center rounded-2xl"
+        style={{
+          width: size, height: size,
+          background: `linear-gradient(135deg, rgba(255,255,255,0.04), rgba(0,0,0,0.4))`,
+          border: `2px dashed ${accent}44`,
+          color: "#666",
+          fontSize: 11,
+          fontFamily: "monospace",
+          letterSpacing: 1.5,
+        }}
+      >
+        PICK FIGHTER
+      </div>
+    );
+  }
+
+  const tint = fighter.color || accent;
+  return (
+    <div
+      className="relative rounded-2xl overflow-hidden flex items-center justify-center"
+      style={{
+        width: size, height: size,
+        background: `radial-gradient(ellipse at 50% 70%, ${tint}33 0%, rgba(0,0,0,0.55) 70%, rgba(0,0,0,0.85) 100%)`,
+        border: `2px solid ${tint}`,
+        boxShadow: `0 0 0 1px ${tint}55 inset, 0 6px 22px -6px ${tint}88`,
+      }}
+    >
+      <canvas
+        ref={canvasRef}
+        width={size}
+        height={size}
+        style={{ width: size, height: size, imageRendering: "pixelated" as const }}
+      />
+      <div
+        className="absolute"
+        style={{ left: 8, top: 6, fontSize: 30, lineHeight: 1, filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.7))" }}
+        aria-hidden="true"
+      >
+        {fighter.emoji}
+      </div>
+      <div
+        className="absolute right-2 bottom-1 text-[9px] font-display tracking-widest uppercase"
+        style={{ color: tint, textShadow: "0 1px 2px rgba(0,0,0,0.9)" }}
+      >
+        {fighter.size}
+      </div>
+    </div>
+  );
+}
+
+// Compact stat bar used inside the character-select preview pane.
+function MiniStatBar({ label, value, accent }: { label: string; value: number; accent: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="text-[7px] font-display tracking-wide w-7 text-right" style={{ color: "#9aa6bf" }}>{label}</div>
+      <div className="flex-1 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.10)" }}>
+        <div className="h-full rounded-full" style={{ width: `${Math.min(100, value / 10)}%`, background: accent }} />
+      </div>
+      <div className="text-[7px] w-7" style={{ color: accent }}>{value}</div>
+    </div>
+  );
+}
+
 // ── Multi-slot Character Picker ───────────────────────────────────────────────
 
 interface MultiCharPickerProps {
@@ -251,6 +377,49 @@ function MultiCharPicker({ team, slots, onChange }: MultiCharPickerProps) {
             + TYPE
           </button>
         )}
+      </div>
+
+      {/* Live fighter preview — fighting-game roster style. The big card
+          shows the currently-selected slot's fighter playing its idle
+          animation (luizmelo PNG when loaded, emoji fallback otherwise),
+          plus stat bars and the special move. Tapping a portrait below
+          updates this preview instantly. */}
+      <div
+        className="rounded-2xl p-2.5 flex gap-2.5"
+        style={{
+          background: `linear-gradient(135deg, ${accent}11, rgba(5,2,10,0.7))`,
+          border: `1px solid ${accent}33`,
+        }}
+      >
+        <FighterPreview fighter={activeSlot.def} team={team} size={120} />
+        <div className="flex-1 min-w-0 flex flex-col">
+          {activeSlot.def ? (
+            <>
+              <div className="font-display text-sm tracking-wide truncate"
+                style={{ color: activeSlot.def.color || accent, textShadow: "0 1px 2px rgba(0,0,0,0.7)" }}>
+                {activeSlot.def.name}
+              </div>
+              <div className="text-[8px] uppercase tracking-[0.2em] mb-1.5" style={{ color: "#9aa6bf" }}>
+                {activeSlot.def.attackType} · {activeSlot.def.size}
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <MiniStatBar label="HP"  value={activeSlot.def.stats.hp}      accent={accent} />
+                <MiniStatBar label="PWR" value={activeSlot.def.stats.power}   accent={accent} />
+                <MiniStatBar label="SPD" value={activeSlot.def.stats.speed}   accent={accent} />
+                <MiniStatBar label="DEF" value={activeSlot.def.stats.defense} accent={accent} />
+                <MiniStatBar label="SPC" value={activeSlot.def.stats.special} accent={accent} />
+              </div>
+              <div className="text-[8px] mt-1.5 truncate" style={{ color: "#FFD700" }}>
+                ⭐ {activeSlot.def.specialName}
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-[10px] text-center px-2"
+              style={{ color: "#666" }}>
+              Tap a fighter below to see their power
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Slot tabs */}
@@ -346,25 +515,34 @@ function MultiCharPicker({ team, slots, onChange }: MultiCharPickerProps) {
         ))}
       </div>
 
-      {/* Character grid — emoji-prominent meme style. Each tile's big
-          emoji is the identity anchor; a thin color-tinted ring + the
-          unit's name/size show selection. The mini portraits were too
-          samey to scan in a grid; this reads at a glance again. */}
-      <div className="grid grid-cols-3 gap-1 overflow-y-auto" style={{ maxHeight: 240 }}>
+      {/* Character roster grid — fighting-game style portrait cards.
+          3 cols on phones, 4 on tablet+, scrollable. Active card
+          pops with the fighter's signature color glow. Tapping a
+          card instantly updates the preview pane above. */}
+      <div className="grid grid-cols-3 md:grid-cols-4 gap-1 overflow-y-auto" style={{ maxHeight: 280 }}>
         {filtered.map(char => {
           const isActive = activeSlot.def?.id === char.id;
           const tint = char.color || accent;
           return (
             <button key={char.id} onClick={() => setDef(safeIdx, char)}
-              className="rounded-lg p-1.5 text-center transition-all"
+              className="rounded-lg p-1.5 text-center transition-all relative"
               style={{
-                background: isActive ? `linear-gradient(135deg, ${tint}28, rgba(10,10,20,0.6))` : "rgba(255,255,255,0.05)",
-                border: `1px solid ${isActive ? tint : "rgba(255,255,255,0.10)"}`,
-                boxShadow: isActive ? `0 0 0 1px ${tint}55 inset, 0 0 14px -4px ${tint}66` : undefined,
+                background: isActive
+                  ? `linear-gradient(135deg, ${tint}38, rgba(10,10,20,0.7))`
+                  : `linear-gradient(135deg, rgba(255,255,255,0.06), rgba(10,10,20,0.4))`,
+                border: `1.5px solid ${isActive ? tint : "rgba(255,255,255,0.10)"}`,
+                boxShadow: isActive
+                  ? `0 0 0 1px ${tint}66 inset, 0 0 18px -4px ${tint}88`
+                  : "0 1px 3px rgba(0,0,0,0.3)",
+                transform: isActive ? "scale(1.02)" : undefined,
               }}>
               <div className="text-3xl leading-none mb-0.5" aria-hidden="true">{char.emoji}</div>
               <div className="text-[9px] font-display tracking-wide truncate" style={{ color: "#e5e7eb" }}>{char.name}</div>
               <div className="text-[7px] uppercase tracking-widest" style={{ color: tint }}>{char.size}</div>
+              {isActive && (
+                <div className="absolute -top-1 -left-1 w-3 h-3 rounded-full"
+                  style={{ background: tint, boxShadow: `0 0 8px ${tint}` }} />
+              )}
             </button>
           );
         })}
@@ -769,10 +947,12 @@ export default function BattleForge() {
             <MapSelector maps={MAPS} selected={selectedMap} onSelect={setSelectedMap} />
           </div>
 
-          {/* Character pickers */}
-          <div className="flex gap-3">
+          {/* Character pickers — responsive: phone stacks team A on top
+              of team B, tablet+ goes side-by-side fighting-game style. */}
+          <div className="flex flex-col md:flex-row gap-3 md:items-stretch">
             <MultiCharPicker team="A" slots={teamA} onChange={setTeamA} />
-            <div className="flex items-center text-xl font-display pt-8" style={{ color: "#444" }}>VS</div>
+            <div className="flex items-center justify-center text-2xl md:text-xl font-display md:pt-8 py-2 md:py-0"
+              style={{ color: "#FF4444", textShadow: "0 0 12px rgba(255,68,68,0.5)" }}>VS</div>
             <MultiCharPicker team="B" slots={teamB} onChange={setTeamB} />
           </div>
 

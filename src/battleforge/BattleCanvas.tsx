@@ -19,7 +19,7 @@
 // Keeps PlaybackData/recording compatible with the prior implementation so
 // the existing replay UI in BattleForge.tsx keeps working.
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from "react";
 import type {
   CharacterDef, MapConfig, BattleUnit, Particle, BattleResult, BattleLogEntry, VFXEvent, UnitFrameData, MapFeature,
 } from "./types";
@@ -471,6 +471,25 @@ export default function BattleCanvas({
   const unitsRef = useRef<BattleUnit[]>([]);
   const [resizeNonce, setResizeNonce] = useState(0);
 
+  // ── User-controlled zoom + pan (Item 2 of the BattleForge fix pass) ─────
+  // Auto-camera still tracks the centroid of alive units. These three refs
+  // layer on top: userZoom multiplies the auto-zoom, userPanX/Y shift the
+  // tracked centroid in world units. Touch (pinch + drag), mouse wheel,
+  // and the +/-/reset overlay buttons all write to these.
+  const userZoomRef = useRef(1);
+  const userPanXRef = useRef(0);
+  const userPanYRef = useRef(0);
+  // Mirror to state so the overlay UI re-renders to show current zoom.
+  const [userZoom, setUserZoom] = useState(1);
+  // Force-render hook for the overlay's reset button availability.
+  const updateZoomUI = useCallback((v: number) => {
+    userZoomRef.current = v;
+    setUserZoom(v);
+  }, []);
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 2.5;
+  const clampUserZoom = (z: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+
   useEffect(() => { speedRef.current = speed; }, [speed]);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => { playbackDataRef.current = playbackData ?? null; }, [playbackData]);
@@ -511,6 +530,77 @@ export default function BattleCanvas({
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(container);
+
+    // ── User input: pinch-zoom (touch), wheel (desktop), drag-pan ───────────
+    // Two-finger pinch sets zoom; one-finger drag pans (only when zoomed
+    // in past 1× to avoid hijacking taps). Mouse-wheel works on desktop.
+    // All listeners are attached to the container (not the canvas) so the
+    // canvas can be re-created on resize without losing handlers.
+    let pinchStartDist = 0;
+    let pinchStartZoom = 1;
+    let panLastX = 0;
+    let panLastY = 0;
+    let panning = false;
+    const dist2 = (a: Touch, b: Touch) => {
+      const dx = a.clientX - b.clientX, dy = a.clientY - b.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchStartDist = dist2(e.touches[0], e.touches[1]);
+        pinchStartZoom = userZoomRef.current;
+        panning = false;
+        e.preventDefault();
+      } else if (e.touches.length === 1 && userZoomRef.current > 1.0) {
+        panning = true;
+        panLastX = e.touches[0].clientX;
+        panLastY = e.touches[0].clientY;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const d = dist2(e.touches[0], e.touches[1]);
+        if (pinchStartDist > 0) {
+          const ratio = d / pinchStartDist;
+          const next = clampUserZoom(pinchStartZoom * ratio);
+          updateZoomUI(next);
+        }
+        e.preventDefault();
+      } else if (panning && e.touches.length === 1) {
+        const dx = e.touches[0].clientX - panLastX;
+        const dy = e.touches[0].clientY - panLastY;
+        panLastX = e.touches[0].clientX;
+        panLastY = e.touches[0].clientY;
+        // Convert screen-px drag into iso world-space pan. The iso
+        // projection scales world by TILE_W/2 horizontally and TILE_H/2
+        // vertically, then rotates 45°. Dragging "right" on screen should
+        // move the camera right, which means subtracting from finalCx.
+        // We approximate by scaling delta by the current zoom inverse.
+        const zNow = Math.max(0.2, userZoomRef.current * 2.4); // base camZoom ~2.4
+        // Reverse the iso projection: dx,dy → world dx,dy
+        const wx = (dx / (TILE_W * 0.5) + dy / (TILE_H * 0.5)) * 0.5 / zNow * TILE_WORLD;
+        const wy = (dy / (TILE_H * 0.5) - dx / (TILE_W * 0.5)) * 0.5 / zNow * TILE_WORLD;
+        userPanXRef.current -= wx;
+        userPanYRef.current -= wy;
+      }
+    };
+    const onTouchEnd = (_e: TouchEvent) => {
+      pinchStartDist = 0;
+      panning = false;
+    };
+    const onWheel = (e: WheelEvent) => {
+      // Trackpad / mousewheel zoom. Sensitivity tuned so a normal wheel
+      // tick moves ~10% of zoom range per click.
+      const factor = Math.pow(1.0015, -e.deltaY);
+      const next = clampUserZoom(userZoomRef.current * factor);
+      updateZoomUI(next);
+      e.preventDefault();
+    };
+    container.addEventListener("touchstart", onTouchStart, { passive: false });
+    container.addEventListener("touchmove",  onTouchMove,  { passive: false });
+    container.addEventListener("touchend",   onTouchEnd);
+    container.addEventListener("touchcancel", onTouchEnd);
+    container.addEventListener("wheel",      onWheel,      { passive: false });
 
     // ── Terrain ─────────────────────────────────────────────────────────────
     const terrain = buildTerrain(map);
@@ -654,12 +744,19 @@ export default function BattleCanvas({
         camZoom += (targetZoom - camZoom) * 0.05;
       }
 
-      // Project (camCx, camCy) to canvas center.
-      const tx = camCx / TILE_WORLD;
-      const ty = camCy / TILE_WORLD;
-      const originX = w * 0.5 - (tx - ty) * (TILE_W * 0.5) * camZoom;
-      const originY = h * 0.5 - (tx + ty) * (TILE_H * 0.5) * camZoom;
-      return { originX, originY, zoom: camZoom };
+      // Apply user-controlled zoom + pan on top of the auto-camera. Pan
+      // values are in world units and only kick in when the user has
+      // explicitly dragged (default 0). Zoom multiplies the auto-zoom so
+      // pinch-in still respects the unit-size aware base framing.
+      const finalZoom = camZoom * userZoomRef.current;
+      const finalCx = camCx + userPanXRef.current;
+      const finalCy = camCy + userPanYRef.current;
+      // Project (finalCx, finalCy) to canvas center.
+      const tx = finalCx / TILE_WORLD;
+      const ty = finalCy / TILE_WORLD;
+      const originX = w * 0.5 - (tx - ty) * (TILE_W * 0.5) * finalZoom;
+      const originY = h * 0.5 - (tx + ty) * (TILE_H * 0.5) * finalZoom;
+      return { originX, originY, zoom: finalZoom };
     }
 
     // ── Main loop ───────────────────────────────────────────────────────────
@@ -1133,6 +1230,11 @@ export default function BattleCanvas({
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      container.removeEventListener("touchstart", onTouchStart);
+      container.removeEventListener("touchmove",  onTouchMove);
+      container.removeEventListener("touchend",   onTouchEnd);
+      container.removeEventListener("touchcancel", onTouchEnd);
+      container.removeEventListener("wheel",      onWheel);
       if (canvas.parentNode === container) container.removeChild(canvas);
       canvasRef.current = null;
     };
@@ -1141,19 +1243,101 @@ export default function BattleCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamA, teamB, map.id, onBattleEnd, onLogEntry, onStats, onRecordingReady]);
 
+  const handleZoomIn = useCallback(() => {
+    updateZoomUI(clampUserZoom(userZoomRef.current * 1.25));
+  }, [updateZoomUI]);
+  const handleZoomOut = useCallback(() => {
+    updateZoomUI(clampUserZoom(userZoomRef.current / 1.25));
+  }, [updateZoomUI]);
+  const handleZoomReset = useCallback(() => {
+    userPanXRef.current = 0;
+    userPanYRef.current = 0;
+    updateZoomUI(1);
+  }, [updateZoomUI]);
+  const zoomDirty = Math.abs(userZoom - 1) > 0.01;
+
   return (
-    <div
-      ref={containerRef}
-      style={{
-        position: "absolute",
-        inset: 0,
-        background: map.bgBottom || "#05080F",
-        overflow: "hidden",
-      }}
-      // Keep resizeNonce read so React/TS doesn't dead-code it.
-      data-nonce={resizeNonce}
-    />
+    <div style={{ position: "absolute", inset: 0, overflow: "hidden" }}>
+      <div
+        ref={containerRef}
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: map.bgBottom || "#05080F",
+          overflow: "hidden",
+          touchAction: "none",
+        }}
+        data-nonce={resizeNonce}
+      />
+      {/* Zoom controls — sits over the canvas, top-right. Touch-friendly
+          44×44 buttons. Pinch + wheel also update the same userZoom. */}
+      <div
+        style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+          zIndex: 5,
+          pointerEvents: "auto",
+        }}
+      >
+        <button
+          aria-label="Zoom in"
+          onClick={handleZoomIn}
+          style={zoomBtnStyle()}
+        >+</button>
+        <div style={zoomReadoutStyle()}>{Math.round(userZoom * 100)}%</div>
+        <button
+          aria-label="Zoom out"
+          onClick={handleZoomOut}
+          style={zoomBtnStyle()}
+        >−</button>
+        {zoomDirty && (
+          <button
+            aria-label="Reset zoom"
+            onClick={handleZoomReset}
+            style={{ ...zoomBtnStyle(), fontSize: 11, letterSpacing: 1 }}
+          >RESET</button>
+        )}
+      </div>
+    </div>
   );
+}
+
+function zoomBtnStyle(): CSSProperties {
+  return {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    background: "rgba(5,2,10,0.78)",
+    border: "1px solid rgba(255,215,0,0.4)",
+    color: "#FFD700",
+    fontSize: 22,
+    fontWeight: 700,
+    lineHeight: 1,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+    userSelect: "none",
+    touchAction: "manipulation",
+  };
+}
+function zoomReadoutStyle(): CSSProperties {
+  return {
+    width: 44,
+    textAlign: "center",
+    fontSize: 10,
+    fontFamily: "monospace",
+    color: "#FFD700",
+    background: "rgba(0,0,0,0.5)",
+    borderRadius: 8,
+    padding: "2px 0",
+    letterSpacing: 1,
+  };
 }
 
 // ── VFX drawing ─────────────────────────────────────────────────────────────

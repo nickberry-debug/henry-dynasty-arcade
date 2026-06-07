@@ -12,8 +12,11 @@
 
 import type { CharacterDef } from "./types";
 import type { Facing } from "./isoMath";
+import { getLuizmeloSheet } from "./luizmeloSprites";
 
 // ── sprite canvas dimensions ────────────────────────────────────────────────
+// 64×64 matches the luizmelo sheet output so the renderer's anchor math is
+// consistent across both sprite paths.
 export const SPRITE_W = 64;
 export const SPRITE_H = 64;
 export const ANCHOR_X = 32;
@@ -649,7 +652,30 @@ const cache = new Map<string, SpriteSheet>();
 export function getSpriteSheet(def: CharacterDef, team: "A" | "B"): SpriteSheet {
   const archetype = archetypeFor(def);
   const accent = def.color || "#7AA7E8";
-  const key = `${archetype}|${team}|${accent}`;
+
+  // 1) Prefer the animated luizmelo sheet when its pack is loaded.
+  //    Every fighter is mapped to one of 5 luizmelo packs by archetype
+  //    (martial-hero / skeleton / goblin / mushroom / flying-eye) and
+  //    tinted with the fighter's signature color so silhouettes read
+  //    distinct even when packs are shared.
+  const luiz = getLuizmeloSheet(def, team, archetype);
+  if (luiz.ready) {
+    const luizKey = `luiz|${luiz.packName}|${team}|${accent}`;
+    const luizHit = cache.get(luizKey);
+    if (luizHit) return luizHit;
+    const luizSheet: SpriteSheet = {
+      archetype,
+      team,
+      anim: { idle: luiz.idle, walk: luiz.walk, attack: luiz.attack, death: luiz.death },
+    };
+    cache.set(luizKey, luizSheet);
+    return luizSheet;
+  }
+
+  // 2) Fallback: procedural pixel-art sheet (Path A). Used during the
+  //    fractional second before luizmelo PNGs finish loading, or when
+  //    asset loads outright fail.
+  const key = `proc|${archetype}|${team}|${accent}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -688,6 +714,8 @@ export function getSpriteSheet(def: CharacterDef, team: "A" | "B"): SpriteSheet 
     team,
     anim: { idle, walk, attack, death: deathC },
   };
+  // Cached under the "proc|" prefix; the luizmelo path uses "luiz|" so
+  // both sheets can coexist and the luizmelo one wins once loaded.
   cache.set(key, sheet);
   return sheet;
 }
