@@ -540,6 +540,9 @@ export interface Game {
   biomeId: string;
   /** Phase 7: paused state — engine skips step() while true. */
   paused: boolean;
+  /** v2.2: cause-of-death tag for the death-blurb selector.
+   *  Set by the damage path that brought hp to 0. */
+  causeOfDeath?: string;
 }
 
 // ── Random utilities ─────────────────────────────────────────────────
@@ -1150,6 +1153,7 @@ function _applyBossHit(g: Game, dmg: number) {
     if (!g.runEnded) {
       g.runShardsEarned = g.runKills + g.depth * 5;
       g.runEnded = true;
+      g.causeOfDeath = g.boss ? g.boss.kind : "telegraph";
     }
     p.hp = 0; p.iframes = 999;
     g.state = "cleared";
@@ -1826,6 +1830,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
         if (!g.runEnded) {
           g.runShardsEarned = g.runKills + g.depth * 5;
           g.runEnded = true;
+          g.causeOfDeath = e.kind; // grunt|scout|brute
         }
         p.hp = 0;
         p.iframes = 999;

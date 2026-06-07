@@ -31,6 +31,18 @@ import {
 } from "../modelCache";
 import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio, isMuted, setMuted } from "../../art";
+// v2.2 Adventure + Story content (lore drops, discovery events,
+// companions, boss dialog, death blurbs).  Pure data + a small UI layer.
+import { type LoreCard, pickLoreCard, shouldDropLore } from "../data/lore";
+import {
+  type DiscoveryEvent, isDiscoveryFloor, getDiscoveryForFloor, markDiscoverySeen,
+} from "../data/discoveries";
+import {
+  getOrInitCompanionState, getCompanionDef, isCompanionActive,
+  clearCompanionRun, persistCompanionState,
+} from "../data/companions";
+import { getBossDialog, type BossDialog } from "../data/bossDialog";
+import { pickDeathBlurb, type DeathBlurb, type DeathCause } from "../data/deathVariants";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
 const BUILD_STAMP = "2026-06-07T14:30:00Z";  // CONTROLS_HOTFIX_v3 + ADVENTURE_CONTENT
@@ -177,6 +189,29 @@ export default function Dungeon3DRun() {
   const [endShown, setEndShown] = useState(false);
   const recordedRef = useRef(false);
   const [loading, setLoading] = useState(true);
+
+  // v2.2 Adventure + Story overlays. Each is null when hidden.
+  // bossDialog auto-dismisses after ~2.5s (effect below) so it doesn't
+  // block combat if the user misses the tap target.
+  const [loreCard, setLoreCard] = useState<LoreCard | null>(null);
+  const [discoveryEvent, setDiscoveryEvent] = useState<DiscoveryEvent | null>(null);
+  const [companionGreet, setCompanionGreet] = useState<{ name: string; line: string; tint: string } | null>(null);
+  const [companionGoodbye, setCompanionGoodbye] = useState<{ name: string; line: string; tint: string } | null>(null);
+  const [activeCompanion, setActiveCompanion] = useState<{ name: string; tint: string; floorsLeft: number } | null>(null);
+  const [bossDialogState, setBossDialogState] = useState<{ dialog: BossDialog; phase: "intro" | "outro" } | null>(null);
+  const [deathBlurb, setDeathBlurb] = useState<DeathBlurb | null>(null);
+  // Auto-dismiss boss dialog after ~2.5s.
+  useEffect(() => {
+    if (!bossDialogState) return;
+    const tid = window.setTimeout(() => setBossDialogState(null), 2500);
+    return () => window.clearTimeout(tid);
+  }, [bossDialogState]);
+  // Track transitions so we only fire each overlay once per change.
+  const lastDepthRef = useRef<number>(0);
+  const lastBossKindRef = useRef<string | null>(null);
+  const lastBossDefeatedRef = useRef<boolean>(false);
+  const lastRunEndedRef = useRef<boolean>(false);
+  const runStartedAtRef = useRef<number>(0);
 
   // Input snapshot.
   const inputRef = useRef<InputState>({ ax: 0, az: 0, attack: false, ranged: false, interact: false });
@@ -1353,6 +1388,79 @@ export default function Dungeon3DRun() {
         // throttle so we don't constantly re-render the React tree).
         force(n => (n + 1) % 1_000_000);
 
+        // ── v2.2 Adventure/Story transition detection ──
+        // Watches depth / boss / run-state and surfaces overlays once.
+        {
+          const _depth = g.depth;
+          const _bossKind = g.boss ? g.boss.kind : null;
+          const _bossDefeated = !!g.bossDefeated;
+          const _runEnded = !!g.runEnded;
+
+          // Depth transition (descend) — fire lore + discovery + companion.
+          if (_depth !== lastDepthRef.current) {
+            const prevDepth = lastDepthRef.current;
+            lastDepthRef.current = _depth;
+            if (_depth > 0) {
+              // Discovery events take priority over lore on the same floor.
+              if (isDiscoveryFloor(_depth)) {
+                const ev = getDiscoveryForFloor(_depth);
+                if (ev) setDiscoveryEvent(ev);
+              } else if (shouldDropLore(_depth)) {
+                setLoreCard(pickLoreCard());
+              }
+
+              // Companion: greet on encounter floor, goodbye on depart.
+              try {
+                const cs = getOrInitCompanionState(runStartedAtRef.current);
+                if (_depth === cs.encounterFloor && !cs.greeted) {
+                  const def = getCompanionDef(cs.kind);
+                  setCompanionGreet({ name: def.name, line: def.greeting, tint: def.tint });
+                  setActiveCompanion({ name: def.name, tint: def.tint, floorsLeft: 3 });
+                  persistCompanionState({ ...cs, greeted: true });
+                } else if (_depth === cs.departFloor && !cs.saidGoodbye) {
+                  const def = getCompanionDef(cs.kind);
+                  setCompanionGoodbye({ name: def.name, line: def.goodbye, tint: def.tint });
+                  setActiveCompanion(null);
+                  persistCompanionState({ ...cs, saidGoodbye: true });
+                } else if (isCompanionActive(cs, _depth)) {
+                  const def = getCompanionDef(cs.kind);
+                  setActiveCompanion({
+                    name: def.name, tint: def.tint,
+                    floorsLeft: Math.max(0, cs.departFloor - _depth),
+                  });
+                }
+              } catch { /* noop */ }
+            }
+            // Forget previous-depth boss assumptions on transition.
+            lastBossKindRef.current = _bossKind;
+            lastBossDefeatedRef.current = _bossDefeated;
+          }
+
+          // Boss spawn (new kind appeared this frame).
+          if (_bossKind && _bossKind !== lastBossKindRef.current) {
+            const dlg = getBossDialog(_bossKind);
+            if (dlg) setBossDialogState({ dialog: dlg, phase: "intro" });
+            lastBossKindRef.current = _bossKind;
+          }
+          // Boss defeat: bossDefeated flipped true this frame.
+          if (_bossDefeated && !lastBossDefeatedRef.current && lastBossKindRef.current) {
+            const dlg = getBossDialog(lastBossKindRef.current);
+            if (dlg) setBossDialogState({ dialog: dlg, phase: "outro" });
+            // Post-boss lore drop (in addition to the depth-cadence drops).
+            setTimeout(() => setLoreCard(pickLoreCard()), 2400);
+          }
+          lastBossDefeatedRef.current = _bossDefeated;
+
+          // Run-end: surface death blurb.
+          if (_runEnded && !lastRunEndedRef.current) {
+            const cause = (g.causeOfDeath ?? "unknown") as DeathCause;
+            setDeathBlurb(pickDeathBlurb(cause));
+            clearCompanionRun();
+            setActiveCompanion(null);
+          }
+          lastRunEndedRef.current = _runEnded;
+        }
+
         // â”€â”€ Descend â”€â”€
         if (g.state === "descending") {
           playSfx("powerUp", { volume: 0.5 });
@@ -1506,6 +1614,19 @@ export default function Dungeon3DRun() {
     setLevelUpChoiceIds([]);
     setRunEndBanner(null);
     setClassChoice(null);
+    // v2.2: reset adventure overlays + roll a fresh companion run.
+    setLoreCard(null);
+    setDiscoveryEvent(null);
+    setCompanionGreet(null);
+    setCompanionGoodbye(null);
+    setActiveCompanion(null);
+    setBossDialogState(null);
+    setDeathBlurb(null);
+    lastDepthRef.current = 0;
+    lastBossKindRef.current = null;
+    lastBossDefeatedRef.current = false;
+    lastRunEndedRef.current = false;
+    clearCompanionRun();
   }
 
   // Phase 5: apply a level-up choice and resume the run.
@@ -1587,6 +1708,10 @@ export default function Dungeon3DRun() {
               if (e) { e.preventDefault(); e.stopPropagation(); }
               try {
                 console.log("[d3d] class tapped:", c);
+                // v2.2: seed run-start timestamp + reset companion bookkeeping
+                // so each new run rolls a fresh encounter floor.
+                runStartedAtRef.current = Date.now();
+                clearCompanionRun();
                 setEndShown(false);
                 recordedRef.current = false;
                 setRunEndBanner(null);
@@ -2243,15 +2368,22 @@ export default function Dungeon3DRun() {
           <div className="max-w-sm w-full rounded-2xl p-5"
             style={{
               background: "linear-gradient(135deg, rgba(60,20,40,0.95), rgba(8,8,14,0.95))",
-              border: "1.5px solid #f87171",
+              border: `1.5px solid ${deathBlurb?.tint ?? "#f87171"}`,
               color: "#fef3c7",
             }}>
             <div className="text-center mb-3">
               <div className="inline-flex items-center gap-2"
-                style={{ color: "#f87171" }}>
+                style={{ color: deathBlurb?.tint ?? "#f87171" }}>
                 <Skull size={20} />
-                <div className="font-display tracking-widest text-lg">RUN OVER</div>
+                <div className="font-display tracking-widest text-lg">
+                  {deathBlurb?.title.toUpperCase() ?? "RUN OVER"}
+                </div>
               </div>
+              {deathBlurb && (
+                <div className="text-[11px] italic mt-2 px-2" style={{ color: "#fde68a", lineHeight: 1.4 }}>
+                  "{deathBlurb.body}"
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-2 text-[10px] font-mono mb-3">
               <div className="rounded p-2" style={{ background: "rgba(255,255,255,0.05)" }}>
@@ -2336,6 +2468,225 @@ export default function Dungeon3DRun() {
                 <Sparkles size={12} /> NEW RUN
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* v2.2 — Companion HUD badge: subtle top-right strip while a companion is traveling with you. */}
+      {activeCompanion && !companionGreet && !companionGoodbye && !discoveryEvent && !loreCard && !bossDialogState && (
+        <div className="absolute z-30"
+          style={{
+            top: "max(40px, env(safe-area-inset-top, 0px))",
+            right: "max(8px, env(safe-area-inset-right, 0px))",
+            background: "rgba(8,8,14,0.78)",
+            border: `1.5px solid ${activeCompanion.tint}`,
+            color: "#fef3c7",
+            padding: "4px 10px",
+            borderRadius: 999,
+            fontSize: 10,
+            fontFamily: "monospace",
+            letterSpacing: 1,
+            pointerEvents: "none",
+            boxShadow: `0 0 12px ${activeCompanion.tint}55`,
+          }}>
+          <span style={{ color: activeCompanion.tint }}>♦</span> {activeCompanion.name.toUpperCase()}{" "}
+          <span style={{ opacity: 0.5 }}>· {activeCompanion.floorsLeft}fl</span>
+        </div>
+      )}
+
+      {/* v2.2 — Lore card overlay (tap to dismiss). */}
+      {loreCard && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.78)" }}
+          onClick={() => setLoreCard(null)}
+          onPointerDown={(e) => { e.preventDefault(); setLoreCard(null); }}>
+          <div className="max-w-sm w-full rounded-2xl p-5"
+            style={{
+              background: "linear-gradient(135deg, rgba(20,12,40,0.96), rgba(8,8,14,0.96))",
+              border: `1.5px solid ${loreCard.tint}`,
+              color: "#fef3c7",
+              boxShadow: `0 0 24px ${loreCard.tint}55`,
+            }}>
+            <div className="text-[10px] font-mono opacity-60 mb-1"
+              style={{ letterSpacing: 2, color: loreCard.tint }}>
+              · LORE FRAGMENT ·
+            </div>
+            <div className="font-display tracking-widest text-base mb-2"
+              style={{ color: loreCard.tint }}>
+              {loreCard.title}
+            </div>
+            <div className="text-[12px] italic" style={{ lineHeight: 1.5, color: "#fde68a" }}>
+              "{loreCard.body}"
+            </div>
+            <div className="text-[9px] font-mono opacity-50 mt-3 text-center">tap to continue</div>
+          </div>
+        </div>
+      )}
+
+      {/* v2.2 — Discovery event overlay (3-choice prompt). */}
+      {discoveryEvent && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center p-4"
+          style={{ background: `linear-gradient(180deg, rgba(0,0,0,0.86), ${discoveryEvent.ambient})` }}>
+          <div className="max-w-sm w-full rounded-2xl p-5"
+            style={{
+              background: "linear-gradient(135deg, rgba(40,24,60,0.96), rgba(8,8,14,0.96))",
+              border: "1.5px solid #fde047",
+              color: "#fef3c7",
+            }}>
+            <div className="text-[10px] font-mono opacity-60 mb-1"
+              style={{ letterSpacing: 2, color: "#fde047" }}>
+              · DISCOVERY · FLOOR {discoveryEvent.floor} ·
+            </div>
+            <div className="font-display tracking-widest text-base mb-2"
+              style={{ color: "#fde047" }}>
+              {discoveryEvent.title}
+            </div>
+            <div className="text-[11px] italic mb-3" style={{ lineHeight: 1.45, color: "#fde68a" }}>
+              {discoveryEvent.flavor}
+            </div>
+            <div className="grid gap-2">
+              {discoveryEvent.choices.map(ch => (
+                <button key={ch.id}
+                  onClick={() => {
+                    markDiscoverySeen(discoveryEvent.kind);
+                    // Apply lightweight, well-bounded effects based on the
+                    // (event, choice) pair.  Larger effects (mini-boss spawn)
+                    // are intentionally cosmetic for this content drop.
+                    const _g = gameRef.current;
+                    if (_g) {
+                      if (discoveryEvent.kind === "echoing_vault") {
+                        if (ch.id === "left") {
+                          _g.runCoins += 25;
+                        } else if (ch.id === "middle") {
+                          _g.player.hp = Math.max(1, _g.player.hp - Math.floor(_g.player.hpMax * 0.20));
+                          _g.player.flashT = 0.3;
+                        } else {
+                          _g.runShardsEarned += 25;
+                        }
+                      } else if (discoveryEvent.kind === "lost_cantor") {
+                        if (ch.id === "blood") {
+                          _g.player.hp = Math.max(1, _g.player.hp - Math.floor(_g.player.hpMax * 0.10));
+                          _g.pendingLevelUp = true;
+                          // Engine picks the actual choices on next step().
+                        } else if (ch.id === "coins") {
+                          _g.runCoins = Math.max(0, _g.runCoins - 100);
+                          _g.player.hpMax += 20;
+                          _g.player.hp = _g.player.hpMax;
+                        }
+                      } else if (discoveryEvent.kind === "whispers_in_the_walls") {
+                        if (ch.id === "ask") {
+                          setTimeout(() => setLoreCard(pickLoreCard()), 250);
+                        }
+                      } else if (discoveryEvent.kind === "sealed_door") {
+                        if (ch.id === "study") {
+                          setTimeout(() => setLoreCard(pickLoreCard()), 250);
+                        } else if (ch.id === "force") {
+                          _g.runShardsEarned += 50;
+                        }
+                      }
+                    }
+                    setDiscoveryEvent(null);
+                  }}
+                  className="text-left rounded-lg p-2 pressable touch-target"
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: `1.5px solid ${ch.tint}`,
+                    color: "#fef3c7",
+                  }}>
+                  <div className="text-[12px] font-display tracking-wider" style={{ color: ch.tint }}>
+                    {ch.label}
+                  </div>
+                  <div className="text-[10px] opacity-70 mt-0.5" style={{ lineHeight: 1.35 }}>
+                    {ch.blurb}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v2.2 — Companion greeting overlay. */}
+      {companionGreet && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.78)" }}
+          onClick={() => setCompanionGreet(null)}
+          onPointerDown={(e) => { e.preventDefault(); setCompanionGreet(null); }}>
+          <div className="max-w-sm w-full rounded-2xl p-5"
+            style={{
+              background: "linear-gradient(135deg, rgba(20,30,40,0.96), rgba(8,8,14,0.96))",
+              border: `1.5px solid ${companionGreet.tint}`,
+              color: "#fef3c7",
+              boxShadow: `0 0 24px ${companionGreet.tint}55`,
+            }}>
+            <div className="text-[10px] font-mono opacity-60 mb-1"
+              style={{ letterSpacing: 2, color: companionGreet.tint }}>
+              · NEW COMPANION ·
+            </div>
+            <div className="font-display tracking-widest text-base mb-2"
+              style={{ color: companionGreet.tint }}>
+              {companionGreet.name}
+            </div>
+            <div className="text-[12px] italic" style={{ lineHeight: 1.5, color: "#fde68a" }}>
+              {companionGreet.line}
+            </div>
+            <div className="text-[10px] font-mono mt-2 opacity-70">
+              Joins your party for 3 floors.
+            </div>
+            <div className="text-[9px] font-mono opacity-50 mt-3 text-center">tap to continue</div>
+          </div>
+        </div>
+      )}
+
+      {/* v2.2 — Companion goodbye overlay. */}
+      {companionGoodbye && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.78)" }}
+          onClick={() => setCompanionGoodbye(null)}
+          onPointerDown={(e) => { e.preventDefault(); setCompanionGoodbye(null); }}>
+          <div className="max-w-sm w-full rounded-2xl p-5"
+            style={{
+              background: "linear-gradient(135deg, rgba(20,30,40,0.96), rgba(8,8,14,0.96))",
+              border: `1.5px solid ${companionGoodbye.tint}`,
+              color: "#fef3c7",
+            }}>
+            <div className="text-[10px] font-mono opacity-60 mb-1"
+              style={{ letterSpacing: 2, color: companionGoodbye.tint }}>
+              · {companionGoodbye.name.toUpperCase()} DEPARTS ·
+            </div>
+            <div className="text-[12px] italic" style={{ lineHeight: 1.5, color: "#fde68a" }}>
+              {companionGoodbye.line}
+            </div>
+            <div className="text-[9px] font-mono opacity-50 mt-3 text-center">tap to continue</div>
+          </div>
+        </div>
+      )}
+
+      {/* v2.2 — Boss intro/outro dialog (banner-style, skippable on tap). */}
+      {bossDialogState && (
+        <div className="absolute inset-x-4 z-40 flex justify-center"
+          style={{
+            top: "30%",
+            pointerEvents: "auto",
+          }}
+          onClick={() => setBossDialogState(null)}
+          onPointerDown={(e) => { e.preventDefault(); setBossDialogState(null); }}>
+          <div className="max-w-md w-full rounded-2xl p-4 text-center"
+            style={{
+              background: "rgba(8,8,14,0.92)",
+              border: `2px solid ${bossDialogState.phase === "intro" ? bossDialogState.dialog.introTint : bossDialogState.dialog.outroTint}`,
+              color: "#fef3c7",
+              boxShadow: `0 0 24px ${(bossDialogState.phase === "intro" ? bossDialogState.dialog.introTint : bossDialogState.dialog.outroTint)}66`,
+            }}>
+            <div className="text-[10px] font-mono opacity-60 mb-1"
+              style={{ letterSpacing: 2, color: bossDialogState.phase === "intro" ? bossDialogState.dialog.introTint : bossDialogState.dialog.outroTint }}>
+              {bossDialogState.phase === "intro" ? "· BOSS ·" : "· FALLEN ·"}
+            </div>
+            <div className="text-[13px] italic font-display tracking-wider"
+              style={{ lineHeight: 1.5, color: "#fde68a" }}>
+              "{bossDialogState.phase === "intro" ? bossDialogState.dialog.intro : bossDialogState.dialog.outro}"
+            </div>
+            <div className="text-[9px] font-mono opacity-50 mt-2">tap to dismiss</div>
           </div>
         </div>
       )}
