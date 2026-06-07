@@ -41,6 +41,9 @@ export default function JRPGPlay() {
   const [innOpen, setInnOpen] = useState(false);
   const [muted, setMutedLocal] = useState(isMuted());
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  // Tracked separately from stateRef so DOM-side conditionals (like the
+  // DEBUG: FIGHT NOW button) re-render when we cross locations.
+  const [currentLocation, setCurrentLocation] = useState<string>("town");
 
   useEffect(() => {
     let save = loadSave();
@@ -49,6 +52,7 @@ export default function JRPGPlay() {
       writeSave(save);
     }
     stateRef.current = save;
+    setCurrentLocation(save.location);
     const loop = loopRef.current;
     loop.pos = { x: save.pos.x * TILE, y: save.pos.y * TILE };
     loop.facing = "down";
@@ -166,6 +170,7 @@ export default function JRPGPlay() {
         loop.pos = { x: sp.x * TILE, y: sp.y * TILE };
         playTrack("dungeon");
         flashToast("The Silent Chapel.");
+        setCurrentLocation(save.location);
       }
     } else {
       const room = DUNGEON_ROOMS[save.location as DungeonRoom["id"]];
@@ -190,6 +195,7 @@ export default function JRPGPlay() {
               writeSave(save);
               playTrack("town");
               flashToast("Threnfall.");
+              setCurrentLocation("town");
               return;
             }
             save.location = ex.to;
@@ -198,6 +204,7 @@ export default function JRPGPlay() {
             writeSave(save);
             playTrack(ex.to === "dungeon-boss" ? "boss" : "dungeon");
             flashToast(ex.to === "dungeon-boss" ? "The Bell Tower." : "Deeper in the chapel...");
+            setCurrentLocation(save.location);
             return;
           }
         }
@@ -523,7 +530,7 @@ export default function JRPGPlay() {
 
       {/* DEBUG: force-trigger an encounter so we can sanity-check the battle
           pipeline independent of the RNG / step trigger. Hidden in town. */}
-      {stateRef.current && stateRef.current.location !== "town" && (
+      {currentLocation !== "town" && (
         <button
           onClick={() => {
             const save = stateRef.current;
