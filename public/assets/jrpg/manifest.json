@@ -1,0 +1,100 @@
+﻿{
+  "name": "AETHERSONG — JRPG Asset Manifest",
+  "version": "0.1.0",
+  "style": "anime-pixel-art (LuizMelo) + parallax (Ansimuz) + chiptune jingles (Kenney)",
+  "cohesion_note": "Battle sprites are fully cohesive (single artist: LuizMelo). Backgrounds and audio are stitched but read as coherent in-game.",
+  "battlers": {
+    "hero": {
+      "name": "Liora Vey",
+      "source": "LuizMelo / Martial Hero (CC-BY 4.0 — itch.io)",
+      "frame_size": [200, 200],
+      "anims": {
+        "Idle":    { "file": "/assets/jrpg/battlers/hero/Idle.png",    "frames": 8, "fps": 8 },
+        "Run":     { "file": "/assets/jrpg/battlers/hero/Run.png",     "frames": 8, "fps": 12 },
+        "Attack":  { "file": "/assets/jrpg/battlers/hero/Attack.png",  "frames": 6, "fps": 14 },
+        "Attack2": { "file": "/assets/jrpg/battlers/hero/Attack2.png", "frames": 6, "fps": 14 },
+        "TakeHit": { "file": "/assets/jrpg/battlers/hero/TakeHit.png", "frames": 4, "fps": 10 },
+        "Death":   { "file": "/assets/jrpg/battlers/hero/Death.png",   "frames": 6, "fps": 8 }
+      }
+    },
+    "enemies": {
+      "goblin": {
+        "name": "Hush-Twisted Goblin",
+        "source": "LuizMelo / Monsters Creatures Fantasy (CC-BY 4.0 — itch.io)",
+        "frame_size": [150, 150],
+        "anims": {
+          "Idle":    { "file": "/assets/jrpg/battlers/enemies/goblin/Idle.png",    "frames": 4, "fps": 8 },
+          "Run":     { "file": "/assets/jrpg/battlers/enemies/goblin/Run.png",     "frames": 8, "fps": 12 },
+          "Attack":  { "file": "/assets/jrpg/battlers/enemies/goblin/Attack.png",  "frames": 8, "fps": 14 },
+          "TakeHit": { "file": "/assets/jrpg/battlers/enemies/goblin/TakeHit.png", "frames": 4, "fps": 10 },
+          "Death":   { "file": "/assets/jrpg/battlers/enemies/goblin/Death.png",   "frames": 4, "fps": 8 }
+        }
+      },
+      "mushroom": {
+        "name": "Belltongue Slime (Mushroom variant)",
+        "source": "LuizMelo / Monsters Creatures Fantasy (CC-BY 4.0 — itch.io)",
+        "frame_size": [150, 150],
+        "anims": {
+          "Idle":    { "file": "/assets/jrpg/battlers/enemies/mushroom/Idle.png",    "frames": 4, "fps": 8 },
+          "Run":     { "file": "/assets/jrpg/battlers/enemies/mushroom/Run.png",     "frames": 8, "fps": 12 },
+          "Attack":  { "file": "/assets/jrpg/battlers/enemies/mushroom/Attack.png",  "frames": 8, "fps": 14 },
+          "TakeHit": { "file": "/assets/jrpg/battlers/enemies/mushroom/TakeHit.png", "frames": 4, "fps": 10 },
+          "Death":   { "file": "/assets/jrpg/battlers/enemies/mushroom/Death.png",   "frames": 4, "fps": 8 }
+        }
+      },
+      "skeleton": {
+        "name": "Pewter Wraith (Skeleton)",
+        "source": "LuizMelo / Monsters Creatures Fantasy (CC-BY 4.0 — itch.io)",
+        "frame_size": [150, 150],
+        "anims": {
+          "Idle":    { "file": "/assets/jrpg/battlers/enemies/skeleton/Idle.png",    "frames": 4, "fps": 8 },
+          "Walk":    { "file": "/assets/jrpg/battlers/enemies/skeleton/Walk.png",    "frames": 4, "fps": 10 },
+          "Attack":  { "file": "/assets/jrpg/battlers/enemies/skeleton/Attack.png",  "frames": 8, "fps": 14 },
+          "TakeHit": { "file": "/assets/jrpg/battlers/enemies/skeleton/TakeHit.png", "frames": 4, "fps": 10 },
+          "Death":   { "file": "/assets/jrpg/battlers/enemies/skeleton/Death.png",   "frames": 4, "fps": 8 }
+        }
+      },
+      "flying_eye": {
+        "name": "Hush Echo (Flying Eye — also the chapter-1 BOSS)",
+        "source": "LuizMelo / Monsters Creatures Fantasy (CC-BY 4.0 — itch.io)",
+        "frame_size": [150, 150],
+        "anims": {
+          "Idle":    { "file": "/assets/jrpg/battlers/enemies/flying_eye/Idle.png",    "frames": 8, "fps": 10 },
+          "Attack":  { "file": "/assets/jrpg/battlers/enemies/flying_eye/Attack.png",  "frames": 8, "fps": 14 },
+          "TakeHit": { "file": "/assets/jrpg/battlers/enemies/flying_eye/TakeHit.png", "frames": 4, "fps": 10 },
+          "Death":   { "file": "/assets/jrpg/battlers/enemies/flying_eye/Death.png",   "frames": 4, "fps": 8 }
+        }
+      }
+    }
+  },
+  "backgrounds": {
+    "battle_dusk": {
+      "source": "Ansimuz / Super Mountain Dusk (CC0 — itch.io)",
+      "layers": [
+        { "file": "/assets/jrpg/backgrounds/bg_sky.png",          "speed": 0.0 },
+        { "file": "/assets/jrpg/backgrounds/bg_far_clouds.png",   "speed": 0.05 },
+        { "file": "/assets/jrpg/backgrounds/bg_far_mountains.png","speed": 0.1 },
+        { "file": "/assets/jrpg/backgrounds/bg_near_clouds.png",  "speed": 0.2 },
+        { "file": "/assets/jrpg/backgrounds/bg_mountains.png",    "speed": 0.35 },
+        { "file": "/assets/jrpg/backgrounds/bg_trees.png",        "speed": 0.6 }
+      ]
+    }
+  },
+  "music": {
+    "victory": { "file": "/assets/jrpg/music/victory.ogg", "source": "Kenney Music Jingles (CC0)" },
+    "fanfare": { "file": "/assets/jrpg/music/fanfare.ogg", "source": "Kenney Music Jingles (CC0)" }
+  },
+  "synthesized": {
+    "town_music":    "Web Audio looping pad — generated at runtime (no asset file).",
+    "dungeon_music": "Web Audio dissonant drone — generated at runtime.",
+    "battle_music":  "Web Audio battle loop (BPM 132) — generated at runtime.",
+    "boss_music":    "Web Audio boss loop (BPM 110, minor) — generated at runtime.",
+    "overworld_tiles": "Programmatically painted 16x16 tiles (grass / path / water / stone / roof / sand) — see src/jrpg/engine/tileset.ts.",
+    "overworld_sprites": "Programmatically painted 24x24 character mini-sprites — see src/jrpg/engine/minisprite.ts."
+  },
+  "licenses": {
+    "LuizMelo": "CC-BY 4.0 — https://creativecommons.org/licenses/by/4.0/ — credit: LuizMelo (https://luizmelo.itch.io)",
+    "Ansimuz":  "CC0 — https://creativecommons.org/publicdomain/zero/1.0/ — credit: Ansimuz (https://ansimuz.com)",
+    "Kenney":   "CC0 — https://creativecommons.org/publicdomain/zero/1.0/ — credit: Kenney (https://kenney.nl)"
+  }
+}
