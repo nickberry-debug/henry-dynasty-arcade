@@ -17,6 +17,19 @@ export interface BodyPart {
   src: string;
   bodyType?: BodyType;
   rarity?: Rarity;
+  /**
+   * Optional eye-socket hint in bbox-relative local coordinates.
+   * Each component is a signed fraction of the corresponding bbox dimension.
+   * - y: fraction of body height, measured from bbox.min.y (0 = ground, 1 = top)
+   * - z: fraction of body depth, signed offset from bbox.center.z (+ = front)
+   * - x: optional, signed offset from bbox.center.x (in fraction of body width)
+   * If absent, the eye builder falls back to y = 0.7, z = +0.15.
+   *
+   * Tune per-body to put eyes ON the face — bbox-derived defaults work for
+   * biped/quadruped/blob bodies but fail for winged/serpentine/non-standard
+   * shapes whose bbox overshoots into wings/tentacles/tails.
+   */
+  eyeSocket?: { y: number; z: number; x?: number };
 }
 
 export interface HeadOverlayPart {

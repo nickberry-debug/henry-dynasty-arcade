@@ -395,6 +395,71 @@ export function computeHeadSocketY(body: THREE.Object3D, bbox: THREE.Box3): numb
   return bbox.max.y;
 }
 
+// ── Eye socket helper ──────────────────────────────────────────────────
+// The eye socket sits on the FRONT of the FACE (not on the head crown),
+// so it's distinct from computeHeadSocketY. For winged/serpentine/non-
+// standard bodies, bbox.max.y overshoots into wings/tentacles, and
+// bbox.max.z may grab a snout-tip or tail-tip rather than the face.
+//
+// Strategy:
+//   1. Prefer a named "Eye" / "EyeSocket" / "Face" bone, offset slightly
+//      forward in body-local +Z (so the eye sphere doesn't intersect the
+//      face mesh).
+//   2. Fall back to per-body manifest hint (eyeSocket: {y, z, x?}) — each
+//      component is a signed fraction of the corresponding bbox dimension.
+//   3. Default for unspecified bodies: y = 0.7 * height, z = +0.15 * depth.
+export function findEyeBone(body: THREE.Object3D): THREE.Object3D | null {
+  let exact: THREE.Object3D | null = null;
+  body.traverse((o) => {
+    if (!o.name || exact) return;
+    const n = o.name.toLowerCase();
+    if (
+      n === "eye" || n === "eyes" ||
+      n === "eyesocket" || n === "eye_socket" ||
+      n === "face" || n === "face_socket"
+    ) {
+      exact = o;
+    }
+  });
+  return exact;
+}
+
+export interface EyeSocketHint { y: number; z: number; x?: number }
+
+/**
+ * Compute the world-space position to anchor eye accessories.
+ * Caller must have already called body.updateMatrixWorld(true) and applied
+ * the body.position.y normalization (so bbox.min.y ≈ 0).
+ */
+export function computeEyeSocket(
+  body: THREE.Object3D,
+  bbox: THREE.Box3,
+  hint?: EyeSocketHint,
+): THREE.Vector3 {
+  const size = new THREE.Vector3(); bbox.getSize(size);
+  const center = new THREE.Vector3(); bbox.getCenter(center);
+
+  // 1) Named bone, if the GLB rig has one — most precise.
+  const bone = findEyeBone(body);
+  if (bone) {
+    const wp = new THREE.Vector3();
+    bone.getWorldPosition(wp);
+    // Nudge slightly forward so the eye spheres sit on the surface, not
+    // inside the face mesh.
+    return new THREE.Vector3(wp.x, wp.y, wp.z + size.z * 0.05);
+  }
+
+  // 2) Manifest hint (bbox-relative fractions).
+  const y = hint?.y ?? 0.7;
+  const z = hint?.z ?? 0.15;
+  const x = hint?.x ?? 0;
+  return new THREE.Vector3(
+    center.x + x * size.x,
+    bbox.min.y + y * size.y,
+    center.z + z * size.z,
+  );
+}
+
 // ── Build a full monster (returns a Group) ─────────────────────────────
 
 export interface AssembledMonster {
@@ -498,7 +563,12 @@ export async function assembleMonster(
   root.add(spikes);
 
   const eyes = buildEyes(cfg.eyes, size.y);
-  eyes.position.set(center.x, topY - size.y * 0.12, frontZ * 0.6);
+  // Eyes go on the FACE (front of head), not the head crown. Compute the
+  // socket from named bone → per-body manifest hint → bbox-derived default.
+  // bbox.max-derived placement (the old approach) puts eyes between
+  // tentacles on Squidle and floating off the snout on winged Dragon.
+  const eyeAnchor = computeEyeSocket(body, bbox, bodyDef.eyeSocket);
+  eyes.position.copy(eyeAnchor);
   eyes.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
   root.add(eyes);
 
