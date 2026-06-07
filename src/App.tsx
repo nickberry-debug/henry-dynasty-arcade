@@ -1,7 +1,7 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+﻿import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
-// Core layout + identity shell — kept eager because they're on the boot
+// Core layout + identity shell â€” kept eager because they're on the boot
 // path or used across every route. Everything else below is lazy-loaded
 // so the initial paint only ships ~boot code (the bundle for one game
 // arrives when the user actually navigates to it).
@@ -19,7 +19,7 @@ import { getActiveProfileId, pullProfilesFromCloud } from "./profiles/store";
 import { ensureFamilyRoom } from "./sync/cloudBlob";
 import { ConflictToast } from "./components/ConflictToast";
 
-// ── Lazy game routes ───────────────────────────────────────────────────────
+// â”€â”€ Lazy game routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Each lazy import becomes its own chunk in the Vite build. Vite's import
 // graph chunks related modules together automatically, so e.g. lazy-loading
 // MogulHub also splits the whole mogul/ engine into the mogul chunk.
@@ -28,7 +28,7 @@ import { ConflictToast } from "./components/ConflictToast";
 // serving the previous index.html which references chunk hashes that no
 // longer exist on the server. The new fetch returns the SPA fallback
 // (index.html, content-type text/html) and the browser refuses to execute
-// HTML as JS — surfaces as "text/html is not a valid JavaScript MIME type."
+// HTML as JS â€” surfaces as "text/html is not a valid JavaScript MIME type."
 //
 // loadChunkWithRetry catches that family of errors and forces a one-shot
 // hard reload (with a sessionStorage guard so we never loop). The reload
@@ -56,12 +56,12 @@ async function loadChunkWithRetry<T>(loader: () => Promise<T>): Promise<T> {
     return await loader();
   } catch (err) {
     if (!isChunkLoadError(err)) throw err;
-    // First time we hit this, try once more — handles a flaky network.
+    // First time we hit this, try once more â€” handles a flaky network.
     try {
       return await loader();
     } catch (err2) {
       if (!isChunkLoadError(err2)) throw err2;
-      // Persistent chunk failure → stale SW serving an out-of-date
+      // Persistent chunk failure â†’ stale SW serving an out-of-date
       // chunk graph. Hard-reload exactly once (guard against loops).
       const already = (() => {
         try { return sessionStorage.getItem(CHUNK_RELOAD_KEY) === "1"; }
@@ -90,7 +90,7 @@ async function loadChunkWithRetry<T>(loader: () => Promise<T>): Promise<T> {
         // (we're navigating away).
         throw new Error("chunk-reload");
       }
-      // Already attempted a reload this session — surface the error so
+      // Already attempted a reload this session â€” surface the error so
       // the ErrorBoundary catches it with a friendly recovery prompt.
       throw err2;
     }
@@ -190,7 +190,7 @@ const MissionHub        = lz(() => import("./cosmic/pages/MissionHub"));
 const MissionBriefing   = lz(() => import("./cosmic/pages/MissionBriefing"));
 const Combat            = lz(() => import("./cosmic/pages/Combat"));
 
-// Wordplay (heaviest chunk by file count — 25 sub-apps)
+// Wordplay (heaviest chunk by file count â€” 25 sub-apps)
 const WordplayHub       = lz(() => import("./wordplay/pages/WordplayHub"));
 const MadLibs           = lz(() => import("./wordplay/pages/MadLibs"));
 const Jokes             = lz(() => import("./wordplay/pages/Jokes"));
@@ -221,7 +221,7 @@ const ResourcesHub      = lz(() => import("./resources/pages/ResourcesHub"));
 const BeckettsCorner    = lz(() => import("./resources/pages/BeckettsCorner"));
 const AshCareGuide      = lz(() => import("./resources/pages/AshCareGuide"));
 const BeckettsTodo      = lz(() => import("./resources/pages/BeckettsTodo"));
-// Beckett's Battle Forge — Codex's Three.js renderer (3D combat
+// Beckett's Battle Forge â€” Codex's Three.js renderer (3D combat
 // with POV camera, particle VFX, procedural characters).
 const BattleForge       = lz(() => import("./battleforge/BattleForge"));
 const SpectateLive      = lz(() => import("./battleforge/SpectateLive"));
@@ -234,6 +234,9 @@ const Dungeon3DHub      = lz(() => import("./dungeon3d/pages/Dungeon3DHub"));
 const Dungeon3DRun      = lz(() => import("./dungeon3d/pages/Dungeon3DRun"));
 const MonsterForgeHub      = lz(() => import("./monster-forge/pages/MonsterForgeHub"));
 const MonsterForgeBuilder  = lz(() => import("./monster-forge/pages/MonsterForgeBuilder"));
+const JRPGHub              = lz(() => import("./jrpg/pages/JRPGHub"));
+const JRPGPlay             = lz(() => import("./jrpg/pages/JRPGPlay"));
+const JRPGBattle           = lz(() => import("./jrpg/pages/JRPGBattle"));
 const CreatureHub       = lz(() => import("./creature/pages/CreatureHub"));
 const CreatureWild      = lz(() => import("./creature/pages/CreatureWild"));
 const CreatureBattle    = lz(() => import("./creature/pages/CreatureBattle"));
@@ -307,7 +310,7 @@ export default function App() {
   const loadFromDb = useStore(s => s.loadFromDb);
   const league = useStore(s => s.league);
   const [showSplash, setShowSplash] = useState(true);
-  // Profile gating — after splash, show the picker if no profile is
+  // Profile gating â€” after splash, show the picker if no profile is
   // active. Listens for the switch event so tapping the corner badge
   // takes the player straight back to the picker.
   const [activeProfile, setActiveProfile] = useState<string | null>(() => getActiveProfileId());
@@ -319,12 +322,12 @@ export default function App() {
 
   useEffect(() => { loadFromDb(); }, []);
 
-  // Cloud sync bootstrap — ensure the family room code exists and pull the
+  // Cloud sync bootstrap â€” ensure the family room code exists and pull the
   // latest profile list so a fresh device on the family account sees the
   // same profiles other devices already created. Fire and forget; offline
   // failures degrade silently to local-only.
   useEffect(() => {
-    // The app booted past the entry chunk — clear any chunk-reload guard
+    // The app booted past the entry chunk â€” clear any chunk-reload guard
     // so future deploys can trigger their own one-shot recovery.
     try { sessionStorage.removeItem(CHUNK_RELOAD_KEY); } catch { /* ignore */ }
     try { ensureFamilyRoom(); } catch (e) { console.warn("[app] room init", e); }
@@ -347,7 +350,7 @@ export default function App() {
   // child components are free to call useNavigate() in any app state. If
   // the picker/splash render OUTSIDE the router, useNavigate() throws a
   // production-minified invariant that the user sees as an empty-message
-  // Error in the ErrorBoundary — the original cause of the v1.10.2x
+  // Error in the ErrorBoundary â€” the original cause of the v1.10.2x
   // "Something Broke" loop on devices with no active profile.
   return (
     <ErrorBoundary>
@@ -360,7 +363,7 @@ export default function App() {
           ) : (
             <>
               <Router />
-              {/* Global sync-conflict toasts — overlay any route. */}
+              {/* Global sync-conflict toasts â€” overlay any route. */}
               <ConflictToast />
             </>
           )}
@@ -384,7 +387,7 @@ function Router() {
     <Suspense fallback={<RouteLoading />}>
     <Routes>
         {/* Landing is the ALWAYS-entry. `/` and `/play` both render it.
-            Henry picks a game from here — never auto-routed into baseball. */}
+            Henry picks a game from here â€” never auto-routed into baseball. */}
         <Route path="/" element={<R><CategoryHome /></R>} />
         <Route path="/home/:category" element={<R><CategoryScreen /></R>} />
         {/* Legacy flat-grid view kept for bookmarks + fallback */}
@@ -395,10 +398,10 @@ function Router() {
         <Route path="/family" element={<R><FamilyStats /></R>} />
         <Route path="/family/roster" element={<R><FamilyRoster /></R>} />
         <Route path="/profile/edit/:id" element={<R><ProfileEdit /></R>} />
-        {/* Football arcade hub — Henry lands here when he picks football
+        {/* Football arcade hub â€” Henry lands here when he picks football
             from the arcade. Picks Franchise / Live / Quick Tournament. */}
         <Route path="/football/hub" element={<R><FootballHub /></R>} />
-        {/* Football FRANCHISE — separate routing tree wrapped by
+        {/* Football FRANCHISE â€” separate routing tree wrapped by
             FootballShell (4-tab nav, persistent header, news ticker). */}
         <Route path="/football" element={<R><FootballShell /></R>}>
           <Route index element={<FootballHome />} />
@@ -417,11 +420,11 @@ function Router() {
           <Route path="save" element={<FootballSaveExit />} />
         </Route>
         <Route path="/football/game/:id" element={<R><FootballGameWatch /></R>} />
-        {/* Baseball arcade hub — the entry point when Henry picks
+        {/* Baseball arcade hub â€” the entry point when Henry picks
             baseball. Lists the 4 mode cards (Franchise / Live /
             Training / Score Keeper). */}
         <Route path="/baseball" element={<R><BaseballHub /></R>} />
-        {/* Non-franchise baseball modes — slim chrome, no franchise
+        {/* Non-franchise baseball modes â€” slim chrome, no franchise
             sidenav, no news ticker. */}
         <Route element={<R><NonFranchiseLayout /></R>}>
           <Route path="/score" element={<ScoreKeeper />} />
@@ -437,7 +440,7 @@ function Router() {
           <Route path="/training/live" element={<LiveGame />} />
           <Route path="/live" element={<LiveGame />} />
         </Route>
-        {/* Movie Mogul — fourth game. Hub picks save slot or starts a
+        {/* Movie Mogul â€” fourth game. Hub picks save slot or starts a
             new studio; everything else lives under /mogul/studio/* */}
         <Route path="/mogul" element={<R><MogulHub /></R>} />
         <Route path="/mogul/studio" element={<R><MogulShell /></R>}>
@@ -449,20 +452,20 @@ function Router() {
           <Route path="save" element={<MogulSaveExit />} />
           <Route path="settings" element={<MogulSettings />} />
         </Route>
-        {/* Temporal Order — 7th game. Time-travel investigation with
+        {/* Temporal Order â€” 7th game. Time-travel investigation with
             AI-driven mission variation, NPC dialogue, ripple effects. */}
         <Route path="/temporal" element={<R><TemporalHub /></R>} />
         <Route path="/temporal/play/:slotId" element={<R><Bureau /></R>} />
         <Route path="/temporal/play/:slotId/mission/:missionId/brief" element={<R><TemporalMissionBriefing /></R>} />
         <Route path="/temporal/play/:slotId/era/:eraId" element={<R><EraScene /></R>} />
         <Route path="/temporal/play/:slotId/mission/:missionId/resolve" element={<R><Resolution /></R>} />
-        {/* Cosmic Squad — 6th game. Hub picks a save slot, mission hub
+        {/* Cosmic Squad â€” 6th game. Hub picks a save slot, mission hub
             picks a mission, combat is the playable screen. */}
         <Route path="/cosmic" element={<R><CosmicHub /></R>} />
         <Route path="/cosmic/play/:slotId" element={<R><MissionHub /></R>} />
         <Route path="/cosmic/play/:slotId/mission/:missionId" element={<R><MissionBriefing /></R>} />
         <Route path="/cosmic/play/:slotId/mission/:missionId/combat" element={<R><Combat /></R>} />
-        {/* Wordplay Hub — 5th game. One app with 13 sub-game routes. */}
+        {/* Wordplay Hub â€” 5th game. One app with 13 sub-game routes. */}
         <Route path="/wordplay" element={<R><WordplayHub /></R>} />
         <Route path="/wordplay/madlibs" element={<R><MadLibs /></R>} />
         <Route path="/wordplay/jokes" element={<R><Jokes /></R>} />
@@ -477,7 +480,7 @@ function Router() {
         <Route path="/wordplay/conversation" element={<R><ConversationStarters /></R>} />
         <Route path="/wordplay/word-chain" element={<R><WordChain /></R>} />
         <Route path="/wordplay/personality" element={<R><PersonalityQuiz /></R>} />
-        {/* Wordplay V2 — 10 new sub-apps. */}
+        {/* Wordplay V2 â€” 10 new sub-apps. */}
         <Route path="/wordplay/storyteller" element={<R><Storyteller /></R>} />
         <Route path="/wordplay/adventure" element={<R><ChooseAdventure /></R>} />
         <Route path="/wordplay/mystery-box" element={<R><MysteryBox /></R>} />
@@ -488,7 +491,7 @@ function Router() {
         <Route path="/wordplay/settler" element={<R><ArgumentSettler /></R>} />
         <Route path="/wordplay/charades" element={<R><WPCharades /></R>} />
         <Route path="/wordplay/quiet-game" element={<R><QuietGame /></R>} />
-        {/* /wordplay/spell removed v1.10.75 — Spell Game retired per
+        {/* /wordplay/spell removed v1.10.75 â€” Spell Game retired per
             request. Files src/wordplay/pages/SpellGame.tsx and
             src/wordplay/data/spellWords.ts deleted. */}
         {/* Resources / Beckett's Corner */}
@@ -496,7 +499,7 @@ function Router() {
         <Route path="/resources/becketts-corner" element={<R><BeckettsCorner /></R>} />
         <Route path="/resources/becketts-corner/ash-care" element={<R><AshCareGuide /></R>} />
         <Route path="/resources/becketts-corner/todo" element={<R><BeckettsTodo /></R>} />
-        {/* Beckett's Battle Forge — Three.js 3D combat (Codex renderer) */}
+        {/* Beckett's Battle Forge â€” Three.js 3D combat (Codex renderer) */}
         <Route path="/battleforge" element={<R><BattleForge /></R>} />
         <Route path="/battleforge/spectate" element={<R><SpectateLive /></R>} />
         <Route path="/mech" element={<R><MechHub /></R>} />
@@ -508,6 +511,9 @@ function Router() {
         <Route path="/dungeon3d/run" element={<R><Dungeon3DRun /></R>} />
         <Route path="/monster-forge" element={<R><MonsterForgeHub /></R>} />
         <Route path="/monster-forge/build" element={<R><MonsterForgeBuilder /></R>} />
+        <Route path="/jrpg" element={<R><JRPGHub /></R>} />
+        <Route path="/jrpg/play" element={<R><JRPGPlay /></R>} />
+        <Route path="/jrpg/battle" element={<R><JRPGBattle /></R>} />
         <Route path="/creature" element={<R><CreatureHub /></R>} />
         <Route path="/creature/wild" element={<R><CreatureWild /></R>} />
         <Route path="/creature/battle" element={<R><CreatureBattle /></R>} />
@@ -518,7 +524,7 @@ function Router() {
         <Route path="/survivor" element={<R><SurvivorHub /></R>} />
         <Route path="/survivor/run" element={<R><SurvivorRun /></R>} />
         <Route path="/whats-new" element={<R><WhatsNew /></R>} />
-        {/* Codex's additions — 13 more wordplay sub-apps + 6 resources + Olympus party */}
+        {/* Codex's additions â€” 13 more wordplay sub-apps + 6 resources + Olympus party */}
         <Route path="/wordplay/game-helper" element={<R><VideoGameHelper /></R>} />
         <Route path="/wordplay/story-chain" element={<R><StoryChain /></R>} />
         <Route path="/wordplay/one-word" element={<R><OneWordAtATime /></R>} />
@@ -538,7 +544,7 @@ function Router() {
         <Route path="/resources/baseball-training/hit" element={<R><BaseballTrainingHit /></R>} />
         <Route path="/resources/baseball-training/pitch" element={<R><BaseballTrainingPitch /></R>} />
         <Route path="/resources/journal" element={<R><Journal /></R>} />
-        {/* Potion Lab — 9th game */}
+        {/* Potion Lab â€” 9th game */}
         <Route path="/potion-lab" element={<R><PotionLabHub /></R>} />
         <Route path="/potion-lab/cauldron" element={<R><PotionLabCauldron /></R>} />
         <Route path="/potion-lab/grimoire" element={<R><PotionLabGrimoire /></R>} />
@@ -572,7 +578,7 @@ function Router() {
         <Route path="/mainevent"            element={<R><MainEvent /></R>} />
         <Route path="/boxing"               element={<R><Boxing /></R>} />
         <Route path="/cardclash"            element={<R><CardClash /></R>} />
-        {/* Olympus mode — separate routing tree, own theme + chrome */}
+        {/* Olympus mode â€” separate routing tree, own theme + chrome */}
         <Route path="/olympus" element={<R><OlympusShell /></R>}>
           <Route index element={<OlympusHome />} />
           <Route path="roster" element={<OlympusHome />} />
@@ -583,7 +589,7 @@ function Router() {
           <Route path="settings" element={<OlympusSettings />} />
           <Route path="shops" element={<OlympusShops />} />
         </Route>
-        {/* Baseball FRANCHISE routes — pathless layout route so children
+        {/* Baseball FRANCHISE routes â€” pathless layout route so children
             use absolute paths but share the LayoutWithBars chrome
             (4-tab nav, persistent franchise header, news ticker). If
             no league exists, any franchise URL kicks back to the
@@ -627,7 +633,7 @@ function RouteLoading() {
         animation: "routeLoadingSpin 0.9s linear infinite",
       }} />
       <div className="text-[10px] tracking-[0.4em] font-display uppercase" style={{ color: "#c9b6f0" }}>
-        Loading…
+        Loadingâ€¦
       </div>
       <style>{`@keyframes routeLoadingSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -635,7 +641,7 @@ function RouteLoading() {
 }
 
 function LayoutWithBars() {
-  // Owner-profile setup is no longer forced on first entry — players land
+  // Owner-profile setup is no longer forced on first entry â€” players land
   // straight on the dashboard, with a "Set Up Your Owner" banner there
   // they can dismiss or accept on their own time. (/welcome is still
   // reachable from Settings and from that banner, just not auto-forced.)
