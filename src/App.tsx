@@ -300,6 +300,11 @@ const CuriosityCamera   = lz(() => import("./wordplay/pages/CuriosityCamera"));
 // Turbo Racers (top-down racing -- /racing hub + /racing/play match)
 const RacingHub          = lz(() => import("./racing/pages/RacingHub"));
 const RacingMatch        = lz(() => import("./racing/pages/RacingMatch"));
+const RacingGarage       = lz(() => import("./racing/pages/RacingGarage"));
+const RacingTrackSelect  = lz(() => import("./racing/pages/RacingTrackSelect"));
+const RacingGrandRace    = lz(() => import("./racing/pages/RacingGrandRace"));
+const RacingRaceSetup    = lz(() => import("./racing/pages/RacingRaceSetup"));
+const RacingLeaderboard  = lz(() => import("./racing/pages/RacingLeaderboard"));
 const ScienceSidekick   = lz(() => import("./wordplay/pages/ScienceSidekick"));
 const AskMeAnything     = lz(() => import("./wordplay/pages/AskMeAnything"));
 const JustWantTalk      = lz(() => import("./wordplay/pages/JustWantTalk"));
@@ -644,6 +649,11 @@ function Router() {
         {/* Turbo Racers -- top-down racing */}
         <Route path="/racing" element={<R><RacingHub /></R>} />
         <Route path="/racing/play" element={<R><RacingMatch /></R>} />
+        <Route path="/racing/race" element={<R><RacingGrandRace /></R>} />
+        <Route path="/racing/garage" element={<R><RacingGarage /></R>} />
+        <Route path="/racing/tracks" element={<R><RacingTrackSelect /></R>} />
+        <Route path="/racing/setup" element={<R><RacingRaceSetup /></R>} />
+        <Route path="/racing/leaderboard" element={<R><RacingLeaderboard /></R>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Suspense>
