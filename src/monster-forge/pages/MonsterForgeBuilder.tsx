@@ -38,6 +38,8 @@ import {
   tryCraft, loadDiscovered, addDiscovered,
 } from "../engine/crafting";
 import { applyPotionsToMonster } from "../engine/effects";
+import { buildIdleAnimator, type IdleAnimator } from "../engine/animations";
+import { powersFor, buildPowerEffect, type ActiveEffect, type Power } from "../engine/powers";
 
 type Tab = "body" | "head" | "horns" | "wings" | "tail" | "spikes" | "eyes" | "color" | "potions";
 
