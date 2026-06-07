@@ -232,6 +232,8 @@ const MechReplays       = lz(() => import("./mech/pages/MechReplays"));
 const MechShop          = lz(() => import("./mech/pages/MechShop"));
 const Dungeon3DHub      = lz(() => import("./dungeon3d/pages/Dungeon3DHub"));
 const Dungeon3DRun      = lz(() => import("./dungeon3d/pages/Dungeon3DRun"));
+const MonsterForgeHub      = lz(() => import("./monster-forge/pages/MonsterForgeHub"));
+const MonsterForgeBuilder  = lz(() => import("./monster-forge/pages/MonsterForgeBuilder"));
 const CreatureHub       = lz(() => import("./creature/pages/CreatureHub"));
 const CreatureWild      = lz(() => import("./creature/pages/CreatureWild"));
 const CreatureBattle    = lz(() => import("./creature/pages/CreatureBattle"));
@@ -503,6 +505,8 @@ function Router() {
         <Route path="/mech/shop" element={<R><MechShop /></R>} />
         <Route path="/dungeon3d" element={<R><Dungeon3DHub /></R>} />
         <Route path="/dungeon3d/run" element={<R><Dungeon3DRun /></R>} />
+        <Route path="/monster-forge" element={<R><MonsterForgeHub /></R>} />
+        <Route path="/monster-forge/build" element={<R><MonsterForgeBuilder /></R>} />
         <Route path="/creature" element={<R><CreatureHub /></R>} />
         <Route path="/creature/wild" element={<R><CreatureWild /></R>} />
         <Route path="/creature/battle" element={<R><CreatureBattle /></R>} />

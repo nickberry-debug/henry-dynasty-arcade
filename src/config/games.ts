@@ -241,6 +241,12 @@ export const GAMES: GameEntry[] = [
     emoji: "👗", accent: "#f9a8d4", status: "Dress-up",
     bg: "linear-gradient(135deg, rgba(40,10,30,0.95), rgba(15,5,20,0.85))",
     route: "/classics/style" }),
+  ge({ id: "monsterforge", category: "create", order: 30,
+    name: "Monster Forge", subtitle: "3D modular monster builder",
+    description: "Assemble original monsters from real CC0 3D parts. Pick a body, layer horns/wings/tails/spikes/eyes, recolor, save to your Lab. Three.js live preview — rotate, pinch, zoom. Phase 1 of a multi-session build (potions + powers + battles arrive in later sessions).",
+    emoji: "👹", accent: "#fda4af", status: "Phase 1 · 3D builder",
+    bg: "linear-gradient(135deg, rgba(60,8,30,0.95), rgba(20,5,20,0.85))",
+    route: "/monster-forge" }),
 
   // ── BRAIN & PUZZLE ──────────────────────────────────────────────────
   ge({ id: "wordplay", category: "brain", type: "hub", order: 0,
