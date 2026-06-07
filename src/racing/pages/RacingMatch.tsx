@@ -27,8 +27,13 @@ import type { CarTuning } from "../engine/physics";
 import { unlockAudio, playVo, playBoost, playCrash, startEngine, stopEngine, setEnginePitch } from "../engine/audio";
 
 interface SmokeParticle {
-  x: number; y: number; vx: number; vy: number; life: number; max: number; r: number; colour: string;
+  x: number; y: number; vx: number; vy: number; life: number; max: number; r: number;
+  // Pre-split colour into RGB and base-alpha so the render loop can build
+  // its rgba(...) string without a regex replace per particle per frame.
+  rgb: string; // "r,g,b"
+  baseA: number;
 }
+const SMOKE_MAX = 60;
 
 export default function RacingMatch() {
   const nav = useNavigate();
@@ -133,18 +138,36 @@ export default function RacingMatch() {
 
     // ---- Particles ----
     const smoke: SmokeParticle[] = [];
-    function emitSmoke(x: number, y: number, vx: number, vy: number, colour = "rgba(240,240,240,0.65)") {
-      smoke.push({ x, y, vx: vx * 0.15 + (Math.random() - 0.5) * 20, vy: vy * 0.15 + (Math.random() - 0.5) * 20, life: 0, max: 0.6 + Math.random() * 0.4, r: 6 + Math.random() * 4, colour });
+    // Default smoke is light grey at 0.65 alpha. Other emitters override.
+    function emitSmoke(
+      x: number, y: number, vx: number, vy: number,
+      rgb = "240,240,240", baseA = 0.65,
+    ) {
+      // Hard cap on particle count: when full, recycle the oldest slot
+      // rather than letting the array grow unbounded on heavy drift+boost.
+      if (smoke.length >= SMOKE_MAX) smoke.shift();
+      smoke.push({
+        x, y,
+        vx: vx * 0.15 + (Math.random() - 0.5) * 20,
+        vy: vy * 0.15 + (Math.random() - 0.5) * 20,
+        life: 0, max: 0.6 + Math.random() * 0.4,
+        r: 6 + Math.random() * 4,
+        rgb, baseA,
+      });
     }
 
     // ---- DPR-safe canvas sizing ----
     function resize() {
-      const dpr = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1));
+      // Cap DPR at 2 on mobile -- 3x on retina iPhones triples fill rate
+      // for no visible gain in a top-down racer.
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
       const w = canvas.clientWidth;
       const h = canvas.clientHeight;
       canvas.width = Math.round(w * dpr);
       canvas.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // Pixel-art assets stay crisper + cheaper without bilinear smoothing.
+      ctx.imageSmoothingEnabled = false;
     }
     resize();
     const onResize = () => resize();
@@ -166,6 +189,7 @@ export default function RacingMatch() {
 
     // ---- Main loop ----
     let lastT = performance.now();
+    let lastHudSyncMs = 0;
     let running = true;
     function loop(nowRaw: number) {
       if (!running) return;
@@ -264,11 +288,11 @@ export default function RacingMatch() {
       }
       // Slipstream particles: blue trail when drafting.
       if (slip.drafting) {
-        emitSmoke(player.x - fx * 22 + (Math.random() - 0.5) * 10, player.y - fy * 22 + (Math.random() - 0.5) * 10, 0, 0, "rgba(96,165,250,0.55)");
+        emitSmoke(player.x - fx * 22 + (Math.random() - 0.5) * 10, player.y - fy * 22 + (Math.random() - 0.5) * 10, 0, 0, "96,165,250", 0.55);
       }
       // Boost speed lines (white streaks behind the car).
       if (boostPxs > 0) {
-        emitSmoke(player.x - fx * 22, player.y - fy * 22, -player.vx * 0.6, -player.vy * 0.6, "rgba(255,255,255,0.55)");
+        emitSmoke(player.x - fx * 22, player.y - fy * 22, -player.vx * 0.6, -player.vy * 0.6, "255,255,255", 0.55);
       }
 
       // Step + cull particles.
@@ -297,18 +321,29 @@ export default function RacingMatch() {
       ctx.save();
       ctx.translate(tx, ty);
 
-      // Blit baked track.
+      // Blit baked track -- only the visible viewport rectangle. The baked
+      // canvas is the full 3000x2000 world; pushing the whole texture every
+      // frame is wasteful on mobile GPUs. Source-rect blit clips to the
+      // camera's visible region with a small margin.
       if (baked) {
-        ctx.drawImage(baked, 0, 0);
+        const pad = 64;
+        const sx = Math.max(0, Math.floor(camera.x - cw / 2 - pad));
+        const sy = Math.max(0, Math.floor(camera.y - ch / 2 - pad));
+        const sw = Math.min(baked.width - sx, Math.ceil(cw + pad * 2));
+        const sh = Math.min(baked.height - sy, Math.ceil(ch + pad * 2));
+        // Draw at the same world coords (we're inside the camera translate).
+        ctx.drawImage(baked, sx, sy, sw, sh, sx, sy, sw, sh);
       } else {
         ctx.fillStyle = "#2f5e2a";
         ctx.fillRect(0, 0, track.world.w, track.world.h);
       }
 
-      // Smoke (under cars).
-      for (const p of smoke) {
-        const a = 1 - p.life / p.max;
-        ctx.fillStyle = p.colour.replace(/0?\.\d+\)$/, `${(a * 0.6).toFixed(2)})`);
+      // Smoke (under cars). Pre-split rgb + baseA avoids the per-particle
+      // regex replace the old version did every frame.
+      for (let i = 0; i < smoke.length; i++) {
+        const p = smoke[i];
+        const a = (1 - p.life / p.max) * p.baseA;
+        ctx.fillStyle = `rgba(${p.rgb},${a.toFixed(2)})`;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r * (1 + p.life * 1.4), 0, Math.PI * 2);
         ctx.fill();
@@ -354,8 +389,13 @@ export default function RacingMatch() {
         ctx.fillRect(0, 0, cw, ch);
       }
 
-      // HUD sync (cheap throttle: every ~6 frames).
-      if (Math.floor(now / 100) !== Math.floor(lastT / 100 - 1)) {
+      // HUD sync: throttle to ~10 Hz. The previous check compared
+      // Math.floor(now/100) to Math.floor(lastT/100 - 1) AFTER lastT had been
+      // reassigned to `now` -- that made the condition true almost every
+      // frame, triggering a React re-render per frame and tanking FPS on
+      // mobile. Use an explicit timestamp gate instead.
+      if (now - lastHudSyncMs >= 100 || lap.finished) {
+        lastHudSyncMs = now;
         setHud({
           lap: lap.lap, totalLaps: lap.totalLaps, kph: speedKph(player),
           countdown: racing ? "" : (sinceStart > 2000 ? "1" : sinceStart > 1000 ? "2" : "3"),
