@@ -40,11 +40,6 @@ export function GameWatch({ gameId, onClose }: { gameId: string; onClose: () => 
     setPlays(result.plays);
   }, [gameId]);
 
-  // Immersive mode delegates to StatCast view.
-  if (immersive && plays) {
-    return <StatCastBaseball plays={plays} home={home} away={away} onClose={onClose} playerName={playerName} />;
-  }
-
   useEffect(() => {
     if (!plays || paused || idx >= plays.length) return;
     const intervalMs = speed === "slow" ? 700 : speed === "fast" ? 90 : 340;
@@ -64,6 +59,12 @@ export function GameWatch({ gameId, onClose }: { gameId: string; onClose: () => 
     ? { home: lastPlay.scoreHome, away: lastPlay.scoreAway }
     : (startedFreshRef.current ? { home: 0, away: 0 } : (game.score || { home: 0, away: 0 }));
   const linescore = useMemo(() => buildLinescore(plays || [], idx), [plays, idx]);
+
+  // Immersive mode delegates to StatCast view. Kept AFTER all hooks above so
+  // that we never short-circuit a hook (Rules of Hooks / React #300).
+  if (immersive && plays) {
+    return <StatCastBaseball plays={plays} home={home} away={away} onClose={onClose} playerName={playerName} />;
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
