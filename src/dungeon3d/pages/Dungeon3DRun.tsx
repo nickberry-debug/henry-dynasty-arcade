@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Heart, RotateCcw, Trophy, Skull, Coins, Swords, Sparkles, Zap, Hand, Backpack } from "lucide-react";
+import { ArrowLeft, Heart, RotateCcw, Trophy, Skull, Coins, Swords, Sparkles, Zap, Hand, Backpack, Pause, Play, Volume2, VolumeX, Map as MapIcon } from "lucide-react";
 import * as THREE from "three";
 import {
   newGame, step, descendLevel, CELL, COLS, ROWS, WORLD_W, WORLD_H,
@@ -29,16 +29,70 @@ import {
   loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
 } from "../modelCache";
 import { useDungeon3D } from "../store";
-import { playSfx, unlockAudio } from "../../art";
+import { playSfx, unlockAudio, isMuted, setMuted } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T00:30:00Z";  // PHASE6_BOSSES
+const BUILD_STAMP = "2026-06-07T02:00:00Z";  // PHASE1C_BIOMES_PHASE7_POLISH
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
 //
 // Schema: `henry-dungeon-meta-v1` = { shards: number; unlocks: Record<ClassId, string[]> }
 // Defensive parse: malformed JSON -> reset to defaults.
+
+// ── Phase 7: tutorial + best-floor persistence ─────────────────────────
+const TUT_KEY  = "henry-dungeon-tutorial-v1";
+const BEST_KEY = "henry-dungeon-best-v1";
+const AUDIO_FLAG_KEY = "henry-dungeon-audio-v1";  // {muted:boolean}
+
+type TutorialId = "spawn" | "loot" | "levelup" | "boss";
+
+function loadTutorial(): { seen: TutorialId[] } {
+  if (typeof window === "undefined") return { seen: [] };
+  try {
+    const raw = window.localStorage.getItem(TUT_KEY);
+    if (!raw) return { seen: [] };
+    const parsed = JSON.parse(raw);
+    return { seen: Array.isArray(parsed?.seen) ? parsed.seen : [] };
+  } catch { return { seen: [] }; }
+}
+function saveTutorial(s: { seen: TutorialId[] }) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(TUT_KEY, JSON.stringify(s)); } catch { /* noop */ }
+}
+
+interface BestState { bestFloor: number; bestKills: number; }
+function loadBest(): BestState {
+  if (typeof window === "undefined") return { bestFloor: 0, bestKills: 0 };
+  try {
+    const raw = window.localStorage.getItem(BEST_KEY);
+    if (!raw) return { bestFloor: 0, bestKills: 0 };
+    const p = JSON.parse(raw);
+    return {
+      bestFloor: typeof p?.bestFloor === "number" ? p.bestFloor : 0,
+      bestKills: typeof p?.bestKills === "number" ? p.bestKills : 0,
+    };
+  } catch { return { bestFloor: 0, bestKills: 0 }; }
+}
+function saveBest(b: BestState) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(BEST_KEY, JSON.stringify(b)); } catch { /* noop */ }
+}
+
+function loadAudioFlag(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = window.localStorage.getItem(AUDIO_FLAG_KEY);
+    if (!raw) return false;
+    const p = JSON.parse(raw);
+    return !!p?.muted;
+  } catch { return false; }
+}
+function saveAudioFlag(muted: boolean) {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(AUDIO_FLAG_KEY, JSON.stringify({ muted })); } catch { /* noop */ }
+}
+
 const META_KEY = "henry-dungeon-meta-v1";
 type MetaState = { shards: number; unlocks: Record<ClassId, string[]> };
 
@@ -84,6 +138,23 @@ export default function Dungeon3DRun() {
   const [levelUpChoiceIds, setLevelUpChoiceIds] = useState<string[]>([]);
   const [runEndBanner, setRunEndBanner] = useState<{ kills: number; floor: number; shards: number } | null>(null);
   const [, force] = useState(0);
+  // Phase 7: pause / mute / tutorial / run-summary state.
+  const [paused, setPaused] = useState(false);
+  const [muted, setMutedState] = useState<boolean>(() => loadAudioFlag());
+  const [tutorial, setTutorial] = useState<{ seen: TutorialId[] }>(() => loadTutorial());
+  const [activeTutorial, setActiveTutorial] = useState<{ id: TutorialId; text: string; expiresAt: number } | null>(null);
+  const [best, setBest] = useState<BestState>(() => loadBest());
+  const [showRunSummary, setShowRunSummary] = useState(false);
+  const minimapRef = useRef<HTMLCanvasElement | null>(null);
+  // Frame counter for projectile/minimap throttling.
+  const frameRef = useRef(0);
+  // For audio edge-detection between frames.
+  const prevRef = useRef<{
+    attackT: number; hp: number; coins: number; projCount: number;
+    runEnded: boolean; bossAlive: boolean; level: number;
+    walkPhase: number;
+  }>({ attackT: 0, hp: 0, coins: 0, projCount: 0, runEnded: false, bossAlive: false, level: 1, walkPhase: 0 });
+
   // Phase 1c: biome overlay — { name, ttl } while fading; ttl is wall-clock ms remaining.
   const [biomeOverlay, setBiomeOverlay] = useState<{ name: string; expiresAt: number } | null>(null);
   const [endShown, setEndShown] = useState(false);
@@ -104,7 +175,15 @@ export default function Dungeon3DRun() {
     active: false, cx: 0, cy: 0, x: 0, y: 0, id: null,
   });
 
-  useEffect(() => { unlockAudio(); }, []);
+  useEffect(() => { unlockAudio(); setMuted(loadAudioFlag()); }, []);
+  function toggleMute() {
+    const next = !muted;
+    setMutedState(next);
+    setMuted(next);
+    saveAudioFlag(next);
+  }
+  // syncMuted helper for visibility/visibilitychange handler.
+  void isMuted;
 
   // Recompute camera tuning + viewport badge on resize / orientation change.
   useEffect(() => {
@@ -154,6 +233,18 @@ export default function Dungeon3DRun() {
       window.removeEventListener("keydown", onDown);
       window.removeEventListener("keyup", onUp);
     };
+  }, []);
+
+  // Phase 7: visibilitychange auto-pause — when the tab hides, pause the game.
+  useEffect(() => {
+    function onVis() {
+      if (document.visibilityState === "hidden") {
+        const g = gameRef.current;
+        if (g && g.state === "playing") { g.paused = true; setPaused(true); }
+      }
+    }
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   // â”€â”€ THREE.JS SCENE â€” mounted once, never re-created across renders â”€
@@ -572,6 +663,139 @@ export default function Dungeon3DRun() {
             camera.updateProjectionMatrix();
           }
 
+
+          // ── Phase 7: audio edge-detection + tutorial + minimap throttle ──
+          const _prev = prevRef.current;
+          frameRef.current = (frameRef.current + 1) | 0;
+          // Footstep: every other walking phase tick, ~0.3s apart.
+          if (g.player.anim === "walk") {
+            _prev.walkPhase += dt;
+            if (_prev.walkPhase >= 0.3) {
+              _prev.walkPhase = 0;
+              playSfx("impactSoft", { volume: 0.18, pitch: 0.85 + Math.random() * 0.15 });
+            }
+          } else {
+            _prev.walkPhase = 0;
+          }
+          // Melee swing start.
+          if (g.player.attackT > 0 && _prev.attackT <= 0) {
+            playSfx("whoosh", { volume: 0.45 });
+          }
+          _prev.attackT = g.player.attackT;
+          // Melee hit (any enemy gained flashT this frame -> impact).
+          for (const e of g.enemies) {
+            if (e.flashT > 0.15 && e.hp > 0 && e.deathT === 0) {
+              // Coarse edge: hit detection costs basically nothing per frame
+              // because we only fire when the flash just appeared. We tag the
+              // enemy with a tiny userData ledger.
+              const ud: any = (e as any);
+              if (!ud._lastHitT || g.elapsed - ud._lastHitT > 0.12) {
+                ud._lastHitT = g.elapsed;
+                playSfx("impactHit", { volume: 0.42 });
+              }
+            }
+          }
+          // Ranged shot.
+          if (g.projectiles.length > _prev.projCount) {
+            playSfx("laserSmall", { volume: 0.4 });
+          }
+          _prev.projCount = g.projectiles.length;
+          // Coin pickup — player.coins went up.
+          if (g.player.coins > _prev.coins) {
+            playSfx("coin", { volume: 0.5 });
+          }
+          _prev.coins = g.player.coins;
+          // Hurt — hp went down.
+          if (g.player.hp < _prev.hp - 0.5) {
+            playSfx("playerHurt", { volume: 0.55 });
+          }
+          _prev.hp = g.player.hp;
+          // Level-up.
+          if (g.player.level > _prev.level) {
+            playSfx("powerUp", { volume: 0.6 });
+          }
+          _prev.level = g.player.level;
+          // Boss spawn — boss went null -> alive.
+          const _bossAlive = !!g.boss && g.boss.hp > 0;
+          if (_bossAlive && !_prev.bossAlive) {
+            playSfx("explosionBig", { volume: 0.7 });
+          }
+          _prev.bossAlive = _bossAlive;
+          // Death — first time we see runEnded.
+          if (g.runEnded && !_prev.runEnded) {
+            playSfx("voGameOver", { volume: 0.8 });
+          }
+          _prev.runEnded = g.runEnded;
+          // Tutorial triggers (only fire if not seen).
+          {
+            const _seenSet = new Set(tutorial.seen);
+            const _push = (id: TutorialId, text: string) => {
+              if (_seenSet.has(id)) return;
+              if (activeTutorial && activeTutorial.id === id) return;
+              setActiveTutorial({ id, text, expiresAt: performance.now() + 4200 });
+              const _next = { seen: [...tutorial.seen, id] };
+              setTutorial(_next);
+              saveTutorial(_next);
+            };
+            if (!_seenSet.has("spawn") && g.elapsed > 0.3) {
+              _push("spawn", "Use the joystick to move. Tap RED to attack, BLUE to fire ranged.");
+            }
+            if (!_seenSet.has("loot") && g.nearestPickable) {
+              _push("loot", "Tap the glowing button to pick up loot.");
+            }
+            if (!_seenSet.has("levelup") && g.pendingLevelUp) {
+              _push("levelup", "Pick an ability — they stack.");
+            }
+            if (!_seenSet.has("boss") && g.boss && g.boss.hp > 0) {
+              _push("boss", "Defeat the boss to descend.");
+            }
+          }
+          // Minimap redraw every 4 frames.
+          if ((frameRef.current & 3) === 0 && minimapRef.current) {
+            const _ctx = minimapRef.current.getContext("2d");
+            if (_ctx) {
+              const W = minimapRef.current.width;
+              const H = minimapRef.current.height;
+              _ctx.clearRect(0, 0, W, H);
+              _ctx.fillStyle = "rgba(0,0,0,0.65)";
+              _ctx.fillRect(0, 0, W, H);
+              const cw = W / COLS, ch = H / ROWS;
+              // Floor tiles (revealed only).
+              for (let zz = 0; zz < ROWS; zz++) {
+                for (let xx = 0; xx < COLS; xx++) {
+                  if (!isCellVisible(g, xx, zz)) continue;
+                  const t = g.level.grid[zz][xx];
+                  if (t === "wall") continue;
+                  _ctx.fillStyle = t === "stairs" ? "#60a5fa" : "rgba(254,243,199,0.42)";
+                  _ctx.fillRect(xx * cw, zz * ch, cw + 0.6, ch + 0.6);
+                }
+              }
+              // Stairs marker (in case the floor tile was wall before clearing).
+              const sgx = Math.floor((g.level.stairs.x + WORLD_W / 2) / CELL);
+              const sgz = Math.floor((g.level.stairs.z + WORLD_H / 2) / CELL);
+              if (isCellVisible(g, sgx, sgz)) {
+                _ctx.fillStyle = "#60a5fa";
+                _ctx.fillRect(sgx * cw, sgz * ch, cw, ch);
+              }
+              // Boss dot.
+              if (g.boss) {
+                const bgx = Math.floor((g.boss.x + WORLD_W / 2) / CELL);
+                const bgz = Math.floor((g.boss.z + WORLD_H / 2) / CELL);
+                _ctx.fillStyle = "#ff5544";
+                _ctx.beginPath();
+                _ctx.arc((bgx + 0.5) * cw, (bgz + 0.5) * ch, Math.max(2, cw * 0.6), 0, Math.PI * 2);
+                _ctx.fill();
+              }
+              // Player dot.
+              const pgx = (g.player.x + WORLD_W / 2) / CELL;
+              const pgz = (g.player.z + WORLD_H / 2) / CELL;
+              _ctx.fillStyle = "#fde047";
+              _ctx.beginPath();
+              _ctx.arc(pgx * cw, pgz * ch, Math.max(2, cw * 0.55), 0, Math.PI * 2);
+              _ctx.fill();
+            }
+          }
+
           // Camera follows player at the iso offset. lookAt offset is
           // recomputed on resize/orientation change (portrait gets 3.0,
           // landscape 1.5) so the player stays well-framed above the UI.
@@ -641,7 +865,7 @@ export default function Dungeon3DRun() {
           // the blocky-characters GLB local-forward is 180° off from p.facing,
           // so we add PI to align the model with movement + the swing arc.
           t3.playerObj.position.set(g.player.x, 0, g.player.z);
-          t3.playerObj.rotation.y = g.player.facing + Math.PI;
+          t3.playerObj.rotation.y = g.player.facing;  // FACING_FIX: revert +PI; model now faces motion direction
           if (t3.playerMixer) t3.playerMixer.update(dt);
 
           // ── Projectile meshes ──
@@ -678,7 +902,7 @@ export default function Dungeon3DRun() {
           // ── Phase 6: Boss mesh sync ──
           if (t3.bossObj && g.boss) {
             t3.bossObj.position.set(g.boss.x, 0, g.boss.z);
-            t3.bossObj.rotation.y = g.boss.facing + Math.PI;
+            t3.bossObj.rotation.y = g.boss.facing;  // FACING_FIX: revert +PI
             t3.bossObj.visible = !g.boss.tpHidden;
             if (t3.bossMixer) t3.bossMixer.update(dt);
             if (g.boss.flashT > 0) {
@@ -757,7 +981,7 @@ export default function Dungeon3DRun() {
             // HOTFIX_FACING_INV_ZOOM: keep +PI on procedural fallback so model facing matches.
             const _atkProg = 1 - (g.player.attackT / g.player.attackDur);
             const _swing = Math.sin(_atkProg * Math.PI) * (20 * Math.PI / 180);
-            t3.playerObj.rotation.y = g.player.facing + _swing + Math.PI;
+            t3.playerObj.rotation.y = g.player.facing + _swing;  // FACING_FIX: revert +PI
           }
           if (t3.playerActions.idle && t3.playerActions.walk) {
             const atkW = t3.playerActions.attack?.weight ?? 0;
@@ -796,7 +1020,7 @@ export default function Dungeon3DRun() {
               trailAnchor.position.set(g.player.x, 1.0, g.player.z);
               // Sweep the arc through ~46° across the swing window.
               // HOTFIX_FACING_INV_ZOOM: +PI so the arc lands in FRONT of the (now-flipped) model.
-              trailAnchor.rotation.y = g.player.facing + (atkProg - 0.5) * 0.8 + Math.PI;
+              trailAnchor.rotation.y = g.player.facing + (atkProg - 0.5) * 0.8;  // FACING_FIX: trail anchor follows the (unrotated) body
               trailMat.opacity = (1 - atkProg) * 0.85;
             } else {
               trailAnchor.visible = false;
@@ -826,7 +1050,7 @@ export default function Dungeon3DRun() {
             if (!handle) continue;
             handle.obj.position.set(e.x, 0, e.z);
             // HOTFIX_FACING_INV_ZOOM: same +PI fix for enemies.
-            handle.obj.rotation.y = e.facing + Math.PI;
+            handle.obj.rotation.y = e.facing;  // FACING_FIX: revert +PI
             // Hide enemies whose current grid cell is not yet revealed.
             const egx = Math.floor((e.x + WORLD_W / 2) / CELL);
             const egz = Math.floor((e.z + WORLD_H / 2) / CELL);
@@ -1074,6 +1298,12 @@ export default function Dungeon3DRun() {
         const next = { ...meta, shards: meta.shards + g.runShardsEarned };
         setMeta(next); saveMeta(next);
         setRunEndBanner({ kills: g.runKills, floor: g.depth, shards: g.runShardsEarned });
+        // Phase 7: best-floor / best-kills persistence.
+        const nb: BestState = {
+          bestFloor: Math.max(best.bestFloor, g.depth),
+          bestKills: Math.max(best.bestKills, g.runKills),
+        };
+        setBest(nb); saveBest(nb);
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1370,6 +1600,16 @@ export default function Dungeon3DRun() {
              title="Viewport debug">
           {viewport.w}×{viewport.h} {viewport.h > viewport.w ? "P" : "L"} {(viewport.w / Math.max(1, viewport.h)).toFixed(2)}
         </div>
+        <button onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}
+          className="w-9 h-9 rounded-full flex items-center justify-center pressable touch-target ml-2"
+          style={{ background: "rgba(255,255,255,0.08)" }}>
+          {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+        </button>
+        <button onClick={() => { const g = gameRef.current; if (g) { g.paused = !g.paused; setPaused(g.paused); } }} aria-label={paused ? "Resume" : "Pause"}
+          className="w-9 h-9 rounded-full flex items-center justify-center pressable touch-target ml-2"
+          style={{ background: "rgba(255,255,255,0.08)" }}>
+          {paused ? <Play size={14} /> : <Pause size={14} />}
+        </button>
         <button onClick={newRun} aria-label="Restart"
           className="w-9 h-9 rounded-full flex items-center justify-center pressable touch-target ml-2"
           style={{ background: "rgba(255,255,255,0.08)" }}>
@@ -1396,6 +1636,63 @@ export default function Dungeon3DRun() {
 
       <main className="flex-1 relative">
         <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+        {/* Phase 7: Minimap canvas (top-right under build stamp). */}
+        <canvas ref={minimapRef} width={100} height={100} style={{
+          position: "absolute",
+          top: 8,
+          right: 8,
+          width: 100,
+          height: 100,
+          background: "rgba(0,0,0,0.45)",
+          border: "1px solid rgba(254,243,199,0.35)",
+          borderRadius: 6,
+          pointerEvents: "none",
+          imageRendering: "pixelated",
+          zIndex: 10,
+        }} aria-label="Minimap" />
+        {/* Phase 7: Tutorial tooltip — fades over 4s on first occurrence. */}
+        {activeTutorial && performance.now() < activeTutorial.expiresAt && (
+          <div style={{
+            position: "absolute", left: "50%", top: "30%",
+            transform: "translateX(-50%)",
+            pointerEvents: "none",
+            background: "rgba(20,5,30,0.92)",
+            border: "1.5px solid rgba(253,224,71,0.65)",
+            color: "#fef3c7",
+            padding: "8px 14px",
+            borderRadius: 10,
+            fontSize: 11,
+            fontFamily: "monospace",
+            letterSpacing: 1,
+            maxWidth: "84%",
+            textAlign: "center",
+            opacity: Math.min(1, (activeTutorial.expiresAt - performance.now()) / 800),
+            zIndex: 12,
+            boxShadow: "0 6px 16px rgba(0,0,0,0.55)",
+          }}>{activeTutorial.text}</div>
+        )}
+        {/* Phase 7: Pause overlay. */}
+        {paused && g.state === "playing" && (
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 40,
+            background: "rgba(0,0,0,0.78)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            gap: 12,
+            backdropFilter: "blur(6px)",
+          }}>
+            <div className="font-display tracking-[0.4em] text-[18px]" style={{ color: "#fde047" }}>PAUSED</div>
+            <button onClick={() => { const gg = gameRef.current; if (gg) { gg.paused = false; setPaused(false); } }}
+              className="px-5 py-2 rounded-lg font-display text-[11px] tracking-widest pressable touch-target"
+              style={{ background: "linear-gradient(135deg, #fde047, #f59e0b)", color: "#1a0505" }}>
+              RESUME
+            </button>
+            <button onClick={() => navigate("/dungeon3d")}
+              className="px-5 py-2 rounded-lg font-display text-[11px] tracking-widest pressable touch-target"
+              style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)", color: "#fef3c7" }}>
+              QUIT TO HUB
+            </button>
+          </div>
+        )}
         {/* Phase 1c: Biome name overlay — fades over 2s on biome transitions. */}
         {biomeOverlay && performance.now() < biomeOverlay.expiresAt && (
           <div style={{
@@ -1768,7 +2065,76 @@ export default function Dungeon3DRun() {
         </button>
       </main>
 
-      {g.state !== "playing" && (
+
+      {/* Phase 7: Run summary screen — appears on death, shows best stats + class + abilities. */}
+      {g.runEnded && g.state !== "playing" && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.86)" }}>
+          <div className="max-w-sm w-full rounded-2xl p-5"
+            style={{
+              background: "linear-gradient(135deg, rgba(60,20,40,0.95), rgba(8,8,14,0.95))",
+              border: "1.5px solid #f87171",
+              color: "#fef3c7",
+            }}>
+            <div className="text-center mb-3">
+              <div className="inline-flex items-center gap-2"
+                style={{ color: "#f87171" }}>
+                <Skull size={20} />
+                <div className="font-display tracking-widest text-lg">RUN OVER</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[10px] font-mono mb-3">
+              <div className="rounded p-2" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <div className="opacity-60">FLOOR REACHED</div>
+                <div className="text-[14px]" style={{ color: "#fde047" }}>{g.depth}</div>
+              </div>
+              <div className="rounded p-2" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <div className="opacity-60">KILLS</div>
+                <div className="text-[14px]" style={{ color: "#fde047" }}>{g.runKills}</div>
+              </div>
+              <div className="rounded p-2" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <div className="opacity-60">SHARDS</div>
+                <div className="text-[14px]" style={{ color: "#c8a0ff" }}>+{g.runShardsEarned}</div>
+              </div>
+              <div className="rounded p-2" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <div className="opacity-60">BEST FLOOR</div>
+                <div className="text-[14px]" style={{ color: "#fbbf24" }}>{Math.max(best.bestFloor, g.depth)}</div>
+              </div>
+            </div>
+            <div className="text-[10px] font-mono mb-1 opacity-70">CLASS</div>
+            <div className="text-[11px] mb-2" style={{ color: CLASS_DEFS[g.player.classId].tint === 0xff8a4c ? "#ff8a4c" : CLASS_DEFS[g.player.classId].tint === 0x6ee07a ? "#6ee07a" : "#c8a0ff" }}>
+              {CLASS_DEFS[g.player.classId].label.toUpperCase()} (Lv {g.player.level})
+            </div>
+            <div className="text-[10px] font-mono mb-1 opacity-70">ABILITIES PICKED</div>
+            <div className="flex flex-wrap gap-1 mb-3">
+              {g.player.abilities.length === 0
+                ? <div className="text-[10px] opacity-50">none</div>
+                : g.player.abilities.map(id => {
+                    const def = getAbilityDef(id);
+                    return def ? (
+                      <span key={id} className="text-[9px] font-mono px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(254,243,199,0.25)" }}>
+                        {def.name}
+                      </span>
+                    ) : null;
+                  })}
+            </div>
+            <div className="flex gap-2 justify-center">
+              <button onClick={() => { newRun(); }}
+                className="flex-1 px-3 py-2 rounded-lg font-display text-[11px] tracking-widest pressable touch-target"
+                style={{ background: "linear-gradient(135deg, #fde047, #f59e0b)", color: "#1a0505" }}>
+                PLAY AGAIN
+              </button>
+              <button onClick={() => { setShowSoulForge(true); newRun(); }}
+                className="flex-1 px-3 py-2 rounded-lg font-display text-[11px] tracking-widest pressable touch-target"
+                style={{ background: "linear-gradient(135deg, rgba(200,160,255,0.5), rgba(120,80,180,0.6))", color: "#fef3c7", border: "1px solid rgba(200,160,255,0.7)" }}>
+                FORGE
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {g.state !== "playing" && !g.runEnded && (
         <div className="absolute inset-0 z-30 flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.78)" }}>
           <div className="max-w-sm w-full rounded-2xl p-5 text-center"

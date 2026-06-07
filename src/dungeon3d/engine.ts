@@ -1398,6 +1398,8 @@ const PICKUP_RANGE = 0.7;
 export function step(g: Game, dtRaw: number, input: InputState) {
   let dt = Number.isFinite(dtRaw) && dtRaw > 0 ? Math.min(dtRaw, 0.05) : 0;
   if (g.hitStop > 0) { g.hitStop = Math.max(0, g.hitStop - dt); dt *= 0.25; }
+  // Phase 7: pause gate — engine skips step() while paused.
+  if (g.paused) return;
   if (g.state !== "playing") return;
   // Phase 6: boss spawn banner freezes movement/AI for ~1.2s.
   if (g.bossBannerT > 0) {
