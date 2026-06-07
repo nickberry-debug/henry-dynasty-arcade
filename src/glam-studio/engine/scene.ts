@@ -191,6 +191,11 @@ export class GlamScene {
       try { loaded = await loadDoll(def.file); }
       catch (e) { console.error("[glam] loadDoll failed for", def.file, e); return; }
       this.doll = loaded;
+      // Quaternius women face -Z by default — rotate the doll 180° so her
+      // face is on +Z (toward the camera). Without this we see her back
+      // with the makeup overlay floating in front like a Cheshire cat face
+      // — exactly the "model on top of everything" overlay bug.
+      loaded.root.rotation.y = Math.PI;
       // shadows
       loaded.root.traverse((o) => {
         const m = o as THREE.Mesh;
@@ -215,7 +220,8 @@ export class GlamScene {
     if (hair.children.length) {
       const socket = this.doll.sockets.head;
       hair.position.copy(socket);
-      // Quaternius women face -Z by default; rotate hair to match.
+      // Doll is rotated to face +Z (see Base swap above), so the hair
+      // group's +Z-facing convention already aligns — no rotation needed.
       this.scene.add(hair);
       this.hairGroup = hair;
     }
