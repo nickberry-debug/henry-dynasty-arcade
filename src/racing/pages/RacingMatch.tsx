@@ -13,7 +13,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { stepCar, makeCar, speedKph, type CarState, type CarInput } from "../engine/physics";
-import { makeOvalTrack, bakeTrack, surfaceAt } from "../engine/track";
+import { bakeTrack, surfaceAt } from "../engine/track";
+import { trackById } from "../engine/tracks";
+import { makeJump, stepJump, isAirborne, airScale, shadowOffset } from "../engine/jumps";
 import { makeDrift, stepDrift, driftTier, DRIFT } from "../engine/drift";
 import { makeSlip, stepSlip, SLIP } from "../engine/slipstream";
 import { makeLap, stepLap, formatMs } from "../engine/lap";
@@ -63,9 +65,13 @@ export default function RacingMatch() {
     };
 
     // ---- World setup ----
-    const track = makeOvalTrack(3);
+    const trackId = sp.get("track") ?? "oval";
+    const trackEntry = trackById(trackId);
+    const track = trackEntry.make(3);
+    const ramps = trackEntry.jumps;
     const player = makeCar(track.startPos.x, track.startPos.y, track.startPos.headingRad);
     const cpu = makeCar(track.startPos.x - 60, track.startPos.y - 30, track.startPos.headingRad);
+    const jump = makeJump();
     const drift = makeDrift();
     const slip = makeSlip();
     const cpuState = makeCpu(track);
@@ -85,9 +91,14 @@ export default function RacingMatch() {
     // the player isn't staring at a blank canvas.
     const grassTile = img("/assets/racing/tracks/land_grass01.png");
     let baked: HTMLCanvasElement | null = null;
+    const sceneryImgs = trackEntry.scenery.map(s => ({ sprite: img(s.sprite), x: s.x, y: s.y, scale: s.scale ?? 0.5, rot: s.rot ?? 0 }));
     function ensureBake() {
       if (baked) return;
-      baked = bakeTrack(track, { grassTile: grassTile.complete && grassTile.naturalWidth > 0 ? grassTile : null });
+      baked = bakeTrack(track, {
+        grassTile: grassTile.complete && grassTile.naturalWidth > 0 ? grassTile : null,
+        outdoorTone: trackEntry.outdoorTone,
+        scenery: sceneryImgs,
+      });
     }
     grassTile.addEventListener("load", () => { baked = null; ensureBake(); });
     ensureBake();
@@ -239,6 +250,9 @@ export default function RacingMatch() {
       const fy = -Math.cos(player.heading);
       stepLap(lap, { track, x: player.x, y: player.y, fx, fy, nowMs: now });
 
+      // ---- Jump ramps ----
+      stepJump(jump, { ramps, carX: player.x, carY: player.y, carHeadingRad: player.heading, carSpeed: speedMag, dt });
+
       // ---- Particles ----
       // Drift smoke: emit when drifting AND turning AND moving.
       if (input.drift && Math.abs(input.steer) > 0.25 && speedMag > 100) {
@@ -302,7 +316,7 @@ export default function RacingMatch() {
 
       // Draw cars.
       drawCar(ctx, cpu, cpuSprite, cpuCarDef.renderScale);
-      drawCar(ctx, player, playerSprite, playerCarDef.renderScale, { driftTier: driftTier(drift), boosting: boostPxs > 0 });
+      drawCar(ctx, player, playerSprite, playerCarDef.renderScale * airScale(jump), { driftTier: driftTier(drift), boosting: boostPxs > 0, airborne: isAirborne(jump), shadow: shadowOffset(jump) });
 
       ctx.restore();
 
@@ -364,12 +378,12 @@ export default function RacingMatch() {
         }
         if (!isFinite(bestLapMs)) bestLapMs = lap.finishMs;
         // Coin reward: 60 base + bonuses.
-        const prevBest = getBestRace("oval");
-        const prevBestLap = getBestLap("oval");
+        const prevBest = getBestRace(trackId);
+        const prevBestLap = getBestLap(trackId);
         let coinsEarned = 60;
         if (prevBest == null || lap.finishMs < prevBest) coinsEarned += 40;
         if (prevBestLap == null || bestLapMs < prevBestLap) coinsEarned += 20;
-        recordRace({ trackId: "oval", raceTimeMs: lap.finishMs, bestLapMs, coinsEarned });
+        recordRace({ trackId, raceTimeMs: lap.finishMs, bestLapMs, coinsEarned });
         stopEngine();
       }
 
@@ -613,8 +627,16 @@ function drawCar(
   car: CarState,
   sprite: HTMLImageElement,
   scale: number,
-  fx: { driftTier?: "none" | "blue" | "orange"; boosting?: boolean } = {},
+  fx: { driftTier?: "none" | "blue" | "orange"; boosting?: boolean; airborne?: boolean; shadow?: { x: number; y: number; opacity: number } } = {},
 ) {
+  if (fx.shadow && fx.shadow.opacity > 0) {
+    ctx.save();
+    ctx.fillStyle = `rgba(0,0,0,${fx.shadow.opacity})`;
+    ctx.beginPath();
+    ctx.ellipse(car.x + fx.shadow.x, car.y + fx.shadow.y + 18, 18 * scale, 8 * scale, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   ctx.save();
   ctx.translate(car.x, car.y);
   ctx.rotate(car.heading);

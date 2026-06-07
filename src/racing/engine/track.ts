@@ -140,6 +140,8 @@ export function surfaceAt(track: TrackDef, x: number, y: number): SurfaceKey {
 
 export interface TrackBakeOpts {
   grassTile?: HTMLImageElement | null;
+  outdoorTone?: string;
+  scenery?: { sprite: HTMLImageElement; x: number; y: number; scale: number; rot: number }[];
 }
 
 /**
@@ -160,11 +162,11 @@ export function bakeTrack(track: TrackDef, opts: TrackBakeOpts = {}): HTMLCanvas
     if (pat) {
       g.fillStyle = pat;
     } else {
-      g.fillStyle = "#2f5e2a";
+      g.fillStyle = opts.outdoorTone ?? "#2f5e2a";
     }
   } else {
     // Solid grass-green fallback.
-    g.fillStyle = "#2f5e2a";
+    g.fillStyle = opts.outdoorTone ?? "#2f5e2a";
   }
   g.fillRect(0, 0, w, h);
   // Soft vignette so the track pops.
@@ -202,6 +204,24 @@ export function bakeTrack(track: TrackDef, opts: TrackBakeOpts = {}): HTMLCanvas
 
   // ---- Finish line (checkered band) ----
   drawCheckeredBand(g, track.finishLine.x1, track.finishLine.y1, track.finishLine.x2, track.finishLine.y2, 22);
+
+  // ---- Scenery ----
+  if (opts.scenery) {
+    for (const s of opts.scenery) {
+      if (!s.sprite.complete || s.sprite.naturalWidth <= 0) continue;
+      g.save();
+      g.translate(s.x, s.y);
+      g.rotate(s.rot);
+      const sw = s.sprite.naturalWidth * s.scale;
+      const sh = s.sprite.naturalHeight * s.scale;
+      g.fillStyle = "rgba(0,0,0,0.25)";
+      g.beginPath();
+      g.ellipse(0, sh * 0.18, sw * 0.4, sh * 0.16, 0, 0, Math.PI * 2);
+      g.fill();
+      g.drawImage(s.sprite, -sw / 2, -sh / 2, sw, sh);
+      g.restore();
+    }
+  }
 
   return c;
 }

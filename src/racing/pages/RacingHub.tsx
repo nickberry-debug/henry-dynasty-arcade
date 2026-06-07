@@ -1,4 +1,4 @@
-﻿// Turbo Racers -- hub. Phase 1 ships QUICK PLAY (vs ghost CPU on the test
+// Turbo Racers -- hub. Phase 1 ships QUICK PLAY (vs ghost CPU on the test
 // track). Phase 2 adds car selection + upgrades. Phase 4 adds weapons.
 //
 // Original IP -- no Mario Kart / Micro Machines names.
@@ -69,8 +69,8 @@ export default function RacingHub() {
         <button onClick={() => nav("/racing/garage")} style={primaryBtn("#a78bfa")}>
           TURBO GARAGE - 8 cars + upgrades
         </button>
-        <button disabled style={primaryBtn("#94a3b8", true)}>
-          GRAND PRIX - Phase 3 (5 tracks)
+        <button onClick={() => nav("/racing/tracks")} style={primaryBtn("#22c55e")}>
+          GRAND PRIX - 5 tracks, easy to expert
         </button>
         <button disabled style={primaryBtn("#94a3b8", true)}>
           BATTLE - Phase 4 (weapons)

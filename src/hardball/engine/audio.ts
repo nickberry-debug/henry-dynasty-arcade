@@ -223,3 +223,96 @@ export function uiClick(): void {
   osc.start();
   osc.stop(c.currentTime + 0.06);
 }
+
+
+// =====================================================================
+// PHASE 2 audio additions (walk-up jingles, K-call, win fanfare, steal)
+// =====================================================================
+
+function _tone(freq: number, type: OscillatorType, dur: number, t: number, peak = 0.18) {
+  const c = ensureCtx(); if (!c) return;
+  const osc = c.createOscillator();
+  osc.type = type;
+  osc.frequency.value = freq;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  osc.connect(g);
+  g.connect(masterGain!);
+  osc.start(t);
+  osc.stop(t + dur + 0.05);
+}
+
+export function walkUp(key: string): void {
+  const c = ensureCtx(); if (!c || muted) return;
+  const t0 = c.currentTime;
+  switch (key) {
+    case "bear_growl":
+      _tone(140, "sawtooth", 0.4, t0, 0.3);
+      _tone(100, "sawtooth", 0.5, t0 + 0.15, 0.25);
+      break;
+    case "thunder_clap": {
+      const src = c.createBufferSource();
+      src.buffer = noiseBuffer(c, 0.8);
+      const lp = c.createBiquadFilter();
+      lp.type = "lowpass"; lp.frequency.value = 250;
+      src.connect(lp);
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.4, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.8);
+      lp.connect(g); g.connect(masterGain!);
+      src.start(t0);
+      break;
+    }
+    case "wave_swell":
+      _tone(280, "sine", 0.3, t0, 0.2);
+      _tone(330, "sine", 0.3, t0 + 0.18, 0.18);
+      _tone(440, "sine", 0.4, t0 + 0.35, 0.16);
+      break;
+    case "rome_brass":
+      _tone(196, "sawtooth", 0.18, t0, 0.22);
+      _tone(262, "sawtooth", 0.18, t0 + 0.18, 0.22);
+      _tone(330, "sawtooth", 0.3, t0 + 0.36, 0.22);
+      break;
+    case "unicorn_chime":
+      _tone(659, "triangle", 0.18, t0, 0.18);
+      _tone(880, "triangle", 0.18, t0 + 0.15, 0.18);
+      _tone(1175, "triangle", 0.3, t0 + 0.3, 0.16);
+      break;
+    default:
+      organJingle();
+  }
+}
+
+export function strikeoutCall(): void {
+  const c = ensureCtx(); if (!c || muted) return;
+  const t = c.currentTime;
+  const osc = c.createOscillator();
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(180, t);
+  osc.frequency.linearRampToValueAtTime(80, t + 0.55);
+  const bp = c.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.frequency.value = 1100;
+  bp.Q.value = 8;
+  osc.connect(bp);
+  playEnv(bp, 0.55, 0.005, 0.55);
+  osc.start(t);
+  osc.stop(t + 0.6);
+}
+
+export function winFanfare(): void {
+  const c = ensureCtx(); if (!c || muted) return;
+  const t0 = c.currentTime;
+  const notes = [392, 523, 659, 784, 1047];
+  notes.forEach((freq, i) => _tone(freq, "triangle", 0.32, t0 + i * 0.12, 0.25));
+  setTimeout(() => crowdCheer(1.4), 150);
+}
+
+export function stealWhistle(): void {
+  const c = ensureCtx(); if (!c || muted) return;
+  const t = c.currentTime;
+  _tone(900, "square", 0.12, t, 0.22);
+  _tone(1300, "square", 0.12, t + 0.08, 0.22);
+}

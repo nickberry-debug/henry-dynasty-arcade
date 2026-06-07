@@ -271,3 +271,23 @@ full Phase 0 cuteness report and recommended paid-pack alternatives.
 - **Quaternius Ultimate Modular Women Pack** - bulk-only download
   (~80-150 MB est.). Skipped for the Phase 0 bandwidth budget.
 - **Mixamo** - requires Adobe login. Skipped per hard rules.
+
+
+---
+
+# Attribution — Strike Rescue assets
+
+**Status:** All Strike Rescue sprites and audio are procedurally generated on-device (canvas-drawn sprites + Web Audio synth). No third-party asset bytes are bundled. See `public/assets/strikerescue/README.md` for the rationale and the Kenney upgrade path.
+
+## Planned CC0 upgrade sources
+
+- **Kenney — Topdown Shooter Redux** — https://kenney.nl/assets/topdown-shooter-redux — CC0 1.0
+- **Kenney — Tank Pack** — https://kenney.nl/assets/tank-pack — CC0 1.0
+- **Kenney — Sci-Fi Sounds** — https://kenney.nl/assets/sci-fi-sounds — CC0 1.0
+
+All planned sources are released under **CC0 1.0 Universal** — https://creativecommons.org/publicdomain/zero/1.0/.
+
+## IP policy (binding)
+
+- **No Halo / Master Chief / Warthog IP or likeness.** Hero is an original armored visor-helmet soldier. Vehicle is an original olive-drab roll-cage military buggy with twin-MG turret.
+- **No Jackal (NES) IP.** Genre-inspired only; all enemies, bosses, and levels are original.

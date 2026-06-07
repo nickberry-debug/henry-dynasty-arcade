@@ -63,6 +63,7 @@ export function useVersusStats() {
     homersScored?: number;
     touchdownsScored?: number;
     kosScored?: number;
+    finishersScored?: number;
     pickAccuracy?: { hits: number; total: number };
   }) {
     setStats(prev => {
@@ -72,6 +73,7 @@ export function useVersusStats() {
       if (args.homersScored) next.homers += args.homersScored;
       if (args.touchdownsScored) next.touchdowns += args.touchdownsScored;
       if (args.kosScored) next.kos = (next.kos ?? 0) + args.kosScored;
+      if (args.finishersScored) next.finishers = (next.finishers ?? 0) + args.finishersScored;
       if (args.pickAccuracy) {
         next.pickAccuracyHits += args.pickAccuracy.hits;
         next.pickAccuracyTotal += args.pickAccuracy.total;
@@ -79,12 +81,16 @@ export function useVersusStats() {
       if (args.opponentProfileId) {
         if (!next.h2h[args.opponentProfileId]) {
           next.h2h[args.opponentProfileId] = {
-            baseball: { w: 0, l: 0 }, football: { w: 0, l: 0 }, boxing: { w: 0, l: 0 },
+            baseball: { w: 0, l: 0 }, football: { w: 0, l: 0 },
+            boxing: { w: 0, l: 0 }, wrestling: { w: 0, l: 0 },
           };
         }
-        // Back-fill boxing bucket if loaded from an older blob.
+        // Back-fill boxing/wrestling buckets if loaded from an older blob.
         if (!next.h2h[args.opponentProfileId].boxing) {
           next.h2h[args.opponentProfileId].boxing = { w: 0, l: 0 };
+        }
+        if (!next.h2h[args.opponentProfileId].wrestling) {
+          next.h2h[args.opponentProfileId].wrestling = { w: 0, l: 0 };
         }
         if (args.youWon) next.h2h[args.opponentProfileId][args.sport].w += 1;
         else             next.h2h[args.opponentProfileId][args.sport].l += 1;

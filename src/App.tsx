@@ -236,6 +236,8 @@ const MonsterForgeHub      = lz(() => import("./monster-forge/pages/MonsterForge
 const MonsterForgeBuilder  = lz(() => import("./monster-forge/pages/MonsterForgeBuilder"));
 const HardballHub          = lz(() => import("./hardball/pages/HardballHub"));
 const HardballMatch        = lz(() => import("./hardball/pages/HardballMatch"));
+const HardballDerby        = lz(() => import("./hardball/pages/HardballDerby"));
+const HardballBracket      = lz(() => import("./hardball/pages/HardballBracket"));
 const JRPGHub              = lz(() => import("./jrpg/pages/JRPGHub"));
 const JRPGPlay             = lz(() => import("./jrpg/pages/JRPGPlay"));
 const JRPGBattle           = lz(() => import("./jrpg/pages/JRPGBattle"));

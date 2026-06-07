@@ -5,7 +5,7 @@
 // simultaneously; boxing alternates active/passive (attacker picks
 // strike, defender picks block/dodge/clinch after a Handoff).
 
-export type Sport = "baseball" | "football" | "boxing";
+export type Sport = "baseball" | "football" | "boxing" | "wrestling";
 export type PlayMode = "passplay" | "online" | "cpu";
 export type CpuDifficulty = "easy" | "normal" | "hard";
 
@@ -160,9 +160,9 @@ export interface VersusMatch {
  *  cloudBlob so it syncs across the family devices. */
 export interface VersusStats {
   /** Matches played per sport. */
-  matches: { baseball: number; football: number; boxing: number };
+  matches: { baseball: number; football: number; boxing: number; wrestling: number };
   /** Wins per sport. */
-  wins:    { baseball: number; football: number; boxing: number };
+  wins:    { baseball: number; football: number; boxing: number; wrestling: number };
   /** Cumulative pick-accuracy hits (when batter guess matched pitch zone, etc). */
   pickAccuracyHits: number;
   pickAccuracyTotal: number;
@@ -171,23 +171,27 @@ export interface VersusStats {
   touchdowns: number;
   /** Boxing KOs scored. */
   kos: number;
+  /** Wrestling finishers landed. */
+  finishers: number;
   /** Head-to-head record vs each opponent profileId. */
   h2h: Record<string, {
-    baseball: { w: number; l: number };
-    football: { w: number; l: number };
-    boxing:   { w: number; l: number };
+    baseball:  { w: number; l: number };
+    football:  { w: number; l: number };
+    boxing:    { w: number; l: number };
+    wrestling: { w: number; l: number };
   }>;
 }
 
 export function emptyStats(): VersusStats {
   return {
-    matches: { baseball: 0, football: 0, boxing: 0 },
-    wins:    { baseball: 0, football: 0, boxing: 0 },
+    matches: { baseball: 0, football: 0, boxing: 0, wrestling: 0 },
+    wins:    { baseball: 0, football: 0, boxing: 0, wrestling: 0 },
     pickAccuracyHits: 0,
     pickAccuracyTotal: 0,
     homers: 0,
     touchdowns: 0,
     kos: 0,
+    finishers: 0,
     h2h: {},
   };
 }

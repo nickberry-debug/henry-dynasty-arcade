@@ -163,7 +163,7 @@ export default function VersusHub() {
               opponentProfileId={p.mode === "cpu" ? undefined : p.playerB?.profileId}
               profiles={profiles}
               teams={teams}
-              teamLabel={p.sport === "boxing" ? "FIGHTER" : "TEAM"}
+              teamLabel={p.sport === "boxing" ? "FIGHTER" : p.sport === "wrestling" ? "WRESTLER" : "TEAM"}
               onChange={pa => setP(s => ({ ...s, playerA: pa }))}
             />
             {p.mode === "cpu" ? (
@@ -171,7 +171,7 @@ export default function VersusHub() {
                 accent="#fbbf24"
                 chosen={p.playerB}
                 teams={teams}
-                teamLabel={p.sport === "boxing" ? "CPU FIGHTER" : "CPU OPPONENT"}
+                teamLabel={p.sport === "boxing" ? "CPU FIGHTER" : p.sport === "wrestling" ? "CPU WRESTLER" : "CPU OPPONENT"}
                 onChange={pb => setP(s => ({ ...s, playerB: pb }))}
               />
             ) : (
@@ -182,13 +182,13 @@ export default function VersusHub() {
                 opponentProfileId={p.playerA?.profileId}
                 profiles={profiles}
                 teams={teams}
-                teamLabel={p.sport === "boxing" ? "FIGHTER" : "TEAM"}
+                teamLabel={p.sport === "boxing" ? "FIGHTER" : p.sport === "wrestling" ? "WRESTLER" : "TEAM"}
                 onChange={pb => setP(s => ({ ...s, playerB: pb }))}
               />
             )}
           </>
         )}
-        {p.mode === "online" && p.sport !== "boxing" && (
+        {p.mode === "online" && p.sport !== "boxing" && p.sport !== "wrestling" && (
           <section className="rounded-2xl p-4"
             style={{ background: "rgba(134,239,172,0.06)", border: "1px solid rgba(134,239,172,0.30)" }}>
             <div className="text-[10px] tracking-[0.3em] mb-1.5" style={{ color: "#86efac" }}>NEXT STEP</div>
@@ -213,8 +213,12 @@ export default function VersusHub() {
         {!ready && p.mode !== "online" && (
           <div className="text-center text-[11px] opacity-70" style={{ color: "rgba(229,231,235,0.7)" }}>
             {p.mode === "cpu"
-              ? (p.sport === "boxing" ? "Pick your profile + fighter, then a CPU fighter." : "Pick your profile + team, then a CPU team to play against.")
-              : (p.sport === "boxing" ? "Pick a different profile + fighter for each player." : "Pick a different profile + team for each player.")}
+              ? (p.sport === "boxing" ? "Pick your profile + fighter, then a CPU fighter."
+                 : p.sport === "wrestling" ? "Pick your profile + wrestler, then a CPU wrestler."
+                 : "Pick your profile + team, then a CPU team to play against.")
+              : (p.sport === "boxing" ? "Pick a different profile + fighter for each player."
+                 : p.sport === "wrestling" ? "Pick a different profile + wrestler for each player."
+                 : "Pick a different profile + team for each player.")}
           </div>
         )}
       </main>

@@ -50,13 +50,16 @@ export default function HardballHub() {
 
       <Section title="Mode">
         <button onClick={start} style={primaryBtn("#fbbf24")}>
-          ▶ QUICK PLAY · 1P vs CPU
+          QUICK PLAY (1P vs CPU)
         </button>
-        <button disabled style={primaryBtn("#94a3b8", true)}>
-          🆚 2P PASS-DEVICE · Phase 2
+        <button onClick={() => { unlockAudio(); uiClick(); nav(`/hardball/play?away=${away}&home=${home}&innings=${innings}&p2=1`); }} style={primaryBtn("#22d3ee")}>
+          2P PASS-DEVICE
         </button>
-        <button disabled style={primaryBtn("#94a3b8", true)}>
-          🏟 HOME RUN DERBY · Phase 2
+        <button onClick={() => { unlockAudio(); uiClick(); nav(`/hardball/derby?team=${away}&pitches=10`); }} style={primaryBtn("#86efac")}>
+          HOME RUN DERBY ({away.toUpperCase()})
+        </button>
+        <button onClick={() => { unlockAudio(); uiClick(); nav(`/hardball/bracket`); }} style={primaryBtn("#fda4af")}>
+          4-TEAM TOURNAMENT
         </button>
       </Section>
 
