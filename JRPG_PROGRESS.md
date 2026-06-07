@@ -63,6 +63,32 @@
 - Backgrounds: Ansimuz "Mountain Dusk" parallax (sky / mountains / trees) — slight resolution mismatch vs battlers (battlers are ~3x larger), but reads cinematically.
 - Audio: Kenney 8-bit jingles for stinger/victory; longer looping music synthesized (Web Audio oscillator loop) for battle/town/dungeon to avoid mismatched chiptune-with-anime feel.
 
+## Phase 1 hotfix — June 2026 — battle engagement
+
+After Nick's first iPad test he could move Liora freely in the dungeon but
+never triggered a battle. Diagnosis: dungeon-room-1 spawn was at `(2, 3)` —
+one tile west of the town-exit door at `(3, 3)`. Walking right immediately
+re-triggered the exit and bounced Liora back to town **before** the per-step
+4% encounter roll could fire enough times to land a hit. Walking down was
+gated through a 5-tile-long corridor before opening up, so cumulative
+encounter probability per traversal was only ~18% — playable but easy to
+mistake for "encounters are broken".
+
+Fix shipped in this commit:
+
+- Spawn moved to `(8, 8)` in dungeon-room-1 (open chapel center, one tile
+  west of the save chime). Room-2 and room-3 spawns also re-centered.
+- Encounter rate bumped: room-1 4% → 10%, room-2/3 6% → 12%.
+- Encounter-tile check switched to center-based `Math.floor((pos + TILE/2) / TILE)`
+  so it agrees with the exit-tile check (was using left-edge `floor(pos / TILE)`
+  — off-by-one inconsistency).
+- Every per-step roll now console-logs `[AETHERSONG] step (x,y) roll=X.XXX
+  rate=Y -> BATTLE/ok` so the next "encounters broken" report can be
+  diagnosed from console alone.
+- New **DEBUG: FIGHT NOW** button in the dungeon HUD (top-right, under the
+  Sound button) force-triggers a random encounter so the battle pipeline can
+  be sanity-checked independently of the RNG.
+
 ---
 
 ## Files of record

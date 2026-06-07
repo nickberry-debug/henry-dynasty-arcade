@@ -114,21 +114,29 @@ export default function JRPGPlay() {
         loop.walkPhase = (1 - loop.walkPhase) as 0 | 1;
       }
       if (save.location !== "town") {
-        const tx = Math.floor(loop.pos.x / TILE);
-        const ty = Math.floor(loop.pos.y / TILE);
+        // Use center-of-sprite tile (same basis as the exit check below) so
+        // the encounter check and the exit check agree on "which tile am I on".
+        const tx = Math.floor((loop.pos.x + TILE / 2) / TILE);
+        const ty = Math.floor((loop.pos.y + TILE / 2) / TILE);
         const key = tx + "," + ty;
         const lastTile = (loop as unknown as { lastTile?: string }).lastTile;
         if (key !== lastTile) {
           (loop as unknown as { lastTile?: string }).lastTile = key;
           const room = DUNGEON_ROOMS[save.location as DungeonRoom["id"]];
-          if (room && Math.random() < room.encounterRate) {
-            const enemies = randomTrashEncounter();
-            save.pos = { x: tx, y: ty };
-            writeSave(save);
-            sessionStorage.setItem("aethersong_pending_battle", JSON.stringify(enemies));
-            sessionStorage.setItem("aethersong_return_location", save.location);
-            sessionStorage.setItem("aethersong_return_pos", JSON.stringify({ x: tx, y: ty }));
-            nav("/jrpg/battle");
+          if (room) {
+            const roll = Math.random();
+            // Production log: keeps a per-step heartbeat so future "no battles"
+            // reports can be diagnosed from console alone.
+            console.log("[AETHERSONG] step (" + tx + "," + ty + ") roll=" + roll.toFixed(3) + " rate=" + room.encounterRate + " -> " + (roll < room.encounterRate ? "BATTLE" : "ok"));
+            if (roll < room.encounterRate) {
+              const enemies = randomTrashEncounter();
+              save.pos = { x: tx, y: ty };
+              writeSave(save);
+              sessionStorage.setItem("aethersong_pending_battle", JSON.stringify(enemies));
+              sessionStorage.setItem("aethersong_return_location", save.location);
+              sessionStorage.setItem("aethersong_return_pos", JSON.stringify({ x: tx, y: ty }));
+              nav("/jrpg/battle");
+            }
           }
         }
       }
@@ -502,6 +510,41 @@ export default function JRPGPlay() {
 
       <button onClick={() => nav("/jrpg")} style={topRightBtnStyle(56)}>&larr; Title</button>
       <button onClick={() => { const m = !muted; setMuted(m); setMutedLocal(m); }} style={topRightBtnStyle(8)}>{muted ? "Mute" : "Sound"}</button>
+
+      {/* DEBUG: force-trigger an encounter so we can sanity-check the battle
+          pipeline independent of the RNG / step trigger. Hidden in town. */}
+      {stateRef.current && stateRef.current.location !== "town" && (
+        <button
+          onClick={() => {
+            const save = stateRef.current;
+            if (!save) return;
+            const loop = loopRef.current;
+            const tx = Math.floor((loop.pos.x + TILE / 2) / TILE);
+            const ty = Math.floor((loop.pos.y + TILE / 2) / TILE);
+            const enemies = randomTrashEncounter();
+            save.pos = { x: tx, y: ty };
+            writeSave(save);
+            sessionStorage.setItem("aethersong_pending_battle", JSON.stringify(enemies));
+            sessionStorage.setItem("aethersong_return_location", save.location);
+            sessionStorage.setItem("aethersong_return_pos", JSON.stringify({ x: tx, y: ty }));
+            console.log("[AETHERSONG] DEBUG FIGHT NOW pressed -> /jrpg/battle");
+            nav("/jrpg/battle");
+          }}
+          style={{
+            position: "fixed", top: 72, right: 8,
+            background: "rgba(120,30,30,0.85)",
+            border: "1px solid #fca5a5",
+            color: "#fee2e2",
+            padding: "4px 8px",
+            borderRadius: 4,
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            zIndex: 20,
+            letterSpacing: 0.5,
+          }}
+        >DEBUG: FIGHT NOW</button>
+      )}
 
       {toastMsg && (
         <div style={{

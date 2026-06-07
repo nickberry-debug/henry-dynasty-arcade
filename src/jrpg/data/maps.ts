@@ -158,36 +158,39 @@ export const DUNGEON_ROOMS: Record<DungeonRoom["id"], DungeonRoom> = {
   "dungeon-room-1": {
     id: "dungeon-room-1",
     w: D1[0].length, h: D1.length, tiles: D1,
-    spawn: { x: 2, y: 3 },
+    // Spawn well clear of the town-exit door at (3,3) so the player can
+    // actually explore before bouncing back. Pre-fix spawn (2,3) put Liora
+    // one tile from the exit -> any right-step kicked her to town.
+    spawn: { x: 8, y: 8 },
     saveTile: { x: 9, y: 8 },
     chest: { x: 14, y: 6, itemId: "lantern_oil", qty: 1 },
     exits: [
-      { x: 13, y: 10, to: "dungeon-room-2", spawnAt: { x: 2, y: 2 } },
+      { x: 13, y: 10, to: "dungeon-room-2", spawnAt: { x: 8, y: 8 } },
       { x: 3,  y: 3,  to: "town",           spawnAt: { x: 16, y: 22 } },
     ],
-    encounterRate: 0.04,
+    encounterRate: 0.10,
   },
   "dungeon-room-2": {
     id: "dungeon-room-2",
     w: D2[0].length, h: D2.length, tiles: D2,
-    spawn: { x: 2, y: 2 },
+    spawn: { x: 8, y: 8 },
     saveTile: { x: 14, y: 6 },
     exits: [
-      { x: 2,  y: 2, to: "dungeon-room-1", spawnAt: { x: 13, y: 10 } },
-      { x: 13, y: 9, to: "dungeon-room-3", spawnAt: { x: 2,  y: 2 } },
+      { x: 2,  y: 2, to: "dungeon-room-1", spawnAt: { x: 8, y: 8 } },
+      { x: 13, y: 9, to: "dungeon-room-3", spawnAt: { x: 8,  y: 8 } },
     ],
-    encounterRate: 0.06,
+    encounterRate: 0.12,
   },
   "dungeon-room-3": {
     id: "dungeon-room-3",
     w: D3[0].length, h: D3.length, tiles: D3,
-    spawn: { x: 2, y: 2 },
+    spawn: { x: 8, y: 8 },
     saveTile: { x: 3, y: 10 },
     exits: [
-      { x: 2,  y: 2,  to: "dungeon-room-2", spawnAt: { x: 13, y: 9 } },
-      { x: 13, y: 10, to: "dungeon-boss",   spawnAt: { x: 2,  y: 2 } },
+      { x: 2,  y: 2,  to: "dungeon-room-2", spawnAt: { x: 8, y: 8 } },
+      { x: 13, y: 10, to: "dungeon-boss",   spawnAt: { x: 8,  y: 8 } },
     ],
-    encounterRate: 0.06,
+    encounterRate: 0.12,
   },
   "dungeon-boss": {
     id: "dungeon-boss",
