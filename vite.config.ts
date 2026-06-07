@@ -17,6 +17,10 @@ export default defineConfig({
   },
   esbuild: {
     keepNames: true,
+    // ASCII-only output so emoji literals stay as \u escapes in the
+    // bundle. Prevents iOS Safari mojibake when a JS asset is served
+    // without explicit charset=utf-8 (sw cache, intermediary, etc).
+    charset: "ascii",
   },
   plugins: [
     react(),
@@ -67,6 +71,9 @@ export default defineConfig({
     terserOptions: {
       keep_fnames: true,
       keep_classnames: true,
+      // ASCII-only output so non-ASCII chars become \uXXXX escapes.
+      // Belt+suspenders with esbuild.charset for the iOS mojibake fix.
+      output: { ascii_only: true },
     },
   }
 });
