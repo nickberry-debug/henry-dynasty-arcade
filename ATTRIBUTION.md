@@ -216,3 +216,58 @@ Kenney content is CC0; attribution is provided as courtesy. See
 All car names, weapon names, track names, and characters in Turbo Racers are
 original Berry Kids' Arcade IP -- no Mario Kart, Micro Machines, or other
 third-party IP is referenced.
+
+---
+
+# Attribution - Glam Studio (3D fashion-doll stylist)
+
+**Glam Studio** (`src/glam-studio/`, route `/glam-studio` and `/classics/style`)
+ships **4 base/outfit GLB meshes** plus per-mesh preview JPGs. Everything else
+- hair, makeup, accessories, skin tints, lighting - is generated at runtime
+by Three.js code in `src/glam-studio/engine/`.
+
+## Source & License
+
+- **Author:** Quaternius (https://quaternius.com/)
+- **Mirror:** Poly Pizza (https://poly.pizza/u/Quaternius)
+- **License:** CC0 1.0 Universal (Public Domain Dedication) - https://creativecommons.org/publicdomain/zero/1.0/
+
+## Base / outfit dolls - 4 files in `public/assets/glam/base/`
+
+| File | Poly Pizza ID | Source URL | Direct GLB |
+|---|---|---|---|
+| woman_dress.glb    | zMyPlQXBzq | https://poly.pizza/m/zMyPlQXBzq | https://static.poly.pizza/a642af96-e239-4c5f-b50d-7661ff51deec.glb |
+| woman_casual.glb   | jpKRgGDxhk | https://poly.pizza/m/jpKRgGDxhk | https://static.poly.pizza/51d5abdd-bb87-4b8d-9967-21738ffb8437.glb |
+| woman_tank.glb     | XqzeZGB7iU | https://poly.pizza/m/XqzeZGB7iU | https://static.poly.pizza/9a6a3e55-23ce-4d5c-89bc-7d3f30307ed0.glb |
+| woman_animated.glb | 9kF7eTDbhO | https://poly.pizza/m/9kF7eTDbhO | https://static.poly.pizza/cf08b740-dd48-443e-9fde-6d3d54abf119.glb |
+
+Preview thumbnails (`public/assets/glam/base/previews/*.jpg`) are the
+official Poly Pizza render thumbnails for the corresponding GLB.
+
+## Procedural / generated at runtime
+
+- Hair (9 styles) - Three.js geometry primitives in
+  `src/glam-studio/engine/hair.ts`. Original work.
+- Makeup overlay - a `CanvasTexture` painted at runtime onto a
+  `PlaneGeometry` parented to the face socket. Original work.
+- Accessories (12 items) - Three.js geometry primitives in
+  `src/glam-studio/engine/accessories.ts`. Original work.
+
+## Honest cohesion / cuteness note
+
+Three of the four women (woman_dress / woman_casual / woman_tank) share an
+identical 31-bone rig, so they function as true outfit-variants on a single
+skeleton. The fourth (woman_animated) is on a different 41-bone rig and is
+kept as an animation showcase. The Quaternius style reads as
+**stylized-charming, not Barbie-cute** - see `GLAMSTUDIO_PROGRESS.md` for the
+full Phase 0 cuteness report and recommended paid-pack alternatives.
+
+## Sources evaluated and skipped
+
+- **Sketchfab "Clothing And Character Kit 1.0"** - 764k tris, too heavy.
+- **Quaternius Witch** - CC-BY 3.0, not CC0. Excluded.
+- **Kenney "Modular Characters"** - actually 2D.
+- **KayKit Adventurers** (Kay Lousberg, CC0) - fantasy theme, not fashion.
+- **Quaternius Ultimate Modular Women Pack** - bulk-only download
+  (~80-150 MB est.). Skipped for the Phase 0 bandwidth budget.
+- **Mixamo** - requires Adobe login. Skipped per hard rules.

@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "game": "glam-studio",
+  "phase": 0,
+  "approach": "hybrid-socket-attach",
+  "approachNotes": "Outfits are whole-doll GLB swaps (three Quaternius women share an identical 31-bone rig — Woman in Dress, Woman Casual, Woman in Tank Top — so swapping the GLB swaps the outfit cleanly on a shared skeleton). Hair, makeup, and accessories are planned as procedural Three.js geometry/textures attached at bbox-derived sockets (TOP, FRONT, EARS), matching the Monster Forge precedent — separable CC0 hair / clothing meshes that fit a Quaternius-style female base do not exist on Poly Pizza / Sketchfab as of the June 2026 audit. The Quaternius Ultimate Modular Women Pack (Feb 2022, CC0) has true modular parts but is not individually hosted on Poly Pizza — Phase 1 will download the full Quaternius pack (~80-150MB est.) directly from quaternius.com if Nick approves.",
+  "license": "CC0 1.0 Universal (Public Domain) for all GLBs in this manifest. See ATTRIBUTION.md.",
+  "sources": [
+    "Quaternius (https://quaternius.com/) via Poly Pizza (https://poly.pizza/u/Quaternius)"
+  ],
+  "honestyNotes": {
+    "cutenessCeiling": "stylized-charming",
+    "barbieCuteVerdict": "NOT Barbie-cute / NOT Toca-Boca-cute. Quaternius faces are simple block-shapes with painted eyes — no eyelashes, blush, or makeup detail. Bodies are chunky-stylized low-poly. Reads more like a kid-friendly Roblox/Sims character than a fashion doll.",
+    "recommendedPaidPackForBarbieCuteness": {
+      "name": "Synty POLYGON Modular Fantasy Hero Characters",
+      "url": "https://syntystore.com/products/polygon-modular-fantasy-hero-characters",
+      "price": "~$29.99 USD",
+      "tradeoff": "Cleaner modular swaps but still 'stylized' — not Toca-Boca. For true Toca-Boca cuteness, recommend Synty Sidekick Modular Characters at $199.99 (https://syntystore.com/collections/sidekick-character-packs) or commissioning custom art."
+    }
+  },
+  "parts": {
+    "base": [
+      {
+        "id": "woman_dress",
+        "label": "Doll - Dress",
+        "file": "/assets/glam/base/woman_dress.glb",
+        "preview": "/assets/glam/base/previews/woman_dress.jpg",
+        "scale": 1.0,
+        "src": "Quaternius",
+        "license": "CC0",
+        "polyPizzaId": "zMyPlQXBzq",
+        "sourceUrl": "https://poly.pizza/m/zMyPlQXBzq",
+        "downloadUrl": "https://static.poly.pizza/a642af96-e239-4c5f-b50d-7661ff51deec.glb",
+        "size": 481600,
+        "meshes": 1,
+        "primitives": 5,
+        "estTriangles": 1786,
+        "bones": 31,
+        "animations": 11,
+        "rigGroup": "quaternius-women-v1",
+        "notes": "Pink/rose dress. Shares 31-bone rig with woman_casual and woman_tank — true outfit-swap on shared skeleton."
+      },
+      {
+        "id": "woman_casual",
+        "label": "Doll - Casual",
+        "file": "/assets/glam/base/woman_casual.glb",
+        "preview": "/assets/glam/base/previews/woman_casual.jpg",
+        "scale": 1.0,
+        "src": "Quaternius",
+        "license": "CC0",
+        "polyPizzaId": "jpKRgGDxhk",
+        "sourceUrl": "https://poly.pizza/m/jpKRgGDxhk",
+        "downloadUrl": "https://static.poly.pizza/51d5abdd-bb87-4b8d-9967-21738ffb8437.glb",
+        "size": 586108,
+        "meshes": 1,
+        "primitives": 8,
+        "estTriangles": 2776,
+        "bones": 31,
+        "animations": 11,
+        "rigGroup": "quaternius-women-v1",
+        "notes": "Hoodie + pants casual look. Shares rig with woman_dress / woman_tank."
+      },
+      {
+        "id": "woman_tank",
+        "label": "Doll - Tank Top",
+        "file": "/assets/glam/base/woman_tank.glb",
+        "preview": "/assets/glam/base/previews/woman_tank.jpg",
+        "scale": 1.0,
+        "src": "Quaternius",
+        "license": "CC0",
+        "polyPizzaId": "XqzeZGB7iU",
+        "sourceUrl": "https://poly.pizza/m/XqzeZGB7iU",
+        "downloadUrl": "https://static.poly.pizza/9a6a3e55-23ce-4d5c-89bc-7d3f30307ed0.glb",
+        "size": 540404,
+        "meshes": 1,
+        "primitives": 7,
+        "estTriangles": 1983,
+        "bones": 31,
+        "animations": 11,
+        "rigGroup": "quaternius-women-v1",
+        "notes": "Tank top + shorts. Shares rig with woman_dress / woman_casual."
+      },
+      {
+        "id": "woman_animated",
+        "label": "Doll - Animated (alt rig)",
+        "file": "/assets/glam/base/woman_animated.glb",
+        "preview": "/assets/glam/base/previews/woman_animated.jpg",
+        "scale": 1.0,
+        "src": "Quaternius",
+        "license": "CC0",
+        "polyPizzaId": "9kF7eTDbhO",
+        "sourceUrl": "https://poly.pizza/m/9kF7eTDbhO",
+        "downloadUrl": "https://static.poly.pizza/cf08b740-dd48-443e-9fde-6d3d54abf119.glb",
+        "size": 1379768,
+        "meshes": 1,
+        "primitives": 1,
+        "estTriangles": 1908,
+        "bones": 41,
+        "animations": 10,
+        "rigGroup": "quaternius-women-v2",
+        "notes": "Different release / different 41-bone rig. NOT compatible with the v1 rig group above. Useful as a richer-animation showcase but cannot swap outfits with the others. Keep or drop in Phase 1."
+      }
+    ],
+    "hair": [],
+    "clothing": [],
+    "accessories": [],
+    "makeup": []
+  },
+  "phase1Plan": {
+    "ifFreeApproved": [
+      "Bulk-download Quaternius Ultimate Modular Women Pack from quaternius.com (10 chars x 4 modular parts, 24 anims) — adds ~80-150MB to public/ — Nick approval gated on bundle size impact.",
+      "Add 4-8 procedural hairstyles as Three.js BufferGeometry attached at HEAD socket (bun, ponytail, bob, long, pigtails, braids, afro, pixie).",
+      "Add 4-6 procedural accessories (glasses, hat, bow, earrings, necklace).",
+      "Makeup = Three.js material override on the face mesh (lipstick tint, blush vertex color overlay, eyeshadow texture)."
+    ],
+    "ifPaidPackPurchased": [
+      "Drop the Synty/other pack GLBs into public/assets/glam/{base,hair,clothing}/.",
+      "Migrate to the new pack's rig system (Synty uses a Mecanim Humanoid rig — well-supported by Three.js GLTFLoader).",
+      "Procedural makeup overlays still useful as a polish layer on top of pack textures."
+    ]
+  }
+}
