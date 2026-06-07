@@ -8,7 +8,7 @@ weapons (planned). Original IP, CC0 assets only.
 | 0     | Asset acquisition (Kenney top-down racing pack + audio)              | **DONE**    |
 | 1     | Driving core — physics, drift-boost, slipstream, test track, lap UI  | **DONE**    |
 | 2     | Car roster + upgrades (Turbo Garage)                                 | **DONE**    |
-| 3     | Five difficulty-scaled tracks + moving scenery + jumps               | queued      |
+| 3     | Five difficulty-scaled tracks + moving scenery + jumps               | **DONE**    |
 | 4     | Weapons (original IP) + item boxes                                   | queued      |
 | 5     | CPU racer roster with difficulty bands                               | queued      |
 | 6     | Device-to-device multiplayer (online lobby)                          | queued      |

@@ -1,4 +1,4 @@
-﻿import { useEffect, useState, lazy, Suspense } from "react";
+import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
 // Core layout + identity shell â€” kept eager because they're on the boot
