@@ -176,13 +176,18 @@ export function tintSkinnedMeshes(meshes: THREE.SkinnedMesh[], hex: string | nul
 // ── disposal ─────────────────────────────────────────────────────────
 
 export function disposeDoll(d: LoadedDoll) {
+  // IMPORTANT: do NOT dispose geometries here. SkeletonUtils.clone shares
+  // BufferGeometries by reference with the cached source GLB. Calling
+  // geometry.dispose() releases the GPU buffer that the *cache* still
+  // hands out on every subsequent loadDoll() — so swapping outfits would
+  // start rendering zombie / blank meshes. The cache holds geometries for
+  // the lifetime of the page; that's the intended ownership.
+  // Only dispose materials we explicitly cloned (tagged glamCloned).
   d.root.traverse((o) => {
     const m = o as THREE.Mesh;
-    if (m.isMesh && m.geometry) m.geometry.dispose();
     if (m.material) {
       const mats = Array.isArray(m.material) ? m.material : [m.material];
       for (const mat of mats) {
-        // Only dispose materials we cloned — otherwise we'd kill the cache.
         if ((mat as THREE.Material).userData?.glamCloned) (mat as THREE.Material).dispose();
       }
     }

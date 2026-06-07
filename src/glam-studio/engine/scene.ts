@@ -52,6 +52,17 @@ export class GlamScene {
   private currentBaseId?: string;
   private mounted = false;
 
+  // Sequence counter — every apply() bumps this and remembers its own seq.
+  // After any await inside apply(), we re-check; if a newer apply() has
+  // started, the stale call returns without mutating the scene. This
+  // prevents the "two doll roots in scene" race that produced visible
+  // stacking on iPhone (slower CPU widens the await window).
+  private applySeq = 0;
+  // All doll roots we've ever added to the scene. disposeCurrentDoll()
+  // sweeps any orphans here — belt-and-braces in case a race ever slips
+  // past the sequence guard.
+  private dollRootsInScene = new Set<THREE.Object3D>();
+
   // Camera focus mode — "full" shows the whole doll, "face" zooms in for makeup.
   private focusMode: "full" | "face" = "full";
 
@@ -142,8 +153,17 @@ export class GlamScene {
     if (this.doll) {
       this.scene.remove(this.doll.root);
       disposeDoll(this.doll);
+      this.dollRootsInScene.delete(this.doll.root);
       this.doll = undefined;
     }
+    // Defensive: nuke any orphan doll roots that may have leaked into the
+    // scene (e.g. from a pre-fix race). The dollRootsInScene set is the
+    // source of truth for every doll we've ever added.
+    for (const root of this.dollRootsInScene) {
+      this.scene.remove(root);
+    }
+    this.dollRootsInScene.clear();
+    this.currentBaseId = undefined;
   }
 
   resize() {
@@ -183,6 +203,11 @@ export class GlamScene {
 
   /** Apply a full config — loads new base GLB if base changed, otherwise patches in place. */
   async apply(cfg: GlamConfig) {
+    // Capture our seq token. If a newer apply() begins while we're awaiting
+    // anything below, the seq comparison will tell us to bail out so we
+    // never double-add a doll root to the scene.
+    const seq = ++this.applySeq;
+
     // ── Base swap ─────────────────────────────────────────────────────
     if (cfg.baseId !== this.currentBaseId) {
       const def = BASE_DOLLS.find(d => d.id === cfg.baseId) ?? BASE_DOLLS[0];
@@ -190,7 +215,16 @@ export class GlamScene {
       let loaded: LoadedDoll;
       try { loaded = await loadDoll(def.file); }
       catch (e) { console.error("[glam] loadDoll failed for", def.file, e); return; }
+      // If a newer apply() came in while we awaited loadDoll, drop this
+      // stale clone. Without this guard, two concurrent apply() calls each
+      // add a cloned doll root to the scene — visible stacking on iPhone
+      // (slower CPU + WebGL widens the race window).
+      if (seq !== this.applySeq) return;
+      if (!this.mounted) return;
+      // Belt-and-braces: nuke any orphan that slipped in during the race.
+      this.disposeCurrentDoll();
       this.doll = loaded;
+      this.dollRootsInScene.add(loaded.root);
       // Quaternius women face -Z by default — rotate the doll 180° so her
       // face is on +Z (toward the camera). Without this we see her back
       // with the makeup overlay floating in front like a Cheshire cat face
@@ -207,6 +241,9 @@ export class GlamScene {
       this.currentBaseId = cfg.baseId;
     }
     if (!this.doll) return;
+    // After this point we're synchronous — hair / accessory / makeup
+    // blocks all dispose-then-replace atomically. No further race window
+    // within a single apply() invocation.
 
     // ── Skin tint ─────────────────────────────────────────────────────
     const skinHex = cfg.skinTint === "none" ? null : hexById(SKIN_TINTS, cfg.skinTint);
