@@ -2,7 +2,7 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-06 (Phase 5 shipped — XP + level-ups + ability picks + meta progression + class-select hotfix, commit `3be1a5c`)
+**Last updated:** 2026-06-07 (Phase 6 shipped — bosses every 5th floor: Iron Tyrant / Hexblade / Hollowmage, commit `27d9243`; preceded by camera dial-back hotfix commit `fdce58b`)
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
 
 ---
@@ -156,7 +156,7 @@
 
 When you re-fire "continue the dungeon roadmap":
 1. Read this file.
-2. **Awaiting Nick's pick: Phase 6 (bosses) OR Phase 1c (themed biomes by depth) OR Phase 7 (final polish) — Phase 5 (XP + level-ups + abilities + meta progression) shipped 2026-06-06 commit `3be1a5c`.** Bot should ASK before starting; don't auto-roll.
+2. **Awaiting Nick's pick: Phase 1c (themed biomes by depth) OR Phase 7 (final polish) — Phase 6 (bosses every 5th floor — Iron Tyrant / Hexblade / Hollowmage) shipped 2026-06-07 commit `27d9243`. Camera dial-back hotfix shipped earlier in `fdce58b` (frustum 22, portrait 1.25×, LOOKAT_Z_OFFSET=0).** Bot should ASK before starting; don't auto-roll.
 3. Otherwise resume at the first ❌ item.
 4. Complete & verify it. Update this file.
 5. Advance through as many items as you can cleanly. STOP at a completed phase boundary if you run out of runway.
@@ -341,3 +341,53 @@ When you re-fire "continue the dungeon roadmap":
   - Multi-level-up queueing UX (more than 1 level in a single frame) currently re-rolls choices on each resolution; could be smoother.
   - No HUD indicator for currently-active abilities (player has to remember what they picked).
 
+
+
+## Phase 6 session notes (2026-06-07)
+
+Phase 6 (bosses every 5th floor) shipped 2026-06-07 commit `27d9243`, deployed at https://henry-dynasty.vercel.app/dungeon3d/run (BUILD_STAMP `2026-06-07T00:30:00Z`, vercel `dpl_2Th6nS8eHNB9sLzJ7h6mhKJgiM4f` READY). Camera dial-back hotfix landed first in commit `fdce58b` (frustum base 22 / portrait 1.25× ≈ 27.5 effective, `LOOKAT_Z_OFFSET = 0` so the character renders dead-center).
+
+### What landed (engine.ts)
+- `FloorKind = "normal" | "boss"` on `DungeonLevel`. Boss floors detected via `depth > 0 && depth % 5 === 0` and routed through new `genBossLevel(depth)` — single 10×10 floor rectangle centered in the grid (40×40 world units), stairs in center.
+- `BossKind = "iron_tyrant" | "hexblade" | "hollowmage"`. `BOSS_DEFS` records model URL (character-p / character-k / character-e), scale (2.5 / 2.0 / 2.0), baseHp (2000 / 1500 / 1200), speed (4.5 / 7.5 / 3.5), tint, optional emissive (violet on Hollowmage).
+- `bossKindForDepth(depth)` cycles tyrant→hexblade→hollowmage by `((depth/5)-1) % 3`. `bossFloorIdx(depth, kind)` returns the per-kind repeat count for HP scaling: `maxHp = round(baseHp * (1 + floorIdx * 0.6))`.
+- `Telegraph` interface with `shape: "circle" | "ring"`, `delay` countdown, `ttl` lifetime, `dmg`, `color`, `source` discriminator. Spawns added to `g.telegraphs`; resolved each frame in `_stepBoss`.
+- `Boss` interface tracks kind, phase (1/2/3), hp/maxHp, speed, x/z/facing, flashT, attackCd, floorIdx, hexblade teleport state (`tpT` / `tpHidden`), hollowmage black-hole state (`blackHoleT` / `X` / `Z`), shadow-clone ids.
+- `Game` gained `boss`, `telegraphs`, `bossBannerT`, `bossPhaseToastT`, `bossPhaseToastN`, `bossDefeated`.
+- `spawnBossIfNeeded(g)` runs at the end of `newGame` and `descendLevel` — sets the boss, freezes engine via `bossBannerT = 1.2`.
+- `_stepBoss(g, dt)` per-frame: HP-threshold phase transitions (66% / 33%) with toast trigger; per-kind movement + ability cadence; telegraph resolution loop (continuous-expand for tyrant shockwave, delay-countdown hit-test for circles); death payout via `_bossDeathRewards` (legendary loot, 200×depth XP, +100 shards, slow-mo, coin shower).
+- `step()` hooks: boss banner pause at the very top, melee-on-boss damage in the attack-press block, dash-on-boss damage in the warrior dash block, projectile-on-boss damage at the start of the projectile loop, `_stepBoss(g, dt)` call after enemy filter, stairs descent gated on `g.boss === null`.
+
+### Per-boss behavior
+- **Iron Tyrant** — P1 slam (0.8s telegraph, 3.5u AoE, 25 dmg) every 4s. P2 (≤66%) replaces slam with shockwave ring radiating from boss at 6 u/s (30 dmg). P3 (≤33%) speed + cadence × 1.5, shockwaves also chain a slam.
+- **Hexblade** — P1 dash + 1.7u slash cone (22 dmg) every 1.4s. P2 (≤66%) teleports behind the player on 7s cycle (`tpHidden = true`, `tpT = 0.8`, then reappear at `p - facing * 1.6` and slash). P3 (≤33%) summons up to 2 shadow clones (1 HP scout-kind enemies); cloneIds list refills as they die, capped at 2 simultaneous.
+- **Hollowmage** — P1 fans 5 slow homing-ish orbs (18 dmg each) every 5s — they're player projectiles with smaller radius. P2 (≤66%) meteor on player's current position with 1.2s telegraph (40 dmg, 2u radius). P3 (≤33%) drops a black-hole at arena center for 3s — pulls player at 2.5 u/s, ticks 6 dmg/sec while inside.
+
+### What landed (Dungeon3DRun.tsx)
+- Imports add `BOSS_DEFS` + `Boss` / `BossKind` / `Telegraph` types.
+- `threeRef` gains `bossObj` / `bossMixer` / `telegraphObjs` (id-keyed mesh map).
+- Initial setup loads the boss GLB (from `BOSS_DEFS[kind].modelUrl`) at `0.9 * scale`, applies optional emissive (Hollowmage).
+- `rebuildLevel` drops the previous-floor boss mesh + every telegraph mesh on descend, then loads the next floor's boss if `nextGame.boss`.
+- Per-frame loop: boss mesh position/rotation/visibility (hidden during hexblade teleport), animation mixer tick, hit-flash via emissive swap (`0xff5050` while `flashT > 0`, restore on release).
+- Telegraph meshes: `CircleGeometry` or `RingGeometry` with additive material, ID-keyed in `telegraphObjs`; geometry rebuilt each frame for expanding rings (Tyrant shockwave); opacity pulses with delay fraction.
+- HUD overlays inside `<main>`: boss HP bar pinned top-center (color per kind, phase markers at 66% / 33% with `PHASE n / 3` caption); large boss-name banner (~38% screen height) while `bossBannerT > 0`; phase-transition toast (`BOSS PHASE 2 / 3`) below banner while `bossPhaseToastT > 0`.
+- BUILD_STAMP bumped to `2026-06-07T00:30:00Z` with marker `PHASE6_BOSSES`.
+
+### Test path
+1. Open https://henry-dynasty.vercel.app/dungeon3d/run on iPhone (or any device).
+2. Pick a class (Warrior / Ranger / Mage).
+3. Push floor 1 → 2 → 3 → 4 → 5. Floor 5 should drop you into the 10×10 arena, freeze for 1.2s while "THE IRON TYRANT" banner shows, then start the fight. HP bar at top, watch for 66% / 33% phase markers + `BOSS PHASE 2/3` toasts. Beat him — guaranteed legendary appears next to the corpse, +200×5 = 1000 XP, +100 shards in the stash, brief slow-mo. Stairs in center now usable.
+4. Push to floor 10 → Hexblade. Verify the P2 teleport actually relocates the model behind the player after the 0.8s blink. P3 should spawn 1-HP shadow clones.
+5. Floor 15 → Hollowmage. Confirm violet emissive, P2 meteor telegraph at your spawn position, P3 black hole pulls you toward center.
+
+### Camera hotfix bundled before Phase 6 (commit `fdce58b`)
+- `camTuningRef.current.d = portrait ? 22 * 1.25 : 22` (was `28 * 1.35 : 28`) — ≈27.5 effective in portrait, roughly 2× the original 14 from before the zoom-out experiment.
+- `camTuningRef.current.lookAtZ = 0` (was `portrait ? 3.0 : 1.5`) — player renders at the geometric center of the viewport.
+- BUILD_STAMP marker `HOTFIX_CAMERA_DIAL_BACK` (`2026-06-06T23:58:00Z`).
+
+### Still TODO / known caveats
+- Hollowmage P1 orbs are projectile-style straight-line, not true homing — they fan out from the boss in 5 angles. True homing would need a per-projectile target ref and a small turn-rate field. Acceptable v1.
+- Hexblade clones are scout-kind with 1 HP and inherit normal enemy XP per kill; their damage doesn't differ from a normal scout (engine just uses `ENEMY_DAMAGE`). Spec called for "half damage" — a follow-up could add `Enemy.dmgMult` to honor that.
+- No boss music / SFX yet (Phase 7).
+- No per-boss kill record persisted in run stats — could add to `runEnd` summary.
+- Black-hole telegraph uses a static circle mesh; could be juicier with a swirl shader.
