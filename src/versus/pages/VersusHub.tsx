@@ -8,6 +8,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Users } from "lucide-react";
 import type { Sport, PlayMode, VersusPlayer, CpuDifficulty } from "../types";
 import { BASEBALL_TEAMS, FOOTBALL_TEAMS } from "../teams";
+import { BOXING_FIGHTERS } from "../boxers";
 import { useProfiles } from "../../profiles/store";
 
 interface Pending {
@@ -28,8 +29,12 @@ export default function VersusHub() {
   const { profiles } = useProfiles();
   const [p, setP] = useState<Pending>({ sport: "baseball", mode: "passplay", innings: 3, quarters: 2, pickTimerSec: 0, cpuDifficulty: "normal" });
 
-  const teams = p.sport === "baseball" ? BASEBALL_TEAMS : FOOTBALL_TEAMS;
-  const accent = p.sport === "baseball" ? "#fbbf24" : "#FFB81C";
+  const teams = p.sport === "baseball" ? BASEBALL_TEAMS
+              : p.sport === "football" ? FOOTBALL_TEAMS
+              : BOXING_FIGHTERS;
+  const accent = p.sport === "baseball" ? "#fbbf24"
+               : p.sport === "football" ? "#FFB81C"
+               : "#f87171";
 
   const ready = p.mode === "online" || (p.mode === "cpu"
     ? !!p.playerA && !!p.playerA.teamId && !!p.playerB && !!p.playerB.teamId
@@ -37,6 +42,8 @@ export default function VersusHub() {
 
   function start() {
     if (p.mode === "online") {
+      // Boxing online not implemented this iteration — pass-play / vs CPU only.
+      if (p.sport === "boxing") return;
       navigate("/versus/online");
       return;
     }
@@ -44,7 +51,10 @@ export default function VersusHub() {
     // Pass & Play and vs-CPU both go through the local game pages,
     // reading the setup blob from sessionStorage.
     try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(p)); } catch { /* ignore */ }
-    navigate(p.sport === "baseball" ? "/versus/baseball" : "/versus/football");
+    const route = p.sport === "baseball" ? "/versus/baseball"
+                : p.sport === "football" ? "/versus/football"
+                : "/versus/boxing";
+    navigate(route);
   }
 
   return (
@@ -69,13 +79,16 @@ export default function VersusHub() {
       <main className="flex-1 px-4 pb-8 max-w-3xl mx-auto w-full space-y-4">
         {/* Sport */}
         <Section title="SPORT" accent={accent}>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <PickButton selected={p.sport === "baseball"} accent="#fbbf24" emoji="⚾"
               label="BASEBALL" sub="Batter vs Pitcher"
               onClick={() => setP(s => ({ ...s, sport: "baseball" }))} />
             <PickButton selected={p.sport === "football"} accent="#FFB81C" emoji="🏈"
               label="FOOTBALL" sub="Tecmo play-calling"
               onClick={() => setP(s => ({ ...s, sport: "football" }))} />
+            <PickButton selected={p.sport === "boxing"} accent="#f87171" emoji="🥊"
+              label="BOXING" sub="3 rounds · KO or judges"
+              onClick={() => setP(s => ({ ...s, sport: "boxing", mode: s.mode === "online" ? "passplay" : s.mode }))} />
           </div>
         </Section>
 
@@ -89,7 +102,8 @@ export default function VersusHub() {
               label="VS CPU" sub="Adaptive AI"
               onClick={() => setP(s => ({ ...s, mode: "cpu" }))} />
             <PickButton selected={p.mode === "online"} accent="#86efac" emoji="🌐"
-              label="ONLINE" sub="Two devices"
+              label="ONLINE" sub={p.sport === "boxing" ? "Coming soon" : "Two devices"}
+              disabled={p.sport === "boxing"}
               onClick={() => setP(s => ({ ...s, mode: "online" }))} />
           </div>
         </Section>
@@ -109,8 +123,9 @@ export default function VersusHub() {
           </Section>
         )}
 
-        {/* Match length */}
-        {(p.mode === "passplay" || p.mode === "cpu") && (
+        {/* Match length — baseball uses innings, football uses quarters,
+            boxing is fixed at 3 rounds (engine const). */}
+        {(p.mode === "passplay" || p.mode === "cpu") && p.sport !== "boxing" && (
           <Section title={p.sport === "baseball" ? "INNINGS" : "QUARTERS"} accent={accent}>
             <div className="grid grid-cols-3 gap-2">
               {(p.sport === "baseball" ? [3, 5, 9] : [1, 2, 4]).map(n => {
@@ -148,6 +163,7 @@ export default function VersusHub() {
               opponentProfileId={p.mode === "cpu" ? undefined : p.playerB?.profileId}
               profiles={profiles}
               teams={teams}
+              teamLabel={p.sport === "boxing" ? "FIGHTER" : "TEAM"}
               onChange={pa => setP(s => ({ ...s, playerA: pa }))}
             />
             {p.mode === "cpu" ? (
@@ -155,6 +171,7 @@ export default function VersusHub() {
                 accent="#fbbf24"
                 chosen={p.playerB}
                 teams={teams}
+                teamLabel={p.sport === "boxing" ? "CPU FIGHTER" : "CPU OPPONENT"}
                 onChange={pb => setP(s => ({ ...s, playerB: pb }))}
               />
             ) : (
@@ -165,12 +182,13 @@ export default function VersusHub() {
                 opponentProfileId={p.playerA?.profileId}
                 profiles={profiles}
                 teams={teams}
+                teamLabel={p.sport === "boxing" ? "FIGHTER" : "TEAM"}
                 onChange={pb => setP(s => ({ ...s, playerB: pb }))}
               />
             )}
           </>
         )}
-        {p.mode === "online" && (
+        {p.mode === "online" && p.sport !== "boxing" && (
           <section className="rounded-2xl p-4"
             style={{ background: "rgba(134,239,172,0.06)", border: "1px solid rgba(134,239,172,0.30)" }}>
             <div className="text-[10px] tracking-[0.3em] mb-1.5" style={{ color: "#86efac" }}>NEXT STEP</div>
@@ -194,7 +212,9 @@ export default function VersusHub() {
 
         {!ready && p.mode !== "online" && (
           <div className="text-center text-[11px] opacity-70" style={{ color: "rgba(229,231,235,0.7)" }}>
-            {p.mode === "cpu" ? "Pick your profile + team, then a CPU team to play against." : "Pick a different profile + team for each player."}
+            {p.mode === "cpu"
+              ? (p.sport === "boxing" ? "Pick your profile + fighter, then a CPU fighter." : "Pick your profile + team, then a CPU team to play against.")
+              : (p.sport === "boxing" ? "Pick a different profile + fighter for each player." : "Pick a different profile + team for each player.")}
           </div>
         )}
       </main>
@@ -244,10 +264,12 @@ interface PlayerPickerProps {
   opponentProfileId?: string;
   profiles: { id: string; handle: string; name: string; color: string }[];
   teams: { id: string; name: string; emoji: string; primary: string; abbr: string }[];
+  /** Defaults to "TEAM"; boxing passes "FIGHTER". */
+  teamLabel?: string;
   onChange: (p: VersusPlayer | undefined) => void;
 }
 
-function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, teams, onChange }: PlayerPickerProps) {
+function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, teams, teamLabel, onChange }: PlayerPickerProps) {
   function setProfile(profileId: string) {
     const prof = profiles.find(p => p.id === profileId);
     if (!prof) return;
@@ -270,7 +292,7 @@ function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, 
           : "rgba(255,255,255,0.04)",
         border: `1.5px solid ${chosen ? accent : "rgba(255,255,255,0.12)"}`,
       }}>
-      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: accent }}>{label}</div>
+      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: accent }}>{label}{teamLabel ? ` · ${teamLabel}` : ""}</div>
       <div className="flex gap-1.5 flex-wrap mb-2">
         {profiles.map(p => {
           const sel = chosen?.profileId === p.id;
@@ -316,10 +338,11 @@ function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, 
   );
 }
 
-function CpuTeamPicker({ accent, chosen, teams, onChange }: {
+function CpuTeamPicker({ accent, chosen, teams, teamLabel, onChange }: {
   accent: string;
   chosen?: VersusPlayer;
   teams: { id: string; name: string; emoji: string; primary: string; abbr: string }[];
+  teamLabel?: string;
   onChange: (p: VersusPlayer | undefined) => void;
 }) {
   function setTeam(teamId: string) {
@@ -333,7 +356,7 @@ function CpuTeamPicker({ accent, chosen, teams, onChange }: {
           : "rgba(255,255,255,0.04)",
         border: `1.5px solid ${chosen ? accent : "rgba(255,255,255,0.12)"}`,
       }}>
-      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: accent }}>CPU OPPONENT</div>
+      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: accent }}>{teamLabel ?? "CPU OPPONENT"}</div>
       <div className="flex items-center gap-2 mb-2">
         <div className="text-2xl">🤖</div>
         <div>

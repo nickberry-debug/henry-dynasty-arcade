@@ -1,10 +1,11 @@
-﻿// Sports Versus Mode â€” shared types.
+// Sports Versus Mode — shared types.
 //
-// Two sports (baseball / football), two play modes (passplay / online),
-// one shared simultaneous-selection loop: each side locks in privately
-// â†’ both reveals â†’ engine resolves â†’ repeat.
+// Three sports (baseball / football / boxing), three play modes
+// (passplay / online / cpu). Baseball and football reveal both picks
+// simultaneously; boxing alternates active/passive (attacker picks
+// strike, defender picks block/dodge/clinch after a Handoff).
 
-export type Sport = "baseball" | "football";
+export type Sport = "baseball" | "football" | "boxing";
 export type PlayMode = "passplay" | "online" | "cpu";
 export type CpuDifficulty = "easy" | "normal" | "hard";
 
@@ -17,7 +18,8 @@ export interface VersusPlayer {
   profileId: string;
   profileName: string;
   profileColor: string;
-  /** Which sport team the player picked for this match. */
+  /** Which sport team the player picked for this match. For boxing this
+   *  stores the boxer's id (see src/combat-sports/boxing/fighters.ts). */
   teamId: string;
 }
 
@@ -26,14 +28,14 @@ export type VersusPhase =
   | "setup"     // selecting teams / mode / players
   | "pickA"     // Player A's hidden pick UI (B sees handoff in passplay)
   | "pickB"     // Player B's hidden pick UI (A sees handoff in passplay)
-  | "reveal"    // both locked â€” flip the cards
+  | "reveal"    // both locked — flip the cards
   | "resolve"   // animation + scoring
   | "between"   // brief pause / scoreboard update before next play
-  | "done";     // match over â†’ winner screen
+  | "done";     // match over → winner screen
 
-// â”€â”€ BASEBALL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── BASEBALL ──────────────────────────────────────────────────────────
 
-/** 5-zone strike zone â€” simpler than 3x3 for kid play but still tactical. */
+/** 5-zone strike zone — simpler than 3x3 for kid play but still tactical. */
 export type PitchZone = "high" | "low" | "in" | "out" | "middle";
 export type PitchType = "fastball" | "curve" | "changeup" | "slider";
 export type BatType = "contact" | "balanced" | "power";
@@ -51,7 +53,7 @@ export interface BatterPick {
   swing: SwingChoice;
   /** Which zone the batter is sitting on. Ignored when swing === "take". */
   guess: PitchZone;
-  /** Bat type chosen pre-match â€” stays constant for the half-inning. */
+  /** Bat type chosen pre-match — stays constant for the half-inning. */
   bat: BatType;
 }
 
@@ -85,7 +87,7 @@ export interface BaseballState {
   innings: number;          // total innings to play
 }
 
-// â”€â”€ FOOTBALL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── FOOTBALL ──────────────────────────────────────────────────────────
 
 export type OffensePlay =
   | "run_inside" | "run_outside"
@@ -130,7 +132,7 @@ export interface FootballState {
   lastEvent?: string;
 }
 
-// â”€â”€ MATCH WRAPPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── MATCH WRAPPER ─────────────────────────────────────────────────────
 
 export interface VersusMatch {
   id: string;
@@ -152,33 +154,40 @@ export interface VersusMatch {
   log: string[];
 }
 
-// â”€â”€ STATS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── STATS ─────────────────────────────────────────────────────────────
 
 /** Per-profile Versus stats blob. Stored at `versus_stats_v1` via
  *  cloudBlob so it syncs across the family devices. */
 export interface VersusStats {
   /** Matches played per sport. */
-  matches: { baseball: number; football: number };
+  matches: { baseball: number; football: number; boxing: number };
   /** Wins per sport. */
-  wins:    { baseball: number; football: number };
+  wins:    { baseball: number; football: number; boxing: number };
   /** Cumulative pick-accuracy hits (when batter guess matched pitch zone, etc). */
   pickAccuracyHits: number;
   pickAccuracyTotal: number;
   /** Big play counts. */
   homers: number;
   touchdowns: number;
+  /** Boxing KOs scored. */
+  kos: number;
   /** Head-to-head record vs each opponent profileId. */
-  h2h: Record<string, { baseball: { w: number; l: number }; football: { w: number; l: number } }>;
+  h2h: Record<string, {
+    baseball: { w: number; l: number };
+    football: { w: number; l: number };
+    boxing:   { w: number; l: number };
+  }>;
 }
 
 export function emptyStats(): VersusStats {
   return {
-    matches: { baseball: 0, football: 0 },
-    wins:    { baseball: 0, football: 0 },
+    matches: { baseball: 0, football: 0, boxing: 0 },
+    wins:    { baseball: 0, football: 0, boxing: 0 },
     pickAccuracyHits: 0,
     pickAccuracyTotal: 0,
     homers: 0,
     touchdowns: 0,
+    kos: 0,
     h2h: {},
   };
 }
