@@ -10,48 +10,50 @@
 //   2. Compute named sockets from the bbox (TOP_OF_HEAD, BACK, REAR, FRONT).
 //   3. Accessories are procedural Three.js Group meshes generated at runtime
 //      (horns, wings, tails, spikes, eyes). They mount at sockets as
-//      children of the body root, so they follow the body's transform if the
-//      monster scales or moves but DON'T animate with the rig (Phase 3 will
-//      address rig-aware attachment via SkinnedMesh bone targeting).
+//      children of the body root.
 //
-// What this gives us:
-//   - Real animated bodies that look great immediately.
-//   - Massive accessory variety (5*4*4*4*4*6*9 = 138,240 combos with 18 bodies
-//     = 2.5M unique monsters).
-//   - Live swap: change any part and the scene rebuilds in <30 ms.
-//   - No fake placeholder geometry: every body is an authored asset.
+// Phase 3: cache *both* scene and AnimationClips, clone via SkeletonUtils
+// so skinned meshes survive the clone, and play any baked idle clip the
+// body GLB ships with. Procedural body-type idle layers on top.
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import type { MonsterConfig, Manifest, ColorPart } from "./partsManifest";
+import { clone as skClone } from "three/examples/jsm/utils/SkeletonUtils.js";
+import type { MonsterConfig, Manifest, ColorPart, BodyType } from "./partsManifest";
 
 // ── GLTF cache ─────────────────────────────────────────────────────────
-// Re-loading a 500kb GLB on every part swap would feel laggy. Cache by URL.
 
-const _glbCache = new Map<string, Promise<THREE.Group>>();
+interface CachedGLB {
+  scene: THREE.Group;
+  animations: THREE.AnimationClip[];
+}
+
+const _glbCache = new Map<string, Promise<CachedGLB>>();
 const _loader = new GLTFLoader();
 
-function loadGLB(url: string): Promise<THREE.Group> {
+function _loadGLBRaw(url: string): Promise<CachedGLB> {
   let p = _glbCache.get(url);
   if (!p) {
-    p = new Promise<THREE.Group>((resolve, reject) => {
+    p = new Promise<CachedGLB>((resolve, reject) => {
       _loader.load(
         url,
-        (gltf) => resolve(gltf.scene),
+        (gltf) => resolve({ scene: gltf.scene, animations: gltf.animations ?? [] }),
         undefined,
         (err) => reject(err),
       );
     });
     _glbCache.set(url, p);
   }
-  // Return a *clone* of the cached scene so multiple builders can mount
-  // the same body without sharing transforms.
-  return p.then((scene) => scene.clone(true));
+  return p;
+}
+
+async function loadGLB(url: string): Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }> {
+  const cached = await _loadGLBRaw(url);
+  const cloned = skClone(cached.scene) as THREE.Group;
+  return { scene: cloned, animations: cached.animations };
 }
 
 // ── Color tint helper ──────────────────────────────────────────────────
-// Tints every MeshStandardMaterial in the body to the chosen swatch by
-// mixing the original color toward the swatch in HSL (preserves shading).
 
 function tintMonster(root: THREE.Object3D, hex: string | null) {
   if (!hex) return;
@@ -62,7 +64,6 @@ function tintMonster(root: THREE.Object3D, hex: string | null) {
     const apply = (mat: THREE.Material) => {
       const std = mat as THREE.MeshStandardMaterial;
       if (std.color) {
-        // Mix 65% toward target color so original shading still reads.
         std.color.lerp(target, 0.65);
         std.needsUpdate = true;
       }
@@ -72,9 +73,6 @@ function tintMonster(root: THREE.Object3D, hex: string | null) {
 }
 
 // ── Procedural accessory builders ──────────────────────────────────────
-//
-// All accessories return a Group anchored at (0,0,0). The caller positions
-// the group at a socket on the body.
 
 const ACCENT = new THREE.MeshStandardMaterial({
   color: 0x2c1810, roughness: 0.6, metalness: 0.1,
@@ -96,7 +94,6 @@ const GLOW = new THREE.MeshStandardMaterial({
   emissive: 0xffc107, emissiveIntensity: 1.5,
 });
 
-// horn: thin tapered cone, slight bend
 function hornMesh(material: THREE.Material, height = 0.5, radius = 0.08): THREE.Mesh {
   const g = new THREE.ConeGeometry(radius, height, 12, 1);
   g.translate(0, height / 2, 0);
@@ -113,7 +110,6 @@ export function buildHorns(id: string, bodyHeight: number): THREE.Group {
       break;
     }
     case "ram": {
-      // Two curved horns approximated as 3 cones stacked.
       for (const side of [-1, 1]) {
         const grp = new THREE.Group();
         for (let i = 0; i < 3; i++) {
@@ -147,12 +143,12 @@ export function buildHorns(id: string, bodyHeight: number): THREE.Group {
 
 export function buildWings(id: string, bodyHeight: number, bodyWidth: number): THREE.Group {
   const g = new THREE.Group();
+  g.name = "wing";
   if (id === "none") return g;
   const span = bodyHeight * 0.9;
   void bodyWidth;
   switch (id) {
     case "bat": {
-      // Triangle shape using ShapeGeometry, scalloped via 4 vertices.
       const shape = new THREE.Shape();
       shape.moveTo(0, 0);
       shape.lineTo(span, 0.2 * span);
@@ -197,7 +193,6 @@ export function buildWings(id: string, bodyHeight: number, bodyWidth: number): T
       break;
     }
     case "dragon": {
-      // Larger, scalier — wider ShapeGeometry with double-stack.
       const shape = new THREE.Shape();
       shape.moveTo(0, 0);
       shape.lineTo(span * 1.2, span * 0.3);
@@ -319,7 +314,6 @@ export function buildEyes(id: string, bodyHeight: number): THREE.Group {
       const l = eyeBall(EYE_WHITE); l.position.set(-r * 1.4, 0, r); l.rotation.z =  0.4;
       const rt = eyeBall(EYE_WHITE); rt.position.set( r * 1.4, 0, r); rt.rotation.z = -0.4;
       g.add(l, rt);
-      // Angry brow bars
       for (const side of [-1, 1]) {
         const brow = new THREE.Mesh(new THREE.BoxGeometry(r * 1.6, r * 0.3, r * 0.2), ACCENT);
         brow.position.set(side * r * 1.4, r * 1.1, r);
@@ -360,6 +354,12 @@ export interface AssembledMonster {
   bbox: THREE.Box3;
   /** Animation mixer if the body has clips. Caller must update it each frame. */
   mixer: THREE.AnimationMixer | null;
+  /** Phase 3 — body animation clips. */
+  animations: THREE.AnimationClip[];
+  /** Phase 3 — body archetype, drives procedural idle when no baked clip. */
+  bodyType: BodyType;
+  bodyHeight: number;
+  bodyWidth: number;
 }
 
 export async function assembleMonster(
@@ -373,11 +373,10 @@ export async function assembleMonster(
   const root = new THREE.Group();
   root.name = "monster-root";
 
-  // 1) Body
-  const body = await loadGLB(bodyDef.file);
+  // 1) Body — SkeletonUtils.clone so skinned meshes survive
+  const { scene: body, animations } = await loadGLB(bodyDef.file);
   body.name = "body";
   body.scale.setScalar(bodyDef.scale);
-  // Enable shadows for every mesh in the body.
   body.traverse(o => { if ((o as THREE.Mesh).isMesh) {
     (o as THREE.Mesh).castShadow = true;
     (o as THREE.Mesh).receiveShadow = true;
@@ -387,25 +386,21 @@ export async function assembleMonster(
   if (colorDef?.hex) tintMonster(body, colorDef.hex);
   root.add(body);
 
-  // 3) Measure bbox for sockets (after body added so world matrix updates)
+  // 3) Measure bbox for sockets
   body.updateMatrixWorld(true);
   const bbox = new THREE.Box3().setFromObject(body);
   const size = new THREE.Vector3(); bbox.getSize(size);
   const center = new THREE.Vector3(); bbox.getCenter(center);
   const bodyHeight = Math.max(size.y, 0.5);
 
-  // Normalize: scale so the body stands roughly 1.6 units tall (player POV
-  // is comfortable). Smaller monsters scale up, giants scale down.
   const targetHeight = 1.6;
   const scale = targetHeight / bodyHeight;
   body.scale.multiplyScalar(scale);
-  // Re-measure after scale, so sockets are correct.
   body.updateMatrixWorld(true);
   bbox.setFromObject(body);
   bbox.getSize(size);
   bbox.getCenter(center);
 
-  // Drop monster's feet onto y=0 so it stands on the ground plane.
   body.position.y -= bbox.min.y;
   body.updateMatrixWorld(true);
   bbox.setFromObject(body);
@@ -419,16 +414,16 @@ export async function assembleMonster(
   const frontZ  = bbox.max.z;
   const bodyMidZ = center.z;
 
-  // 5) Head overlay (GLB) — sits on top of body
+  // 5) Head overlay
   if (headDef && headDef.kind === "glb" && headDef.file) {
-    const hover = await loadGLB(headDef.file);
+    const { scene: hover } = await loadGLB(headDef.file);
     hover.scale.setScalar((headDef.scale ?? 0.5) * scale);
     hover.position.set(center.x, topY + 0.05, bodyMidZ);
     hover.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
     root.add(hover);
   }
 
-  // 6) Procedural accessories — anchored at body sockets
+  // 6) Procedural accessories
   const horns = buildHorns(cfg.horns, size.y);
   horns.position.set(center.x, topY, bodyMidZ);
   horns.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
@@ -454,12 +449,22 @@ export async function assembleMonster(
   eyes.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
   root.add(eyes);
 
-  // 7) Animation mixer (idle if any clip)
-  const mixer: THREE.AnimationMixer | null = null;
-  // We loaded body via clone, but mixerCompatible clips live on the cached
-  // source. For Phase 1 we don't animate the clone — the player sees the
-  // monster in a static pose. (Phase 3 hooks idle animations.)
-  return { root, bodyClone: body, bbox, mixer };
+  // 7) Animation mixer — Phase 3: play baked idle clip if available
+  let mixer: THREE.AnimationMixer | null = null;
+  if (animations.length > 0) {
+    mixer = new THREE.AnimationMixer(body);
+    const idle = animations.find(c => /idle|rest|stand/i.test(c.name)) ?? animations[0];
+    if (idle) {
+      const action = mixer.clipAction(idle);
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.play();
+    }
+  }
+  const bodyType: BodyType = bodyDef.bodyType ?? "biped";
+  return {
+    root, bodyClone: body, bbox, mixer, animations, bodyType,
+    bodyHeight: size.y, bodyWidth: size.x,
+  };
 }
 
 // ── Save / load (per-profile localStorage) ─────────────────────────────
@@ -470,8 +475,6 @@ import { baseStatsFor } from "./engine/stats";
 
 const SAVE_KEY = "henry-monster-forge-monsters-v1";
 
-/** Load saved monsters. Backward-compatible: any monster missing Phase 2
- *  fields (activePotions, stats) gets sensible defaults. */
 export function loadSaved(): SavedMonster[] {
   if (typeof window === "undefined") return [];
   try {
@@ -504,6 +507,10 @@ function normalize(raw: Partial<SavedMonster>): SavedMonster {
     config,
     activePotions,
     stats,
+    record: raw.record,
+    habitat: raw.habitat,
+    sizeMul: raw.sizeMul,
+    evolved: raw.evolved,
     createdAt: raw.createdAt ?? Date.now(),
     updatedAt: raw.updatedAt ?? Date.now(),
   };

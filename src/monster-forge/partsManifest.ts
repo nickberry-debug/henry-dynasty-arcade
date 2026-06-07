@@ -1,11 +1,13 @@
-// Monster Forge — typed import of the parts manifest.
-// The manifest lives at /public/assets/monster-parts/manifest.json so the
-// Vite build serves it as a static file. This module just types it.
+// Monster Forge - typed import of the parts manifest.
+// Phase 3 adds bodyType + rarity to BodyPart.
 
 import type { StatBlock } from "./engine/stats";
 
 export type CategoryId =
   | "body" | "headOverlay" | "horns" | "wings" | "tail" | "spikes" | "eyes" | "colors";
+
+export type BodyType = "biped" | "quadruped" | "winged" | "serpentine" | "floating";
+export type Rarity = "common" | "uncommon" | "rare" | "legendary";
 
 export interface BodyPart {
   id: string;
@@ -13,6 +15,8 @@ export interface BodyPart {
   scale: number;
   label: string;
   src: string;
+  bodyType?: BodyType;
+  rarity?: Rarity;
 }
 
 export interface HeadOverlayPart {
@@ -47,16 +51,14 @@ export interface Manifest {
 
 let cached: Manifest | null = null;
 
-/** Fetch and cache the manifest. Always called once on builder mount. */
 export async function loadManifest(): Promise<Manifest> {
   if (cached) return cached;
   const res = await fetch("/assets/monster-parts/manifest.json", { cache: "force-cache" });
-  if (!res.ok) throw new Error(`manifest fetch failed: ${res.status}`);
+  if (!res.ok) throw new Error("manifest fetch failed: " + res.status);
   cached = (await res.json()) as Manifest;
   return cached;
 }
 
-/** Default monster config — first body, no accessories, original color. */
 export function defaultMonsterConfig(m: Manifest): MonsterConfig {
   return {
     body: m.parts.body[0]?.id ?? "alien",
@@ -70,7 +72,6 @@ export function defaultMonsterConfig(m: Manifest): MonsterConfig {
   };
 }
 
-/** A saved/in-progress monster — all IDs reference the manifest. */
 export interface MonsterConfig {
   body: string;
   headOverlay: string;
@@ -82,14 +83,24 @@ export interface MonsterConfig {
   color: string;
 }
 
+export interface MonsterRecord {
+  wins: number;
+  losses: number;
+  ko: number;
+}
+
+export type HabitatId = "ember_cavern" | "crystal_grotto" | "sky_garden" | "void_realm";
+
 export interface SavedMonster {
   id: string;
   name: string;
   config: MonsterConfig;
-  /** Phase 2 — active potion ids currently applied to this monster. Max 5. */
   activePotions: string[];
-  /** Phase 2 — final stat block (base + potion deltas, clamped). */
   stats: StatBlock;
+  record?: MonsterRecord;
+  habitat?: HabitatId;
+  sizeMul?: number;
+  evolved?: boolean;
   createdAt: number;
   updatedAt: number;
 }
