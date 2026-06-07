@@ -255,6 +255,7 @@ const VersusHub         = lz(() => import("./versus/pages/VersusHub"));
 const BaseballVersus    = lz(() => import("./versus/pages/BaseballVersus"));
 const FootballVersus    = lz(() => import("./versus/pages/FootballVersus"));
 const BoxingVersus      = lz(() => import("./versus/pages/BoxingVersus"));
+const WrestlingVersus   = lz(() => import("./versus/pages/WrestlingVersus"));
 const VersusOnlineLobby = lz(() => import("./versus/pages/VersusOnlineLobby"));
 const BaseballVersusOnline = lz(() => import("./versus/pages/BaseballVersusOnline"));
 const FootballVersusOnline = lz(() => import("./versus/pages/FootballVersusOnline"));
@@ -266,8 +267,13 @@ const OddGame              = lz(() => import("./oddoneout/pages/OddGame"));
 const GirderClimb          = lz(() => import("./classics/girder/GirderClimb"));
 const StrikeForce          = lz(() => import("./classics/strikeforce/StrikeForce"));
 const MazeMuncher          = lz(() => import("./classics/mazemuncher/MazeMuncher"));
-const StyleStudio          = lz(() => import("./classics/stylestudio/StyleStudioDressup"));
+// Phase 5 cutover: the SVG StyleStudioDressup has been replaced by the 3D
+// Glam Studio. The `StyleStudio` lazy name is kept as an alias pointing at
+// the new GlamStudioBuilder so `/classics/style` continues to resolve.
+const StyleStudio          = lz(() => import("./glam-studio/pages/GlamStudioBuilder"));
 const StyleStudioSketch    = lz(() => import("./classics/stylestudio/StyleStudio"));
+const GlamStudioHub        = lz(() => import("./glam-studio/pages/GlamStudioHub"));
+const GlamStudioBuilder    = lz(() => import("./glam-studio/pages/GlamStudioBuilder"));
 const SilentDepths         = lz(() => import("./classics/silentdepths/SilentDepthsSim"));
 const SilentDepthsArcade   = lz(() => import("./classics/silentdepths/SilentDepths"));
 const TankDuel             = lz(() => import("./tankduel/TankDuel"));
@@ -563,6 +569,7 @@ function Router() {
         <Route path="/versus/baseball" element={<R><BaseballVersus /></R>} />
         <Route path="/versus/football" element={<R><FootballVersus /></R>} />
         <Route path="/versus/boxing" element={<R><BoxingVersus /></R>} />
+        <Route path="/versus/wrestling" element={<R><WrestlingVersus /></R>} />
         <Route path="/versus/online" element={<R><VersusOnlineLobby /></R>} />
         <Route path="/versus/online/baseball" element={<R><BaseballVersusOnline /></R>} />
         <Route path="/versus/online/football" element={<R><FootballVersusOnline /></R>} />
@@ -576,6 +583,10 @@ function Router() {
         <Route path="/classics/maze"        element={<R><MazeMuncher /></R>} />
         <Route path="/classics/style"       element={<R><StyleStudio /></R>} />
         <Route path="/classics/sketch"      element={<R><StyleStudioSketch /></R>} />
+        {/* Glam Studio - 3D fashion-doll stylist. `/classics/style` is the
+            backward-compatible slot, `/glam-studio` is the primary entry. */}
+        <Route path="/glam-studio"          element={<R><GlamStudioHub /></R>} />
+        <Route path="/glam-studio/build"    element={<R><GlamStudioBuilder /></R>} />
         <Route path="/classics/depths"      element={<R><SilentDepths /></R>} />
         <Route path="/classics/depths-arcade" element={<R><SilentDepthsArcade /></R>} />
         <Route path="/tankduel"             element={<R><TankDuel /></R>} />

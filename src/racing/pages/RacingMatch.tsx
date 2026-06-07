@@ -1,4 +1,4 @@
-﻿// Turbo Racers -- match screen. Top-down canvas with touch HUD.
+// Turbo Racers -- match screen. Top-down canvas with touch HUD.
 //
 // Coordinate system: world is ~3000x2000 (see track.ts). The canvas viewport
 // is centred on the player car (with a small lookahead in the velocity
@@ -19,6 +19,9 @@ import { makeSlip, stepSlip, SLIP } from "../engine/slipstream";
 import { makeLap, stepLap, formatMs } from "../engine/lap";
 import { makeCpu, cpuDrive } from "../engine/cpu";
 import { CARS, carById } from "../engine/cars";
+import { effectiveStats, statToMaxSpeed, statToAccel, statToGripMul, statToSteerMul } from "../engine/stats";
+import { getUpgrades, recordRace, getBestRace, getBestLap } from "../store";
+import type { CarTuning } from "../engine/physics";
 import { unlockAudio, playVo, playBoost, playCrash, startEngine, stopEngine, setEnginePitch } from "../engine/audio";
 
 interface SmokeParticle {
@@ -48,6 +51,16 @@ export default function RacingMatch() {
     if (!ctxMaybe) return;
     const canvas: HTMLCanvasElement = canvasMaybe;
     const ctx: CanvasRenderingContext2D = ctxMaybe;
+
+    // ---- Per-car tuning (effective stats from store) ----
+    const playerLevels = getUpgrades(playerCarDef.id);
+    const playerStats = effectiveStats(playerCarDef.stats, playerLevels);
+    const playerTuning: CarTuning = {
+      accel: statToAccel(playerStats.accel),
+      maxSpeed: statToMaxSpeed(playerStats.topSpeed),
+      gripMul: statToGripMul(playerStats.grip),
+      steerMul: statToSteerMul(playerStats.handling),
+    };
 
     // ---- World setup ----
     const track = makeOvalTrack(3);
@@ -131,6 +144,7 @@ export default function RacingMatch() {
     let countdownPlayed = { c3: false, c2: false, c1: false, go: false };
     let raceStartMs = t0 + 3500;
     let lastBoostActive = false;
+    let finishLatch = false;
     let crashedCooldown = 0;
     // Re-align the lap timer once the GO fires.
     lap.raceStartMs = raceStartMs;
@@ -182,7 +196,7 @@ export default function RacingMatch() {
 
       // ---- Step physics for player ----
       const surf = surfaceAt(track, player.x, player.y);
-      stepCar(player, input, { surface: surf, boostPxs }, dt);
+      stepCar(player, input, { surface: surf, boostPxs, tuning: playerTuning }, dt);
 
       // ---- Step CPU ----
       if (racing && !lap.finished) {
@@ -335,11 +349,28 @@ export default function RacingMatch() {
           finishedMs: lap.finishMs, finished: lap.finished,
           driftTier: driftTier(drift),
         });
-        if (lap.finished && !countdownPlayed.go) { /* no-op */ }
-        if (lap.finished) {
-          // One-time congrats.
-          // We can't easily one-shot here without another flag; harmless to skip.
+      }
+
+      // ---- One-time race-finish handler ----
+      if (lap.finished && !finishLatch) {
+        finishLatch = true;
+        playVo("congratulations");
+        // Best lap = min of splits[1..n] - splits[i-1] (per-lap times).
+        let bestLapMs = Infinity;
+        let prev = 0;
+        for (const s of lap.splits) {
+          bestLapMs = Math.min(bestLapMs, s - prev);
+          prev = s;
         }
+        if (!isFinite(bestLapMs)) bestLapMs = lap.finishMs;
+        // Coin reward: 60 base + bonuses.
+        const prevBest = getBestRace("oval");
+        const prevBestLap = getBestLap("oval");
+        let coinsEarned = 60;
+        if (prevBest == null || lap.finishMs < prevBest) coinsEarned += 40;
+        if (prevBestLap == null || bestLapMs < prevBestLap) coinsEarned += 20;
+        recordRace({ trackId: "oval", raceTimeMs: lap.finishMs, bestLapMs, coinsEarned });
+        stopEngine();
       }
 
       requestAnimationFrame(loop);

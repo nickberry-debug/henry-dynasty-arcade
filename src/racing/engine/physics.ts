@@ -1,4 +1,4 @@
-// Turbo Racers -- top-down car physics. Pure functions, no React.
+﻿// Turbo Racers -- top-down car physics. Pure functions, no React.
 //
 // World coordinates: +X right, +Y down (canvas convention).
 // Heading is in radians, 0 = car nose pointing UP (-Y direction) because
@@ -55,10 +55,23 @@ export const PHYSICS = {
 
 export type SurfaceKey = keyof typeof PHYSICS.surface;
 
+export interface CarTuning {
+  /** Override forward acceleration (px/s^2). Defaults to PHYSICS.accel. */
+  accel?: number;
+  /** Override top-speed cap before surface + boost (px/s). */
+  maxSpeed?: number;
+  /** Lateral-grip multiplier on PHYSICS.gripLateral (1.0 = stock). */
+  gripMul?: number;
+  /** Steering-authority multiplier on PHYSICS.steerAuthority (1.0 = stock). */
+  steerMul?: number;
+}
+
 export interface StepEnv {
   surface: SurfaceKey;
   /** Extra boost from drift release or slipstream slingshot (px/s of bonus top-speed). */
   boostPxs: number;
+  /** Per-car tuning overrides (from stats.ts). */
+  tuning?: CarTuning;
 }
 
 /** Advance one fixed step. dt in seconds (we cap at 1/30 to stay sane). */
@@ -75,9 +88,14 @@ export function stepCar(car: CarState, input: CarInput, env: StepEnv, dt: number
   const rx = cos;
   const ry = sin;
 
+  const tAccel    = env.tuning?.accel    ?? PHYSICS.accel;
+  const tMaxSpd   = env.tuning?.maxSpeed  ?? PHYSICS.maxSpeed;
+  const tGripMul  = env.tuning?.gripMul   ?? 1.0;
+  const tSteerMul = env.tuning?.steerMul  ?? 1.0;
+
   // ---- Throttle / brake / coast ----
   const forwardSpeed = car.vx * fx + car.vy * fy;
-  let throttleAccel = input.throttle * PHYSICS.accel;
+  let throttleAccel = input.throttle * tAccel;
   let brakeAccel = 0;
   if (input.brake > 0) {
     if (forwardSpeed > 5) {
@@ -94,7 +112,7 @@ export function stepCar(car: CarState, input: CarInput, env: StepEnv, dt: number
   // ---- Steering ----
   // Authority scales with speed so the car doesn't pivot in place.
   const speed = Math.hypot(car.vx, car.vy);
-  const authority = Math.min(speed / PHYSICS.steerSpeedRef, 2.0) * PHYSICS.steerAuthority;
+  const authority = Math.min(speed / PHYSICS.steerSpeedRef, 2.0) * PHYSICS.steerAuthority * tSteerMul;
   // Reverse steering when reversing so wheel-input matches expectation.
   const dirSign = forwardSpeed >= 0 ? 1 : -1;
   const targetAngVel = input.steer * authority * dirSign;
@@ -108,7 +126,7 @@ export function stepCar(car: CarState, input: CarInput, env: StepEnv, dt: number
   // ---- Lateral grip (kill sideslip; less when drifting) ----
   const lateralSpeed = car.vx * rx + car.vy * ry;
   const baseGrip = input.drift ? PHYSICS.gripDrift : PHYSICS.gripLateral;
-  const grip = baseGrip * surf.gripMul;
+  const grip = baseGrip * surf.gripMul * tGripMul;
   const lateralKill = Math.min(grip * dt, 1);
   car.vx -= rx * lateralSpeed * lateralKill;
   car.vy -= ry * lateralSpeed * lateralKill;
@@ -120,7 +138,7 @@ export function stepCar(car: CarState, input: CarInput, env: StepEnv, dt: number
   }
 
   // ---- Cap speed (with surface + boost) ----
-  const maxSpd = PHYSICS.maxSpeed * surf.speedMul + env.boostPxs;
+  const maxSpd = tMaxSpd * surf.speedMul + env.boostPxs;
   const newSpeed = Math.hypot(car.vx, car.vy);
   if (newSpeed > maxSpd) {
     const k = maxSpd / newSpeed;

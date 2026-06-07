@@ -1,4 +1,4 @@
-// Turbo Racers -- hub. Phase 1 ships QUICK PLAY (vs ghost CPU on the test
+﻿// Turbo Racers -- hub. Phase 1 ships QUICK PLAY (vs ghost CPU on the test
 // track). Phase 2 adds car selection + upgrades. Phase 4 adds weapons.
 //
 // Original IP -- no Mario Kart / Micro Machines names.
@@ -7,10 +7,12 @@ import { useNavigate } from "react-router-dom";
 import { CARS } from "../engine/cars";
 import { useState } from "react";
 import { unlockAudio } from "../engine/audio";
+import { getSelectedCar, setSelectedCar } from "../store";
 
 export default function RacingHub() {
   const nav = useNavigate();
-  const [carId, setCarId] = useState(CARS[0].id);
+  const [carId, _setCarId] = useState(getSelectedCar());
+  const setCarId = (id: string) => { _setCarId(id); setSelectedCar(id); };
 
   function start() {
     unlockAudio();
@@ -64,8 +66,8 @@ export default function RacingHub() {
         <button onClick={start} style={primaryBtn("#fbbf24")}>
           QUICK PLAY - 3 laps vs ghost CPU
         </button>
-        <button disabled style={primaryBtn("#94a3b8", true)}>
-          TURBO GARAGE - Phase 2 (upgrades)
+        <button onClick={() => nav("/racing/garage")} style={primaryBtn("#a78bfa")}>
+          TURBO GARAGE - 8 cars + upgrades
         </button>
         <button disabled style={primaryBtn("#94a3b8", true)}>
           GRAND PRIX - Phase 3 (5 tracks)
@@ -91,7 +93,7 @@ export default function RacingHub() {
         marginTop: 22, padding: "10px 14px", borderRadius: 8,
         background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)",
         color: "white", fontSize: 14, cursor: "pointer",
-      }}>{"← Home"}</button>
+      }}>{"â† Home"}</button>
     </div>
   );
 }
