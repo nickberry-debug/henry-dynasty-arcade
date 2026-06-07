@@ -1,0 +1,34 @@
+{
+  "name": "Hardball assets",
+  "version": "1.0.0",
+  "description": "Phase 0 ships procedural canvas sprites + Web Audio synthesis. No binary assets required to run. Phase 2 upgrade target is Kenney CC0 packs (one-line swap per entry).",
+  "sprites": {
+    "strategy": "procedural-canvas",
+    "module": "src/hardball/sprites.ts",
+    "notes": "Painted to OffscreenCanvas at boot. Two-tone retro pixel silhouettes. Team accent recolors via tint.",
+    "upgradeTo": {
+      "candidate": "kenney/sports-pack",
+      "url": "https://kenney.nl/assets/sports-pack",
+      "license": "CC0"
+    }
+  },
+  "audio": {
+    "strategy": "web-audio-synth",
+    "module": "src/hardball/engine/audio.ts",
+    "samples": [
+      { "id": "bat_crack",      "type": "noise+downward-sine", "duration": 0.18 },
+      { "id": "glove_pop",      "type": "noise-burst",         "duration": 0.10 },
+      { "id": "crowd_ambience", "type": "lowpass-pink-noise",  "duration": "loop" },
+      { "id": "crowd_cheer",    "type": "pink-noise-ramp",     "duration": 1.5 },
+      { "id": "ump_strike",     "type": "synth-voice",         "duration": 0.4 },
+      { "id": "ump_ball",       "type": "synth-voice",         "duration": 0.4 },
+      { "id": "organ_jingle",   "type": "triangle-arpeggio",   "duration": 1.2 },
+      { "id": "footstep",       "type": "noise-tick",          "duration": 0.05 }
+    ],
+    "upgradeTo": [
+      { "candidate": "kenney/casino-audio",  "url": "https://kenney.nl/assets/casino-audio",  "license": "CC0" },
+      { "candidate": "kenney/impact-sounds", "url": "https://kenney.nl/assets/impact-sounds", "license": "CC0" },
+      { "candidate": "kenney/music-jingles", "url": "https://kenney.nl/assets/music-jingles", "license": "CC0" }
+    ]
+  }
+}

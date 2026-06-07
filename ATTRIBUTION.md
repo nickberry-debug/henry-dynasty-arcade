@@ -171,3 +171,24 @@ organized under `public/assets/jrpg/`:
   flat-color tiles + 24x24 mini-sprites. This is deliberately distinct
   from the cinematic side-view battlers, which is how classic JRPGs
   have always handled the mode switch.
+
+
+---
+
+# Attribution — Hardball assets
+
+**Hardball** ships **zero third-party binary assets**. Phase 0 uses procedural
+canvas sprites (painted at boot by `src/hardball/sprites.ts`) and Web Audio
+synthesized SFX (`src/hardball/engine/audio.ts`). The folder
+`public/assets/hardball/` contains only `manifest.json` and `README.md`.
+
+If/when Phase 2 swaps in real CC0 packs (declared in
+`public/assets/hardball/manifest.json#upgradeTo`), the candidates are:
+
+- **Kenney — Sports Pack** (CC0) — https://kenney.nl/assets/sports-pack
+- **Kenney — Casino Audio** (CC0) — https://kenney.nl/assets/casino-audio
+- **Kenney — Impact Sounds** (CC0) — https://kenney.nl/assets/impact-sounds
+- **Kenney — Music Jingles** (CC0) — https://kenney.nl/assets/music-jingles
+
+All Kenney content is released under **CC0 1.0 Universal** —
+https://creativecommons.org/publicdomain/zero/1.0/
