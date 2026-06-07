@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "approach": "socket-attach",
+  "approachNotes": "Real CC0 GLB bodies from Quaternius (via poly.pizza) act as self-contained creatures with their own rigs. Accessories (horns, wings, tails, spikes, eyes) are procedural Three.js geometry generated at runtime and attached at named sockets (TOP, BACK, REAR) computed from the body's bounding box. This is the most honest approach: Quaternius monsters ship as whole-creature GLBs with built-in animations, NOT as a unified modular rig with shared sockets.",
+  "license": "CC0 1.0 Universal (Public Domain) for all GLBs; see ATTRIBUTION.md",
+  "sources": ["Quaternius (https://quaternius.com/) via poly.pizza"],
+  "parts": {
+    "body": [
+      { "id": "alien",            "file": "/assets/monster-parts/body/alien.glb",            "scale": 1.0, "label": "Alien",         "src": "Quaternius" },
+      { "id": "blue_demon",       "file": "/assets/monster-parts/body/blue_demon.glb",       "scale": 1.0, "label": "Blue Demon",    "src": "Quaternius" },
+      { "id": "demon",            "file": "/assets/monster-parts/body/demon.glb",            "scale": 1.0, "label": "Demon",         "src": "Quaternius" },
+      { "id": "dino",             "file": "/assets/monster-parts/body/dino.glb",             "scale": 1.0, "label": "Dino",          "src": "Quaternius" },
+      { "id": "dragon_evolved",   "file": "/assets/monster-parts/body/dragon_evolved.glb",   "scale": 1.0, "label": "Dragon",        "src": "Quaternius" },
+      { "id": "frog",             "file": "/assets/monster-parts/body/frog.glb",             "scale": 1.0, "label": "Frog",          "src": "Quaternius" },
+      { "id": "ghost",            "file": "/assets/monster-parts/body/ghost.glb",            "scale": 1.0, "label": "Ghost",         "src": "Quaternius" },
+      { "id": "giant",            "file": "/assets/monster-parts/body/giant.glb",            "scale": 1.0, "label": "Giant",         "src": "Quaternius" },
+      { "id": "green_blob",       "file": "/assets/monster-parts/body/green_blob.glb",       "scale": 1.0, "label": "Blob",          "src": "Quaternius" },
+      { "id": "green_spiky_blob", "file": "/assets/monster-parts/body/green_spiky_blob.glb", "scale": 1.0, "label": "Spiky Blob",    "src": "Quaternius" },
+      { "id": "mimic",            "file": "/assets/monster-parts/body/mimic.glb",            "scale": 1.0, "label": "Mimic",         "src": "Quaternius" },
+      { "id": "mushnub",          "file": "/assets/monster-parts/body/mushnub.glb",          "scale": 1.0, "label": "Mushnub",       "src": "Quaternius" },
+      { "id": "orc",              "file": "/assets/monster-parts/body/orc.glb",              "scale": 1.0, "label": "Orc",           "src": "Quaternius" },
+      { "id": "skeleton",         "file": "/assets/monster-parts/body/skeleton.glb",         "scale": 1.0, "label": "Skeleton",      "src": "Quaternius" },
+      { "id": "squidle",          "file": "/assets/monster-parts/body/squidle.glb",          "scale": 1.0, "label": "Squidle",       "src": "Quaternius" },
+      { "id": "tribal",           "file": "/assets/monster-parts/body/tribal.glb",           "scale": 1.0, "label": "Tribal",        "src": "Quaternius" },
+      { "id": "yeti",             "file": "/assets/monster-parts/body/yeti.glb",             "scale": 1.0, "label": "Yeti",          "src": "Quaternius" },
+      { "id": "zombie",           "file": "/assets/monster-parts/body/zombie.glb",           "scale": 1.0, "label": "Zombie",        "src": "Quaternius" }
+    ],
+    "headOverlay": [
+      { "id": "none",        "label": "None",         "kind": "procedural" },
+      { "id": "ghost_skull", "label": "Ghost Skull",  "kind": "glb", "file": "/assets/monster-parts/head/ghost_skull.glb", "scale": 0.6, "src": "Quaternius" },
+      { "id": "flower_horn", "label": "Flower Crown", "kind": "glb", "file": "/assets/monster-parts/head/flower_horn.glb", "scale": 0.5, "src": "Quaternius" },
+      { "id": "stag_antlers","label": "Stag Antlers", "kind": "glb", "file": "/assets/monster-parts/head/stag.glb",        "scale": 0.3, "src": "Quaternius" }
+    ],
+    "horns": [
+      { "id": "none",    "label": "None" },
+      { "id": "devil",   "label": "Devil" },
+      { "id": "ram",     "label": "Ram" },
+      { "id": "unicorn", "label": "Unicorn" },
+      { "id": "twin",    "label": "Twin Spikes" }
+    ],
+    "wings": [
+      { "id": "none",      "label": "None" },
+      { "id": "bat",       "label": "Bat" },
+      { "id": "feathered", "label": "Feathered" },
+      { "id": "butterfly", "label": "Butterfly" },
+      { "id": "dragon",    "label": "Dragon" }
+    ],
+    "tail": [
+      { "id": "none",   "label": "None" },
+      { "id": "spike",  "label": "Spike" },
+      { "id": "fluff",  "label": "Fluffy" },
+      { "id": "lizard", "label": "Lizard" },
+      { "id": "fork",   "label": "Forked" }
+    ],
+    "spikes": [
+      { "id": "none",  "label": "None" },
+      { "id": "row",   "label": "Back Row" },
+      { "id": "crown", "label": "Crown" },
+      { "id": "full",  "label": "Full Spine" }
+    ],
+    "eyes": [
+      { "id": "normal",  "label": "Normal" },
+      { "id": "angry",   "label": "Angry" },
+      { "id": "cute",    "label": "Cute" },
+      { "id": "cyclops", "label": "Cyclops" },
+      { "id": "three",   "label": "Three-Eyed" },
+      { "id": "glow",    "label": "Glowing" }
+    ],
+    "colors": [
+      { "id": "none",    "label": "Original", "hex": null },
+      { "id": "ember",   "label": "Ember",    "hex": "#e25822" },
+      { "id": "violet",  "label": "Violet",   "hex": "#9b59b6" },
+      { "id": "ocean",   "label": "Ocean",    "hex": "#1e88e5" },
+      { "id": "forest",  "label": "Forest",   "hex": "#2e7d32" },
+      { "id": "gold",    "label": "Gold",     "hex": "#f1c40f" },
+      { "id": "rose",    "label": "Rose",     "hex": "#ec407a" },
+      { "id": "shadow",  "label": "Shadow",   "hex": "#37474f" },
+      { "id": "frost",   "label": "Frost",    "hex": "#80deea" }
+    ]
+  }
+}
