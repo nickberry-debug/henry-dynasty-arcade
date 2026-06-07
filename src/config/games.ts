@@ -129,6 +129,12 @@ export const GAMES: GameEntry[] = [
     emoji: "🥊", accent: "#67e8f9", status: "Versus",
     bg: "linear-gradient(135deg, rgba(8,18,40,0.95), rgba(2,8,20,0.85))",
     route: "/versus" }),
+  ge({ id: "boxing", category: "sports", order: 40,
+    name: "Boxing", subtitle: "Combat Sports · 3-round bouts",
+    description: "Strategic 2D boxing — jab/cross/hook/uppercut vs block/dodge/clinch. Stamina, head/body targeting, Power Shot meter, KO + judges' decision. 2P or vs adaptive CPU.",
+    emoji: "🥊", accent: "#f87171", status: "New · Phase 1",
+    bg: "linear-gradient(135deg, rgba(40,8,8,0.95), rgba(15,3,3,0.85))",
+    route: "/boxing" }),
 
   // ── ACTION & COMBAT ─────────────────────────────────────────────────
   ge({ id: "battleforge", category: "action", order: 0,

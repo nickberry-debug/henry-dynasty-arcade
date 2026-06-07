@@ -271,6 +271,7 @@ const SeasonSim            = lz(() => import("./sportshub/SeasonSim"));
 const RosterScreen         = lz(() => import("./sportshub/RosterScreen"));
 const ScheduleScreen       = lz(() => import("./sportshub/ScheduleScreen"));
 const MainEvent            = lz(() => import("./mainevent/MainEvent"));
+const Boxing               = lz(() => import("./combat-sports/boxing/Boxing"));
 const CardClash            = lz(() => import("./cardclash/CardClash"));
 const VideoGameHelper   = lz(() => import("./wordplay/pages/VideoGameHelper"));
 const StoryChain        = lz(() => import("./wordplay/pages/StoryChain"));
@@ -569,6 +570,7 @@ function Router() {
         <Route path="/sports/:sport/team/:teamId" element={<R><RosterScreen /></R>} />
         <Route path="/sports/:sport/schedule" element={<R><ScheduleScreen /></R>} />
         <Route path="/mainevent"            element={<R><MainEvent /></R>} />
+        <Route path="/boxing"               element={<R><Boxing /></R>} />
         <Route path="/cardclash"            element={<R><CardClash /></R>} />
         {/* Olympus mode — separate routing tree, own theme + chrome */}
         <Route path="/olympus" element={<R><OlympusShell /></R>}>
