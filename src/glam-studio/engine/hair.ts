@@ -53,14 +53,16 @@ export function makeHair(style: HairStyle, ctx: HairContext): THREE.Group {
     }
     case "long": {
       const head = cap(r * 1.05, ctx); head.position.y = -r * 0.25; g.add(head);
-      const backGeom = new THREE.CylinderGeometry(r * 0.95, r * 0.6, r * 4.5, 24, 1, true);
+      // Slimmer, pushed further back so the back tube reads as hair flowing
+      // down the doll's back instead of a column swallowing the torso.
+      const backGeom = new THREE.CylinderGeometry(r * 0.70, r * 0.45, r * 4.5, 24, 1, true);
       const back = new THREE.Mesh(backGeom, mat(ctx.hex));
-      back.position.set(0, -r * 2.3, -r * 0.4);
+      back.position.set(0, -r * 2.3, -r * 1.05);
       g.add(back);
       // taper tip
-      const tipGeom = new THREE.ConeGeometry(r * 0.6, r * 0.9, 16);
+      const tipGeom = new THREE.ConeGeometry(r * 0.45, r * 0.9, 16);
       const tip = new THREE.Mesh(tipGeom, mat(ctx.hex));
-      tip.position.set(0, -r * 4.8, -r * 0.4);
+      tip.position.set(0, -r * 4.8, -r * 1.05);
       tip.rotation.x = Math.PI;
       g.add(tip);
       break;

@@ -258,8 +258,12 @@ export class GlamScene {
       // Position the overlay just in front of the face socket
       this.makeupOverlay.mesh.position.copy(this.doll.sockets.face);
       this.makeupOverlay.mesh.position.y -= 0.04;
-      this.makeupOverlay.mesh.position.z += 0.015;
-      // Face Quaternius dolls face -Z; flip plane to face camera
+      // Push 0.05m in front of the face socket — earlier 0.015 was prone
+      // to z-fighting with the head mesh on iOS (where depth precision is
+      // tighter).
+      this.makeupOverlay.mesh.position.z += 0.05;
+      // Plane normal already points +Z; doll now faces +Z (rotated above),
+      // so the camera sees the painted side without further rotation.
       this.makeupOverlay.mesh.rotation.set(0, 0, 0);
     } else if (this.makeupOverlay) {
       this.scene.remove(this.makeupOverlay.mesh);
