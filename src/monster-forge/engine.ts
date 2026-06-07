@@ -346,6 +346,50 @@ export function buildEyes(id: string, bodyHeight: number): THREE.Group {
   return g;
 }
 
+// ── Head socket helper ─────────────────────────────────────────────────
+// Bug fix: previously head accessories used `bbox.max.y` as the anchor — but
+// for winged/serpentine/floating bodies the bbox top captures wings/tendrils
+// well above the actual head crown, so accessories float in mid-air.
+//
+// Strategy: prefer the position of a named "Head_End"/"head_top" bone (the
+// tip of the skull in Quaternius rigs). Fall back to ~92% of body height,
+// which empirically lands on the head for the bodies that lack a tip bone.
+export function findHeadTipBone(body: THREE.Object3D): THREE.Object3D | null {
+  let exactTip: THREE.Object3D | null = null;
+  let headBase: THREE.Object3D | null = null;
+  body.traverse((o) => {
+    if (!o.name) return;
+    const n = o.name.toLowerCase();
+    if (n === "head_end" || n === "head_top" || n === "headtop" || n === "head_tip" || n === "headend") {
+      exactTip ??= o;
+    } else if (n === "head") {
+      headBase ??= o;
+    }
+  });
+  return exactTip ?? headBase;
+}
+
+/**
+ * Compute the world-space Y coordinate to anchor "on-head" accessories
+ * (horns, hats, head overlays, top-mutation spikes/crowns).
+ * Caller must have already called body.updateMatrixWorld(true).
+ */
+export function computeHeadSocketY(body: THREE.Object3D, bbox: THREE.Box3): number {
+  const bone = findHeadTipBone(body);
+  if (bone) {
+    const worldPos = new THREE.Vector3();
+    bone.getWorldPosition(worldPos);
+    // If the bone is the head BASE (not the tip), nudge up by ~10% body height
+    // so the accessory sits on top of the head rather than at the neck joint.
+    const isTip = /end|top|tip/i.test(bone.name);
+    if (isTip) return worldPos.y;
+    const size = new THREE.Vector3(); bbox.getSize(size);
+    return worldPos.y + size.y * 0.10;
+  }
+  const size = new THREE.Vector3(); bbox.getSize(size);
+  return bbox.min.y + size.y * 0.92;
+}
+
 // ── Build a full monster (returns a Group) ─────────────────────────────
 
 export interface AssembledMonster {
@@ -409,6 +453,7 @@ export async function assembleMonster(
 
   // 4) Sockets
   const topY    = bbox.max.y;
+  const headY   = computeHeadSocketY(body, bbox); // on-head anchor (see helper above)
   const midY    = center.y + size.y * 0.18;
   const rearZ   = bbox.min.z;
   const frontZ  = bbox.max.z;
@@ -418,14 +463,17 @@ export async function assembleMonster(
   if (headDef && headDef.kind === "glb" && headDef.file) {
     const { scene: hover } = await loadGLB(headDef.file);
     hover.scale.setScalar((headDef.scale ?? 0.5) * scale);
-    hover.position.set(center.x, topY + 0.05, bodyMidZ);
+    // Per-accessory offsetY (manifest opt-in; default 0). Antlers may extend
+    // up, a crown sits flat — overlay authors can dial it in.
+    const offsetY = (headDef.offsetY ?? 0) * size.y;
+    hover.position.set(center.x, headY + offsetY, bodyMidZ);
     hover.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
     root.add(hover);
   }
 
   // 6) Procedural accessories
   const horns = buildHorns(cfg.horns, size.y);
-  horns.position.set(center.x, topY, bodyMidZ);
+  horns.position.set(center.x, headY, bodyMidZ);
   horns.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
   root.add(horns);
 

@@ -14,6 +14,7 @@ import {
 } from "../data/potions";
 import {
   buildHorns, buildWings, buildSpikes, buildEyes, buildTail,
+  computeHeadSocketY,
   type AssembledMonster,
 } from "../engine";
 
@@ -252,7 +253,7 @@ export function applyPotionsToMonster(
   const bodyHeight = Math.max(size.y, 0.5);
   const bodyWidth  = Math.max(size.x, 0.5);
   const bodyLength = Math.max(size.z, 0.5);
-  const topY    = am.bbox.max.y;
+  const headY   = computeHeadSocketY(am.bodyClone, am.bbox); // on-head anchor
   const midY    = center.y + size.y * 0.18;
   const rearZ   = am.bbox.min.z;
   const frontZ  = am.bbox.max.z;
@@ -279,10 +280,10 @@ export function applyPotionsToMonster(
     const tagMesh = (g: THREE.Group) => {
       g.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true; });
     };
-    if (parts.top)  { parts.top.position.set(center.x, topY,        bodyMidZ);                tagMesh(parts.top);  am.root.add(parts.top); }
+    if (parts.top)  { parts.top.position.set(center.x, headY,       bodyMidZ);                tagMesh(parts.top);  am.root.add(parts.top); }
     if (parts.back) { parts.back.position.set(center.x, midY,       rearZ);                   tagMesh(parts.back); am.root.add(parts.back); }
     if (parts.rear) { parts.rear.position.set(center.x, center.y,   rearZ);                   tagMesh(parts.rear); am.root.add(parts.rear); }
-    if (parts.head) { parts.head.position.set(center.x, topY - size.y * 0.12, frontZ * 0.6); tagMesh(parts.head); am.root.add(parts.head); }
+    if (parts.head) { parts.head.position.set(center.x, headY - size.y * 0.12, frontZ * 0.6); tagMesh(parts.head); am.root.add(parts.head); }
     if (parts.sides) for (const s of parts.sides) { s.position.set(center.x, midY, bodyMidZ); tagMesh(s); am.root.add(s); }
   }
 

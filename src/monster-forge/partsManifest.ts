@@ -26,6 +26,12 @@ export interface HeadOverlayPart {
   file?: string;
   scale?: number;
   src?: string;
+  /**
+   * Optional vertical offset applied at the head socket, in units of body height.
+   * Default 0 (sits ON the head). Positive = float above (antlers, tall crowns).
+   * Negative = sink into the head (heavy hats).
+   */
+  offsetY?: number;
 }
 
 export interface SimplePart  { id: string; label: string; }
