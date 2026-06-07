@@ -1,0 +1,36 @@
+{
+  "source": "Kenney - Roguelike/RPG pack v1.0",
+  "sourceUrl": "https://kenney.nl/assets/roguelike-rpg-pack",
+  "license": "CC0 1.0 Universal",
+  "sheet": "roguelikeSheet_transparent.png",
+  "tileSize": 16,
+  "margin": 1,
+  "stride": 17,
+  "sheetCols": 57,
+  "sheetRows": 31,
+  "mappings": {
+    "town": {
+      ".": { "col": 5,  "row": 0,  "name": "grass" },
+      ",": { "col": 6,  "row": 0,  "name": "dirt path" },
+      "W": { "col": 0,  "row": 1,  "name": "water" },
+      "S": { "col": 8,  "row": 0,  "name": "sand (beach)" },
+      "#": { "col": 6,  "row": 2,  "name": "brown brick (rare in town)" },
+      "B": { "col": 6,  "row": 2,  "name": "brown brick (house body)" },
+      "D": { "col": 26, "row": 4,  "name": "wooden door" },
+      "r": { "col": 11, "row": 0,  "name": "orange/white awning (roof)" },
+      "T": { "col": 13, "row": 9,  "name": "round green tree" },
+      "F": { "col": 1,  "row": 7,  "name": "grass + red flowers" },
+      "X": { "col": 5,  "row": 0,  "name": "grass + composited silver Hush shimmer" },
+      "C": { "col": 34, "row": 10, "name": "closed wooden chest" }
+    },
+    "dungeon": {
+      ".": { "col": 5,  "row": 13, "name": "gray cobblestone floor" },
+      ",": { "col": 6,  "row": 13, "name": "brown stone floor" },
+      "#": { "col": 6,  "row": 2,  "name": "brown brick wall" },
+      "B": { "col": 44, "row": 10, "name": "stone gravestone/altar (bell altar in boss room)" },
+      "D": { "col": 26, "row": 4,  "name": "wooden door" },
+      "C": { "col": 34, "row": 10, "name": "closed wooden chest" },
+      "S": { "col": 50, "row": 9,  "name": "silver sigil — chapel save chime" }
+    }
+  }
+}

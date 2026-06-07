@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { TILE, getTileset } from "../engine/tileset";
+import { USE_V2_TILES, preloadTilesetV2, getV2Tile } from "../engine/tilesetV2";
 import { getLioraSprite, getNpcSprite, type Facing } from "../engine/minisprite";
 import { TOWN_MAP, DUNGEON_ROOMS, isPassableTownTile, isPassableDungeonTile, type DungeonRoom } from "../data/maps";
 import { loadSave, writeSave, newGame } from "../engine/save";
@@ -54,6 +55,7 @@ export default function JRPGPlay() {
     if (save.location === "town") playTrack("town");
     else if (save.location === "dungeon-boss") playTrack("boss");
     else playTrack("dungeon");
+    if (USE_V2_TILES) { void preloadTilesetV2(); }
   }, []);
 
   useEffect(() => {
@@ -297,6 +299,7 @@ export default function JRPGPlay() {
 
     const tiles = save.location === "town" ? TOWN_MAP.tiles : DUNGEON_ROOMS[save.location as DungeonRoom["id"]].tiles;
     const ts = getTileset();
+    const context = save.location === "town" ? "town" : "dungeon";
     const startTx = Math.max(0, Math.floor(camX / TILE));
     const startTy = Math.max(0, Math.floor(camY / TILE));
     const endTx = Math.min(tiles[0].length, startTx + Math.ceil(w / drawTile) + 2);
@@ -308,10 +311,17 @@ export default function JRPGPlay() {
       for (let tx = startTx; tx < endTx; tx += 1) {
         const c = row[tx];
         if (!c) continue;
-        let tc = ts.by[c];
-        if (save.location !== "town") {
-          if (c === ".") tc = ts.by["#"];
-          if (c === "#") tc = ts.by["#"];
+        let tc: HTMLCanvasElement | undefined;
+        if (USE_V2_TILES) {
+          // v2: Kenney roguelike sheet, indexed per-context. Falls through
+          // to the procedural v1 tile if the glyph isn't mapped.
+          tc = getV2Tile(context, c) ?? ts.by[c];
+        } else {
+          tc = ts.by[c];
+          if (save.location !== "town") {
+            if (c === ".") tc = ts.by["#"];
+            if (c === "#") tc = ts.by["#"];
+          }
         }
         if (!tc) continue;
         const dx = Math.floor((tx * TILE - camX) * zoom);

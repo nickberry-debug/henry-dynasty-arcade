@@ -45,3 +45,12 @@ License text: https://creativecommons.org/licenses/by/3.0/
 - 11× icons by **Delapouite** from game-icons.net (CC-BY 3.0)
 - LPC Spritesheet Generator — sanderfrenken / various authors (CC-BY-SA 3.0 / GPL 3.0)
 - game-icons.net full mirror — multiple authors (CC-BY 3.0)
+
+## AETHERSONG v2 overworld tileset — CC0 (no attribution required)
+
+- `jrpg/overworld-v2/roguelikeSheet_transparent.png` — by **Kenney Vleugels**
+  (with help by Lynn Evers), from the [Roguelike/RPG pack](https://kenney.nl/assets/roguelike-rpg-pack).
+  License: [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
+  Credit is appreciated but not required.
+- `jrpg/overworld-v2/LICENSE_kenney_roguelike.txt` — Kenney's bundled license text.
+- `jrpg/overworld-v2/tileset-v2.json` — our glyph→sheet-coord manifest (original).

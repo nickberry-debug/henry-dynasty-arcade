@@ -89,6 +89,59 @@ Fix shipped in this commit:
   Sound button) force-triggers a random encounter so the battle pipeline can
   be sanity-checked independently of the RNG.
 
+## Phase 1 art upgrade — June 2026 — overworld tileset v2
+
+Nick's read on the Phase-1 art: *"Map also looks like NES Zelda game, not
+Final Fantasy. Get better from 3rd party site."* The Phase-1 overworld used
+procedural painted 16×16 tiles (solid colors + pixel noise), deliberately
+chosen so the style break vs. the LuizMelo anime battlers was obvious. It
+landed too blocky for an FF-style read.
+
+Shipped in this commit:
+
+- New sheet at `public/assets/jrpg/overworld-v2/roguelikeSheet_transparent.png`
+  — **Kenney "Roguelike/RPG pack" v1.0** (CC0, 1700 tiles, 16×16 with 1px
+  margin). Direct CC0 download from kenney.nl, no login required.
+- New module `src/jrpg/engine/tilesetV2.ts` — extracts per-glyph canvases from
+  the sheet at the coords mapped in `public/assets/jrpg/overworld-v2/tileset-v2.json`.
+  Two context maps (`town` and `dungeon`) so the same glyph can render as
+  grass in town and stone-floor in the chapel.
+- `USE_V2_TILES` feature flag in `tilesetV2.ts` switches the renderer between
+  v2 (Kenney) and v1 (procedural). Defaults to v2. The renderer falls through
+  to the v1 procedural tile if a glyph isn't mapped in v2.
+- Hush-shimmer (`X`) is the grass tile + a translucent silver radial composite
+  — bespoke since no pack ships an "AETHERSONG anomaly" tile.
+- `public/assets/ATTRIBUTION.md` updated. Kenney is CC0 so attribution isn't
+  required but it's there for hygiene.
+
+### Honest visual ceiling
+
+Cainos *Pixel Art Top Down - Basic* was Nick's preferred first-choice for the
+FF/Stardew aesthetic. It IS free ("name your own price" with a $0 option) but
+its itch.io download flow is a JS-driven popup → fresh download page → JS
+click event → signed CDN URL. `curl -L` can't follow it without a session
+cookie, and the download URL isn't exposed anywhere I can scrape. Stealthix,
+Limezu *Serene Village*, and Finalbossblues *Time Fantasy* all live on the
+same itch.io flow.
+
+Kenney was the best CC0 pack on the open web that I could pull with one
+`Invoke-WebRequest`. The verdict: **clearly better than the NES-Zelda
+procedural blocks**, but the style sits at "cozy 16-bit village" rather
+than "FF6 anime cathedral". It reads as a cohesive overworld pack, no longer
+as solid color blocks.
+
+To upgrade further, the cleanest path is:
+
+1. Nick logs into itch.io once on the laptop.
+2. Downloads `Pixel Art Top Down - Basic v1.2.3.zip` (2.5 MB) from
+   <https://cainos.itch.io/pixel-art-top-down-basic>.
+3. Drops the zip in `~/downloads` or wherever I can read it.
+4. I swap the sheet path + remap the tileset-v2.json coords.
+
+The wiring (USE_V2_TILES, context-aware tileset module, Hush composite, glyph
+manifest) is built to accommodate any 16×16 or 32×32 tile sheet — only the
+JSON coord table and the `TILE_V2_SHEET` constant need to change.
+
 ---
 
 ## Files of record
