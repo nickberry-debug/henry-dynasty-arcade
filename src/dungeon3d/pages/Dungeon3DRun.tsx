@@ -20,6 +20,7 @@ import {
   CLASS_DEFS, RARITY_COLORS, RARITY_HEX, recomputePlayerStats,
   ABILITY_DEFS, META_UNLOCKS, getAbilityDef, applyAbilityChoice,
   BOSS_DEFS,
+  BIOMES, biomeForDepth,
   type Game, type InputState, type ClassId, type Item, type Rarity,
   type AbilityDef,
   type Boss, type BossKind, type Telegraph,
@@ -83,6 +84,8 @@ export default function Dungeon3DRun() {
   const [levelUpChoiceIds, setLevelUpChoiceIds] = useState<string[]>([]);
   const [runEndBanner, setRunEndBanner] = useState<{ kills: number; floor: number; shards: number } | null>(null);
   const [, force] = useState(0);
+  // Phase 1c: biome overlay — { name, ttl } while fading; ttl is wall-clock ms remaining.
+  const [biomeOverlay, setBiomeOverlay] = useState<{ name: string; expiresAt: number } | null>(null);
   const [endShown, setEndShown] = useState(false);
   const recordedRef = useRef(false);
   const [loading, setLoading] = useState(true);
@@ -170,6 +173,8 @@ export default function Dungeon3DRun() {
     bossObj: THREE.Object3D | null;
     bossMixer: THREE.AnimationMixer | null;
     telegraphObjs: Map<string, THREE.Mesh>;
+    lastBiomeId: string;
+    ambientLight: THREE.AmbientLight | null;
     dungeonGroup: THREE.Group;
     coinGroup: THREE.Group;
     chestGroup: THREE.Group;
@@ -354,7 +359,8 @@ export default function Dungeon3DRun() {
       // Soft hemisphere fill + a warm directional sun + a cool fill.
       // Tuned to roughly match the Kenney promo look: purple ambient
       // + a top-down warm light + low fill from the opposite side.
-      scene.add(new THREE.AmbientLight(0x6a4a8a, 0.55));
+      const ambientLight = new THREE.AmbientLight(0x6a4a8a, 0.55);
+      scene.add(ambientLight);
       const sun = new THREE.DirectionalLight(0xffd9b5, 1.05);
       sun.position.set(12, 22, 8);
       sun.castShadow = true;
@@ -467,6 +473,8 @@ export default function Dungeon3DRun() {
         bossObj: null,
         bossMixer: null,
         telegraphObjs: new Map<string, THREE.Mesh>(),
+        lastBiomeId: "",
+        ambientLight,
         dungeonGroup,
         coinGroup,
         chestGroup,
@@ -596,6 +604,39 @@ export default function Dungeon3DRun() {
             }
           });
 
+
+          // ── Phase 1c: Biome theming ─────────────────────────────────
+          if (g.biomeId && g.biomeId !== t3.lastBiomeId) {
+            const _bdef = BIOMES.find(b => b.id === g.biomeId) ?? biomeForDepth(g.depth);
+            if (t3.scene.fog && (t3.scene.fog as THREE.Fog).color) {
+              (t3.scene.fog as THREE.Fog).color.setHex(_bdef.fog);
+            }
+            t3.scene.background = new THREE.Color(_bdef.fog);
+            if (t3.ambientLight) t3.ambientLight.color.setHex(_bdef.ambient);
+            // Tint floor + wall materials. Cache original color so repeated
+            // biome swaps don't compound the multiplier.
+            t3.dungeonGroup.traverse(o => {
+              const mesh = o as THREE.Mesh;
+              if (!mesh.isMesh) return;
+              const ud = (o as any).userData ?? {};
+              const m = mesh.material as any;
+              if (!m || !m.color) return;
+              if (ud._origColor === undefined) {
+                ud._origColor = m.color.getHex();
+                (o as any).userData = ud;
+              }
+              const base = ud._origColor as number;
+              const cr = ((base >> 16) & 0xff) / 255;
+              const cg = ((base >> 8)  & 0xff) / 255;
+              const cb = ( base        & 0xff) / 255;
+              const tr = ((_bdef.tint >> 16) & 0xff) / 255;
+              const tg = ((_bdef.tint >> 8)  & 0xff) / 255;
+              const tb = ( _bdef.tint        & 0xff) / 255;
+              m.color.setRGB(cr * tr, cg * tg, cb * tb);
+            });
+            t3.lastBiomeId = g.biomeId;
+            setBiomeOverlay({ name: _bdef.name, expiresAt: performance.now() + 2000 });
+          }
           // Update player transform + anim weights.  HOTFIX_FACING_INV_ZOOM:
           // the blocky-characters GLB local-forward is 180° off from p.facing,
           // so we add PI to align the model with movement + the swing arc.
@@ -1355,6 +1396,22 @@ export default function Dungeon3DRun() {
 
       <main className="flex-1 relative">
         <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+        {/* Phase 1c: Biome name overlay — fades over 2s on biome transitions. */}
+        {biomeOverlay && performance.now() < biomeOverlay.expiresAt && (
+          <div style={{
+            position: "absolute", left: 12, top: 56,
+            pointerEvents: "none",
+            fontFamily: "monospace", fontSize: 12, letterSpacing: 4,
+            color: "#fde047",
+            textShadow: "0 0 12px rgba(0,0,0,0.95)",
+            opacity: Math.min(1, (biomeOverlay.expiresAt - performance.now()) / 600),
+            zIndex: 11,
+            background: "rgba(0,0,0,0.55)",
+            padding: "4px 10px",
+            borderRadius: 6,
+            border: "1px solid rgba(254,243,199,0.35)",
+          }}>{biomeOverlay.name}</div>
+        )}
 
         {/* Phase 4: equipment HUD — three slots, color-coded by rarity. */}
         <div style={{

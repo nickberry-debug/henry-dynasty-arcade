@@ -452,6 +452,37 @@ export interface Boss {
   cloneIds: string[];
 }
 
+
+// ── Phase 1c: Themed biomes by depth ─────────────────────────────────
+// Four biomes cycle by depth band, swapping fog + ambient + a tint
+// multiplier applied to floor/wall mesh materials by the renderer.
+
+export type BiomeId = "catacombs" | "verdant" | "embers" | "void";
+
+export interface BiomeDef {
+  id: BiomeId;
+  name: string;
+  depthMin: number;
+  depthMax: number;   // inclusive; Infinity for the last band
+  fog: number;        // hex
+  ambient: number;    // hex
+  tint: number;       // multiplier applied to floor/wall materials
+}
+
+export const BIOMES: BiomeDef[] = [
+  { id: "catacombs", name: "CATACOMBS", depthMin: 1,  depthMax: 4,        fog: 0x1a2230, ambient: 0x6a4a8a, tint: 0xffffff },
+  { id: "verdant",   name: "VERDANT",   depthMin: 5,  depthMax: 8,        fog: 0x182518, ambient: 0x7aa07a, tint: 0xc8e6c0 },
+  { id: "embers",    name: "EMBERS",    depthMin: 9,  depthMax: 12,       fog: 0x2a1410, ambient: 0x9a6a4a, tint: 0xffb088 },
+  { id: "void",      name: "VOID",      depthMin: 13, depthMax: Infinity, fog: 0x140a20, ambient: 0x6a5a9a, tint: 0xb088ff },
+];
+
+export function biomeForDepth(depth: number): BiomeDef {
+  for (const b of BIOMES) {
+    if (depth >= b.depthMin && depth <= b.depthMax) return b;
+  }
+  return BIOMES[BIOMES.length - 1];
+}
+
 export interface Game {
   level: DungeonLevel;
   depth: number;
@@ -493,6 +524,10 @@ export interface Game {
   bossPhaseToastN: 2 | 3 | 0;
   /** True once boss has been defeated this floor (gates the stairs). */
   bossDefeated: boolean;
+  /** Phase 1c: current biome id, drives renderer theming. */
+  biomeId: string;
+  /** Phase 7: paused state — engine skips step() while true. */
+  paused: boolean;
 }
 
 // ── Random utilities ─────────────────────────────────────────────────
@@ -781,6 +816,8 @@ export function newGame(depth = 1, classId: ClassId = "warrior", metaUnlocks: st
     pendingLevelUp: false, levelUpChoices: [], runShardsEarned: 0, runEnded: false,
     boss: null, telegraphs: [], bossBannerT: 0, bossPhaseToastT: 0, bossPhaseToastN: 0,
     bossDefeated: false,
+    biomeId: biomeForDepth(depth).id,
+    paused: false,
   };
   // Phase 6: if this is a boss floor, spawn the boss + freeze banner.
   spawnBossIfNeeded(_g);
@@ -830,6 +867,8 @@ export function descendLevel(g: Game): Game {
     runShardsEarned: g.runShardsEarned, runEnded: g.runEnded,
     boss: null, telegraphs: [], bossBannerT: 0, bossPhaseToastT: 0, bossPhaseToastN: 0,
     bossDefeated: false,
+    biomeId: biomeForDepth(g.depth + 1).id,
+    paused: g.paused ?? false,
   };
   // Phase 6: if this floor is a boss floor, spawn the boss + freeze banner.
   spawnBossIfNeeded(_next);
