@@ -310,13 +310,11 @@ export default function MonsterForgeBuilder() {
   };
 
   // ── Render ─────────────────────────────────────────────────────
-  if (!manifest || !config) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ color: "#fef3c7" }}>
-        <Loader2 size={20} className="animate-spin" /> &nbsp; Loading parts…
-      </div>
-    );
-  }
+  // IMPORTANT: render the host div unconditionally — the Three.js bootstrap
+  // useEffect needs hostRef.current to be live on first mount. If we early-
+  // return a loading screen here, the canvas never gets created and the
+  // preview is permanently blank.
+  const loading = !manifest || !config;
 
   return (
     <div className="min-h-screen flex flex-col"
@@ -337,14 +335,15 @@ export default function MonsterForgeBuilder() {
           onChange={e => setName(e.target.value)}
           placeholder="Name your monster"
           maxLength={30}
+          disabled={loading}
           className="flex-1 min-w-0 px-3 py-2 rounded-lg text-[13px] font-display tracking-wider"
           style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#fef3c7" }} />
-        <button onClick={randomize} title="Randomize"
+        <button onClick={randomize} title="Randomize" disabled={loading}
           className="w-10 h-10 rounded-lg flex items-center justify-center pressable touch-target"
           style={{ background: "rgba(125,80,180,0.25)", border: "1px solid rgba(180,80,200,0.4)" }}>
           <Shuffle size={16} />
         </button>
-        <button onClick={save} title="Save"
+        <button onClick={save} title="Save" disabled={loading}
           className="px-3 h-10 rounded-lg flex items-center gap-1 pressable touch-target font-display tracking-wider text-[11px]"
           style={{ background: "linear-gradient(135deg, #16a34a, #15803d)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff" }}>
           <Save size={14} /> SAVE
@@ -354,7 +353,12 @@ export default function MonsterForgeBuilder() {
       {/* 3D preview + busy spinner */}
       <div className="relative flex-1 min-h-0" style={{ minHeight: 320 }}>
         <div ref={hostRef} className="absolute inset-0" />
-        {busy && (
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)", color: "#fef3c7" }}>
+            <Loader2 size={20} className="animate-spin" />&nbsp; Loading parts…
+          </div>
+        )}
+        {!loading && busy && (
           <div className="absolute top-2 right-2 px-2 py-1 rounded-md text-[10px] flex items-center gap-1"
             style={{ background: "rgba(0,0,0,0.6)", color: "#fef3c7" }}>
             <Loader2 size={12} className="animate-spin" /> assembling…
@@ -377,7 +381,7 @@ export default function MonsterForgeBuilder() {
         {/* Tab strip */}
         <div className="flex overflow-x-auto px-2 py-2 gap-1" style={{ scrollbarWidth: "none" }}>
           {TABS.map(t => (
-            <button key={t.id} onClick={() => setTab(t.id)}
+            <button key={t.id} onClick={() => setTab(t.id)} disabled={loading}
               className="px-3 py-1.5 rounded-full text-[11px] font-display tracking-wider flex items-center gap-1 pressable touch-target whitespace-nowrap"
               style={{
                 background: tab === t.id ? "linear-gradient(135deg, #b91c1c, #7e22ce)" : "rgba(255,255,255,0.05)",
@@ -390,7 +394,9 @@ export default function MonsterForgeBuilder() {
         </div>
         {/* Choices */}
         <div className="px-2 pb-3 pt-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-          <Choices tab={tab} config={config} manifest={manifest} onPick={update} />
+          {!loading && manifest && config && (
+            <Choices tab={tab} config={config} manifest={manifest} onPick={update} />
+          )}
         </div>
       </div>
     </div>
