@@ -29,7 +29,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T01:00:00Z";  // HOTFIX_FACING_INV_ZOOM
+const BUILD_STAMP = "2026-06-06T23:58:00Z";  // HOTFIX_CAMERA_DIAL_BACK
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
@@ -106,10 +106,10 @@ export default function Dungeon3DRun() {
     function recompute() {
       const w = window.innerWidth, h = window.innerHeight;
       const portrait = h > w;
-      // HOTFIX_FACING_INV_ZOOM: base d 14 -> 28, portrait multiplier 1.15 -> 1.35
-      // (per Nick: start with the bigger numbers, dial back later if too empty).
-      camTuningRef.current.d = portrait ? 28 * 1.35 : 28;
-      camTuningRef.current.lookAtZ = portrait ? 3.0 : 1.5;
+      // HOTFIX_CAMERA_DIAL_BACK: dial back zoom (28->22, 1.35x->1.25x), center character
+      // (per Nick: keep character at center, less empty space than the previous hotfix).
+      camTuningRef.current.d = portrait ? 22 * 1.25 : 22;
+      camTuningRef.current.lookAtZ = 0;
       setViewport({ w, h });
     }
     recompute();
