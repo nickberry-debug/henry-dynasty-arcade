@@ -1,0 +1,33 @@
+{
+  "sport": "boxing",
+  "sourcePack": "luizmelo/martial-hero",
+  "license": "luizmelo free-use (credit required) — see public/assets/luizmelo/martial-hero/License.txt",
+  "attribution": "Character sprites by luizmelo — https://luizmelo.itch.io/",
+  "note": "FLAG — no true CC0 boxing-specific sprite sheets were found on itch.io / OpenGameArt / CraftPix / GameArt2D free sections during the June 2026 audit. The closest cohesive set with full idle/move/attack/hit/down anims was luizmelo's Martial Hero pack (already on disk for Battle Forge). Reused here with per-corner red/blue tint to stand in for boxer silhouettes. Art polish (gloves overlay, trunks/recolor pass, dedicated boxer pack) queued for Phase 3 polish.",
+  "fighters": {
+    "red-corner": {
+      "displayName": "Red Corner",
+      "sourceFolder": "luizmelo/martial-hero/Sprites",
+      "tintColor": "#dc2626",
+      "facing": "right",
+      "states": {
+        "idle":      { "file": "Idle.png",                  "frames": 8, "frameW": 200, "frameH": 200 },
+        "move":      { "file": "Run.png",                   "frames": 8, "frameW": 200, "frameH": 200 },
+        "jab":       { "file": "Attack1.png",               "frames": 6, "frameW": 200, "frameH": 200 },
+        "power":     { "file": "Attack2.png",               "frames": 6, "frameW": 200, "frameH": 200 },
+        "hit":       { "file": "Take Hit.png",              "frames": 4, "frameW": 200, "frameH": 200 },
+        "block":     { "file": "Idle.png",                  "frames": 8, "frameW": 200, "frameH": 200, "note": "no dedicated block — reuses idle with raised-guard tint overlay drawn by engine" },
+        "dodge":     { "file": "Jump.png",                  "frames": 2, "frameW": 200, "frameH": 200 },
+        "knockdown": { "file": "Fall.png",                  "frames": 2, "frameW": 200, "frameH": 200 },
+        "ko":        { "file": "Death.png",                 "frames": 6, "frameW": 200, "frameH": 200 }
+      }
+    },
+    "blue-corner": {
+      "displayName": "Blue Corner",
+      "sourceFolder": "luizmelo/martial-hero/Sprites",
+      "tintColor": "#2563eb",
+      "facing": "left",
+      "states": "(same as red-corner; engine flips horizontally and applies blue tint)"
+    }
+  }
+}

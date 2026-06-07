@@ -78,3 +78,45 @@ During the Monster Forge build I evaluated and skipped:
 - **Quaternius drive.google.com bulk packs** — require interactive Google Drive
   download and weren't worth blocking on while the individual GLBs on Poly
   Pizza are direct-downloadable and identical.
+
+
+---
+
+## 2. Combat Sports — Boxing (luizmelo Martial Hero reuse)
+
+The new **Boxing** game (`src/combat-sports/boxing/`, route `/boxing`)
+reuses the **luizmelo Martial Hero** character sprite pack from
+`public/assets/luizmelo/martial-hero/Sprites/`. The pack ships with a
+license file (`License.txt` in the same folder) that allows free use
+including in commercial projects with credit.
+
+Credit line:
+> Character sprites by luizmelo — https://luizmelo.itch.io/
+
+The mapping into boxing animation states is documented in
+`public/assets/combat-sports/boxing/manifest.json`:
+
+| Boxing state | Martial Hero source |
+|---|---|
+| idle / block | Idle.png (8 frames) |
+| move | Run.png (8 frames) |
+| jab / cross | Attack1.png (6 frames) |
+| hook / uppercut | Attack2.png (6 frames) |
+| hit | Take Hit.png (4 frames) |
+| dodge | Jump.png (2 frames) |
+| knockdown | Fall.png (2 frames) |
+| ko | Death.png (6 frames) |
+
+At runtime the loader (`src/combat-sports/boxing/sprites.ts`) bakes a
+per-corner color tint onto the silhouette via `source-atop` so the red
+and blue corners read as distinct fighters. Original luizmelo art is
+never redistributed in modified form — tints are applied on the client.
+
+### ⚠️ Open flag
+
+A true CC0 boxing-specific sprite sheet was NOT found on itch.io,
+OpenGameArt, GameArt2D free, or CraftPix free during the June 2026
+audit — the Martial Hero swordsman silhouette stands in for now.
+Dedicated boxing art (gloves overlay, trunks, boxer pose) is queued
+for **Phase 3 polish** of the Combat Sports work (see
+`COMBATSPORTS_PROGRESS.md`).
