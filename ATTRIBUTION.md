@@ -192,3 +192,27 @@ If/when Phase 2 swaps in real CC0 packs (declared in
 
 All Kenney content is released under **CC0 1.0 Universal** —
 https://creativecommons.org/publicdomain/zero/1.0/
+
+---
+
+# Attribution -- Turbo Racers assets
+
+All assets in `public/assets/racing/` are released under
+**CC0 1.0 Universal (Public Domain Dedication)** --
+https://creativecommons.org/publicdomain/zero/1.0/
+
+## Sources
+
+| Source | URL | What we used |
+|---|---|---|
+| Kenney Racing Pack v1.0 | https://kenney.nl/assets/racing-pack | 50 top-down car sprites, 222 road/grass/dirt/sand tiles, 39 scenery objects |
+| Kenney Sci-Fi Sounds | https://kenney.nl/assets/sci-fi-sounds | engineCircular -> engine_loop / engine_high; forceField -> boost |
+| Kenney Impact Sounds | https://kenney.nl/assets/impact-sounds | crash.ogg |
+| Kenney Voiceover Pack | https://kenney.nl/assets/voiceover-pack | Female set: 1/2/3 countdown, go, ready, congratulations, final_round, hurry_up |
+
+Kenney content is CC0; attribution is provided as courtesy. See
+`public/assets/racing/manifest.json` for the per-file inventory.
+
+All car names, weapon names, track names, and characters in Turbo Racers are
+original Berry Kids' Arcade IP -- no Mario Kart, Micro Machines, or other
+third-party IP is referenced.
