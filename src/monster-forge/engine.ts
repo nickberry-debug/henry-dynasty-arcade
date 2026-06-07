@@ -375,19 +375,24 @@ export function findHeadTipBone(body: THREE.Object3D): THREE.Object3D | null {
  * Caller must have already called body.updateMatrixWorld(true).
  */
 export function computeHeadSocketY(body: THREE.Object3D, bbox: THREE.Box3): number {
+  const size = new THREE.Vector3(); bbox.getSize(size);
+  // Bbox-based fallback — always at least this high, so accessories can never
+  // be buried inside the body (e.g. Mushnub where the "Head" bone is in the
+  // middle of the stem under the cap).
+  const fallbackY = bbox.min.y + size.y * 0.92;
   const bone = findHeadTipBone(body);
   if (bone) {
     const worldPos = new THREE.Vector3();
     bone.getWorldPosition(worldPos);
-    // If the bone is the head BASE (not the tip), nudge up by ~10% body height
-    // so the accessory sits on top of the head rather than at the neck joint.
+    // If the bone is named "Head_End/top/tip", treat its position as authoritative.
+    // Otherwise it's likely the head BASE — nudge up by ~12% of body height.
     const isTip = /end|top|tip/i.test(bone.name);
-    if (isTip) return worldPos.y;
-    const size = new THREE.Vector3(); bbox.getSize(size);
-    return worldPos.y + size.y * 0.10;
+    const bonedY = isTip ? worldPos.y : worldPos.y + size.y * 0.12;
+    // Never below the bbox fallback — bodies whose head bone lies inside
+    // the mesh (Mushnub) would otherwise bury the accessory.
+    return Math.max(bonedY, fallbackY);
   }
-  const size = new THREE.Vector3(); bbox.getSize(size);
-  return bbox.min.y + size.y * 0.92;
+  return fallbackY;
 }
 
 // ── Build a full monster (returns a Group) ─────────────────────────────
