@@ -234,6 +234,7 @@ const Dungeon3DHub      = lz(() => import("./dungeon3d/pages/Dungeon3DHub"));
 const Dungeon3DRun      = lz(() => import("./dungeon3d/pages/Dungeon3DRun"));
 const MonsterForgeHub      = lz(() => import("./monster-forge/pages/MonsterForgeHub"));
 const MonsterForgeBuilder  = lz(() => import("./monster-forge/pages/MonsterForgeBuilder"));
+const MonsterForgeBattle   = lz(() => import("./monster-forge/pages/MonsterForgeBattle"));
 const HardballHub          = lz(() => import("./hardball/pages/HardballHub"));
 const HardballMatch        = lz(() => import("./hardball/pages/HardballMatch"));
 const StrikeRescueHub      = lz(() => import("./strike-rescue/pages/StrikeRescueHub"));
@@ -524,6 +525,7 @@ function Router() {
         <Route path="/dungeon3d/run" element={<R><Dungeon3DRun /></R>} />
         <Route path="/monster-forge" element={<R><MonsterForgeHub /></R>} />
         <Route path="/monster-forge/build" element={<R><MonsterForgeBuilder /></R>} />
+        <Route path="/monster-forge/battle" element={<R><MonsterForgeBattle /></R>} />
         <Route path="/hardball" element={<R><HardballHub /></R>} />
         <Route path="/hardball/play" element={<R><HardballMatch /></R>} />
         <Route path="/hardball/derby" element={<R><HardballDerby /></R>} />
