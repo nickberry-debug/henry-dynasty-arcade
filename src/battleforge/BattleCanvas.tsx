@@ -514,8 +514,36 @@ export default function BattleCanvas({
     container.appendChild(canvas);
     canvasRef.current = canvas;
 
-    const ctx = canvas.getContext("2d")!;
+    let ctx = canvas.getContext("2d")!;
     ctx.imageSmoothingEnabled = false;
+
+    // â”€â”€ iOS Safari context-loss recovery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // iOS aggressively garbage-collects offscreen canvas backing stores under
+    // memory pressure, which surfaces as a sudden black screen a few seconds
+    // into a battle (many tinted 64x64 sprite canvases x 30 fighters can hit
+    // the limit fast). Listen for context loss and rebuild on restore so the
+    // game recovers instead of staying blank.
+    const onContextLost = (e: Event) => {
+      try { e.preventDefault(); } catch { /* noop */ }
+      // eslint-disable-next-line no-console
+      console.warn("[BattleCanvas] 2D context lost - will rebuild on restore");
+    };
+    const onContextRestored = () => {
+      try {
+        const restored = canvas.getContext("2d");
+        if (restored) {
+          ctx = restored;
+          ctx.imageSmoothingEnabled = false;
+        }
+        // eslint-disable-next-line no-console
+        console.warn("[BattleCanvas] 2D context restored");
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("[BattleCanvas] context restore failed", err);
+      }
+    };
+    canvas.addEventListener("contextlost", onContextLost as EventListener);
+    canvas.addEventListener("contextrestored", onContextRestored as EventListener);
 
     let cssW = container.clientWidth || 800;
     let cssH = container.clientHeight || 500;
@@ -765,6 +793,7 @@ export default function BattleCanvas({
     let tickAccumulator = 0;
     function frame(now: number) {
       raf = requestAnimationFrame(frame);
+      try {
       const dt = Math.min(64, now - last);
       last = now;
 
@@ -1224,6 +1253,13 @@ export default function BattleCanvas({
       }
 
       ctx.restore();
+      } catch (err) {
+        // One uncaught throw inside rAF would otherwise kill all subsequent
+        // frames -> battle screen goes black. Log loudly (prod console too,
+        // not just dev) and let the next rAF tick continue rendering.
+        // eslint-disable-next-line no-console
+        console.error("[BattleCanvas] frame error", err);
+      }
     }
     raf = requestAnimationFrame(frame);
 
@@ -1235,6 +1271,8 @@ export default function BattleCanvas({
       container.removeEventListener("touchend",   onTouchEnd);
       container.removeEventListener("touchcancel", onTouchEnd);
       container.removeEventListener("wheel",      onWheel);
+      canvas.removeEventListener("contextlost", onContextLost as EventListener);
+      canvas.removeEventListener("contextrestored", onContextRestored as EventListener);
       if (canvas.parentNode === container) container.removeChild(canvas);
       canvasRef.current = null;
     };

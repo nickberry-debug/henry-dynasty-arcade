@@ -287,35 +287,48 @@ function bakeFrame(
   const destX = LUIZ_ANCHOR_X - drawW * 0.5 + (def.destOffsetX || 0);
   const destY = feetDest - def.srcFeetY * def.fitScale;
 
+  // Bounds-check the source rect before drawImage. On iOS Safari, an image
+  // evicted from memory can return naturalWidth=0; calling drawImage with
+  // a zero-size source has been observed to throw SecurityError on Safari
+  // <=16. Bail out silently if the strip can't accommodate this frame —
+  // renderer falls back to a colored circle.
+  let drew = false;
   ctx.save();
   if (flip) {
     ctx.translate(LUIZ_SPRITE_W, 0);
     ctx.scale(-1, 1);
   }
   try {
-    ctx.drawImage(img, srcX, 0, def.srcW, def.srcH, destX, destY, drawW, drawH);
+    if (img.naturalWidth > 0 && img.naturalHeight > 0 && srcX + def.srcW <= img.naturalWidth) {
+      ctx.drawImage(img, srcX, 0, def.srcW, def.srcH, destX, destY, drawW, drawH);
+      drew = true;
+    }
   } catch {
-    // ignore — drawImage can throw on cross-origin images, fall through to
-    // leave the canvas blank (renderer has a colored-circle fallback).
+    // ignore — drawImage can throw on cross-origin or evicted images;
+    // leave drew=false so we skip the source-atop tint below.
   }
   ctx.restore();
 
-  // Tint pass — colors only the visible (non-transparent) pixels.
-  // 1) accent (fighter's signature color) as a soft wash
-  // 2) team color as an even softer wash, so allies/enemies stay
-  //    readable at distance.
-  ctx.globalCompositeOperation = "source-atop";
+  // Tint pass — ONLY when we actually painted pixels. `source-atop` over a
+  // fully-transparent canvas is a no-op in spec but has been observed to
+  // paint a solid 64x64 rectangle on iOS Safari while the backing store is
+  // recovering from a memory-pressure eviction — which is exactly the
+  // "screen goes black after a few seconds" symptom we are chasing.
+  // Guarding the tint is cheap insurance.
+  if (drew) {
+    ctx.globalCompositeOperation = "source-atop";
 
-  ctx.fillStyle = accent;
-  ctx.globalAlpha = def.tintStrength;
-  ctx.fillRect(0, 0, LUIZ_SPRITE_W, LUIZ_SPRITE_H);
+    ctx.fillStyle = accent;
+    ctx.globalAlpha = def.tintStrength;
+    ctx.fillRect(0, 0, LUIZ_SPRITE_W, LUIZ_SPRITE_H);
 
-  ctx.fillStyle = team === "A" ? "#3D6BD8" : "#C92E2E";
-  ctx.globalAlpha = 0.18;
-  ctx.fillRect(0, 0, LUIZ_SPRITE_W, LUIZ_SPRITE_H);
+    ctx.fillStyle = team === "A" ? "#3D6BD8" : "#C92E2E";
+    ctx.globalAlpha = 0.18;
+    ctx.fillRect(0, 0, LUIZ_SPRITE_W, LUIZ_SPRITE_H);
 
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
 
   return out;
 }
@@ -359,7 +372,16 @@ function placeholderSheet(packName: PackName): LuizmeloSheet {
 const sheetCache = new Map<string, LuizmeloSheet>();
 
 function pickFrames(total: number, want: number): number[] {
-  if (want >= total) return Array.from({ length: total }, (_, i) => i);
+  if (total <= 0) return Array.from({ length: want }, () => 0);
+  if (want >= total) {
+    // Always return EXACTLY `want` indices so the renderer fixed slot
+    // count (e.g. walk[facing][3]) never indexes past the end and returns
+    // undefined -> drawImage(undefined) -> uncaught rAF throw -> black screen.
+    // Pad the short strip by clamping at the last valid frame.
+    const out: number[] = [];
+    for (let i = 0; i < want; i++) out.push(Math.min(i, total - 1));
+    return out;
+  }
   const out: number[] = [];
   for (let i = 0; i < want; i++) out.push(Math.floor((i + 0.5) * (total / want)));
   return out;
