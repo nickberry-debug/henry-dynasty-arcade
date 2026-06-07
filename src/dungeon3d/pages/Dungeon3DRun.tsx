@@ -45,7 +45,7 @@ import { getBossDialog, type BossDialog } from "../data/bossDialog";
 import { pickDeathBlurb, type DeathBlurb, type DeathCause } from "../data/deathVariants";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T09:13:39Z";  // CONTROLS_HOTFIX_v3 + ADVENTURE_CONTENT
+const BUILD_STAMP = "2026-06-07T09:30:53Z";  // CONTROLS_HOTFIX_v3 + ADVENTURE_CONTENT
 // Add ?dbg=facing to the URL to print per-second player.facing / rotation.y /
 // input.ax|az to the console.  Used to verify the controls regression fix.
 const DBG_FACING =
@@ -66,7 +66,7 @@ const AUDIO_FLAG_KEY = "henry-dungeon-audio-v1";  // {muted:boolean}
 // so without an offset the body faces opposite to game-forward (p.facing) and sword
 // swings render BEHIND the visible character.  The trail anchor + projectile spawn
 // continue to use raw p.facing — only the visual rotation of the model is offset.
-const MODEL_FACING_OFFSET = USE_V2_CHARACTERS ? Math.PI : 0;
+const MODEL_FACING_OFFSET = 0;  // EMPIRICAL_FIX 06/07: KayKit Knight rig default-forward is +Z (verified via Cape bbox min Z=-0.427).  atan2(ax,az) + 0 already yields rotY where (sin rotY, cos rotY) == (ax, az) == movement.  The previous +PI HOTFIX was a misdiagnosis that rotated the model 180 deg off motion.
 
 // HOTFIX 06/06: tutorial system disabled per Nick request. Flip to true to re-enable
 // (requires fixing setTimeout dismissal + tap-anywhere-to-close first).

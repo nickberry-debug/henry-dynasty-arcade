@@ -1513,7 +1513,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       const _isMage = p.classId === "mage";
       const _ahead = p.attackRange * 0.5;
       const _hbX2 = _isMage ? p.x : p.x + Math.sin(p.facing) * _ahead;
-      const _hbZ2 = _isMage ? p.z : p.z - Math.cos(p.facing) * _ahead;
+      const _hbZ2 = _isMage ? p.z : p.z + Math.cos(p.facing) * _ahead;  // EMPIRICAL_FIX 06/07: was -cos; forward convention is (sin,+cos)
       const _bd = Math.hypot(g.boss.x - _hbX2, g.boss.z - _hbZ2);
       if (_bd < p.attackRange + 1.0) {
         const _mult = (p.hp < p.hpMax * 0.4) ? (p.meleeBelow40Mult ?? 1) : 1;
@@ -1531,7 +1531,7 @@ export function step(g: Game, dtRaw: number, input: InputState) {
     const hasFrostPlus = isNova && p.abilities.includes("frost_nova_plus");
     const ahead = p.attackRange * 0.5;
     const hbX = (isNova || hasCleave) ? p.x : p.x + Math.sin(p.facing) * ahead;
-    const hbZ = (isNova || hasCleave) ? p.z : p.z - Math.cos(p.facing) * ahead;
+    const hbZ = (isNova || hasCleave) ? p.z : p.z + Math.cos(p.facing) * ahead;  // EMPIRICAL_FIX 06/07: was -cos
     const hitR = hasCleave ? p.attackRange * 1.2 : p.attackRange;
     // Phase 5: Berserker bonus when hp < 40% of max.
     const _meleeMult = (p.hp < p.hpMax * 0.4) ? (p.meleeBelow40Mult ?? 1) : 1;
