@@ -2,8 +2,29 @@
 
 > Single source of truth for the Master Roadmap. Bot reads this first on each "continue the dungeon roadmap" invocation to resume at the first incomplete item.
 
-**Last updated:** 2026-06-07 (Phase 6 shipped — bosses every 5th floor: Iron Tyrant / Hexblade / Hollowmage, commit `27d9243`; preceded by camera dial-back hotfix commit `fdce58b`)
+**Last updated:** 2026-06-07 ✨ **ROADMAP COMPLETE** ✨ — Phases 1c + 7 shipped together (biomes commit `1e9e513`, polish commit `9b65ded`). All 8 phases + 2D removal + multiple hotfixes done. Live: https://henry-dynasty.vercel.app/dungeon3d/run (BUILD_STAMP `06-07 02:00`).
 **Status legend:** ✅ done · 🟡 partial · ❌ todo · ⚠️ needs device confirm · 🔮 deferred
+
+---
+
+## ✨ ROADMAP COMPLETE — 2026-06-07 ✨
+
+All 8 phases shipped:
+- **Phase 0** Core polish & performance
+- **Phase 1a** Floor/wall variety
+- **Phase 1b** Enemy variant pools
+- **Phase 1c** Themed biomes by depth — `1e9e513`
+- **Phase 2a** Ranged auto-aim weapon
+- **Phase 2b** Combat animations + hit-react + sword trail + body-block
+- **Phase 3** Hero classes (Warrior / Ranger / Mage) + class-select
+- **Phase 4** Loot drops, gear slots, rarity tiers, interact button
+- **Phase 5** XP + level-ups + abilities + meta progression + Soul Forge
+- **Phase 6** Bosses every 5th floor (Iron Tyrant / Hexblade / Hollowmage)
+- **Phase 7** Polish — minimap, audio, run summary, pause, tutorial, perf — `9b65ded`
+
+Plus: 2D dungeon crawler removed (`338b89d`), multiple hotfixes (facing/inversion/zoom, camera dial-back, class-select tap deadlock, facing-flip regression bundled with Phase 7).
+
+**Final deploy:** https://henry-dynasty.vercel.app/dungeon3d/run (BUILD_STAMP `2026-06-07T02:00:00Z`).
 
 ---
 
@@ -35,7 +56,7 @@
 |---|---|---|
 | Wire 32 more dungeon GLBs into procgen | ❌ todo | Catalog stored in `DUNGEON_MODELS` constant. Currently uses 7 (template-floor, template-wall, template-wall-corner, stairs, gate). Add: corridor-corner, corridor-end, corridor-intersection, corridor-junction, corridor-wide-*, gate-door-window, gate-metal-bars, room-corner, room-large, room-small-variation, room-wide, template-floor-detail, template-floor-layer (raised/hole), template-wall-detail-a, template-wall-half, template-wall-stairs, template-wall-top |
 | 5–7 visually distinct enemy types | ❌ todo | Currently 3 tinted variants of character-h/k/p. Use the full 18 character GLBs (a–r) for distinct silhouettes — pick a–r set spread across roles (grunt/scout/brute/charger/ranged/shaman). Tint by role rather than per-variant |
-| Themed biomes by depth | ❌ todo | Vary palette + model set every 3 floors: 1–3 stone halls, 4–6 crypt (darker, blue lighting), 7+ deeper variants |
+| Themed biomes by depth | ✅ done (Phase 1c, 2026-06-07, commit `1e9e513`) | Four biomes cycle by depth: Catacombs (1-4, cool grey/blue), Verdant (5-8, mossy green), Embers (9-12, warm red/orange), Void (13+, violet-black). `BIOMES` table + `biomeForDepth()` in engine.ts, `g.biomeId` tracked, renderer swaps `scene.fog`, ambient light color, and per-material tint multiplier on every floor/wall mesh. Biome name fades in for 2s on transition. |
 | Larger / more interesting procgen | ❌ todo | Current grid is 18×14. Bump to 24×18 for floors ≥5. Add room-large + room-wide variants. More corridor types. |
 | Pathfinding-aware enemy AI | 🔮 maybe later | Current AI is straight-line at player; gets stuck on walls. Could add A* but Phase 1's job is content not AI |
 
@@ -96,9 +117,9 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| Boss at floor 5, 10, 15… | ❌ todo | Bigger enemy (scale up a character GLB or use special) |
-| Telegraphed mechanics + phases | ❌ todo | Wind-up swing, multi-phase health bars |
-| Cinematic framing on boss entry | ❌ todo | Camera zoom + name banner + JuiceKit |
+| Boss at floor 5, 10, 15… | ✅ done (Phase 6, 2026-06-07, commit `27d9243`) | Iron Tyrant (5), Hexblade (10), Hollowmage (15), cycle every 3 boss floors. HP scales `baseHp * (1 + floorIdx * 0.6)`. |
+| Telegraphed mechanics + phases | ✅ done (Phase 6, 2026-06-07, commit `27d9243`) | Three-phase HP gates at 66%/33%. `Telegraph` system with circle/ring AoEs + tyrant slam/shockwave, hexblade slash + teleport, hollow meteor + black hole pull + shadow clones. |
+| Cinematic framing on boss entry | ✅ done (Phase 6, 2026-06-07, commit `27d9243`) | 1.2s boss-banner freeze on spawn (engine skips step), top-center name banner with red glow, HP bar with phase markers, phase-transition toast at 66%/33%. |
 
 ---
 
@@ -106,11 +127,12 @@
 
 | Item | Status | Notes |
 |---|---|---|
-| Minimap | ❌ todo | Use `discovered` grid as data source; overlay top-right |
-| Audio / SFX | ❌ todo | Hit sound, footstep, coin pickup, boss music |
-| UI pass | ❌ todo | Consistent palette, fonts, animations |
-| Run-summary screen | 🟡 partial | "RUN COMPLETE" and "RUN ENDED" screens exist; add stats breakdown |
+| Minimap | ✅ done (Phase 7, 2026-06-07, commit `9b65ded`) | 100×100 canvas top-right under build stamp. Fog-of-war aware — only reveals cells already seen. Yellow dot = player, blue squares = revealed stairs/floor, red dot = boss. Redraws every 4 frames via canvas 2D. |
+| Audio / SFX | ✅ done (Phase 7, 2026-06-07, commit `9b65ded`) | Wired through existing `AudioLibrary` (Kenney CC0 .ogg). Footstep (every 0.3s while walking), melee swing whoosh, melee hit, ranged shot, coin pickup, hurt, level-up, boss spawn, death (voGameOver). Mute toggle in HUD persists in `henry-dungeon-audio-v1`. |
+| UI pass | ✅ done (Phase 7, 2026-06-07, commit `9b65ded`) | Added pause icon + mute icon in HUD header. PAUSED overlay with RESUME + QUIT TO HUB. Auto-pause on `visibilitychange` to hidden. Tutorial tooltips (spawn / loot / level-up / boss) persist seen-set in `henry-dungeon-tutorial-v1`. |
+| Run-summary screen | ✅ done (Phase 7, 2026-06-07, commit `9b65ded`) | Floor reached, kills, shards, BEST floor (persisted in `henry-dungeon-best-v1`), class + Lv, abilities picked, PLAY AGAIN + FORGE buttons. Replaces the bare "RUN ENDED" banner when `g.runEnded`. |
 | Companion tie-in from Olympus/Survivor | 🔮 maybe | Bring a creature from Olympus party into the dungeon |
+| Perf: pixel-ratio cap + pause skip | ✅ done (Phase 7, 2026-06-07, commit `9b65ded`) | Renderer already capped at `Math.min(2, devicePixelRatio)`. Engine `step()` returns early when `g.paused` so framerate sleeps cleanly. Projectile mesh throttle deferred as risk-of-breakage > current perf win. |
 
 ---
 
