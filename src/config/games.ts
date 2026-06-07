@@ -1,4 +1,4 @@
-// Game registry — single source of truth for the home-page folder grid,
+﻿// Game registry â€” single source of truth for the home-page folder grid,
 // category screens, search, and Continue Playing. Adding a new game?
 // Drop one entry here with a `category` tag and it auto-files itself.
 //
@@ -65,7 +65,7 @@ export interface GameEntry {
   subtitle: string;
   /** Longer description (shown on the card body). */
   description: string;
-  /** Emoji icon — quick + zero asset weight. */
+  /** Emoji icon â€” quick + zero asset weight. */
   emoji: string;
   /** Accent color (hex). */
   accent: string;
@@ -85,7 +85,7 @@ export interface GameEntry {
   order?: number;
 }
 
-/** Factory with sensible defaults — type defaults to "game", enabled true, order 100. */
+/** Factory with sensible defaults â€” type defaults to "game", enabled true, order 100. */
 const ge = (e: Omit<GameEntry, "type" | "enabled" | "order"> & Partial<Pick<GameEntry, "type" | "enabled" | "order">>): GameEntry => ({
   type: "game", enabled: true, order: 100, ...e,
 });
@@ -140,7 +140,13 @@ export const GAMES: GameEntry[] = [
     emoji: "\u{1F94A}", accent: "#67e8f9", status: "Versus",
     bg: "linear-gradient(135deg, rgba(8,18,40,0.95), rgba(2,8,20,0.85))",
     route: "/versus" }),
-  // Standalone /boxing tile retired — boxing now lives inside Sports
+  ge({ id: "racing", category: "sports", order: 40,
+    name: "Turbo Racers", subtitle: "Top-down arcade racing",
+    description: "Top-down arcade racing with drift boosts and slipstream. Tap to gas, hold drift through curves to charge a mini-turbo, slipstream behind rivals to slingshot past. Original IP, CC0 sprites.",
+    emoji: "\u{1F3CE}\u{FE0F}", accent: "#fbbf24", status: "Phase 1 \u{00B7} driving core",
+    bg: "linear-gradient(135deg, rgba(40,8,40,0.95), rgba(12,4,20,0.85))",
+    route: "/racing" }),
+  // Standalone /boxing tile retired â€” boxing now lives inside Sports
   // Versus (Sports -> Versus -> pick BOXING). Old route redirects to /versus.
 
   // -- ACTION & COMBAT ---------------------------------------------------
@@ -151,7 +157,7 @@ export const GAMES: GameEntry[] = [
     bg: "linear-gradient(135deg, rgba(60,8,8,0.95), rgba(20,5,5,0.85))",
     route: "/battleforge" }),
   ge({ id: "mech", category: "action", order: 10,
-    name: "Scrapyard Kings", subtitle: "Mech Combat — bot builder",
+    name: "Scrapyard Kings", subtitle: "Mech Combat â€” bot builder",
     description: "Build a bot from 24 swappable parts + 18 weapons across 4 tiers. Bigger purses as you climb.",
     emoji: "\u{1F916}", accent: "#fb923c", status: "Builder + combat",
     bg: "linear-gradient(135deg, rgba(50,15,10,0.95), rgba(20,8,5,0.85))",
@@ -170,12 +176,12 @@ export const GAMES: GameEntry[] = [
     route: "/tankduel" }),
   ge({ id: "strikeforce", category: "action", order: 40,
     name: "Strike Force", subtitle: "Vertical-scroll shooter",
-    description: "Pilot a fighter, dodge enemy waves, blast bosses every 30 seconds. Auto-fire — just steer.",
+    description: "Pilot a fighter, dodge enemy waves, blast bosses every 30 seconds. Auto-fire â€” just steer.",
     emoji: "\u{1F680}", accent: "#67e8f9", status: "Original homage",
     bg: "linear-gradient(135deg, rgba(8,18,40,0.95), rgba(2,8,20,0.85))",
     route: "/classics/strikeforce" }),
   ge({ id: "girder", category: "action", order: 50,
-    name: "Girder Climb", subtitle: "Classic — barrels & ladders",
+    name: "Girder Climb", subtitle: "Classic â€” barrels & ladders",
     description: "Dodge rolling girders, climb ladders, reach the rescue beacon at the top.",
     emoji: "\u{1F3D7}\u{FE0F}", accent: "#dc2626", status: "Original homage",
     bg: "linear-gradient(135deg, rgba(40,8,8,0.95), rgba(10,5,5,0.85))",
@@ -224,7 +230,7 @@ export const GAMES: GameEntry[] = [
     route: "/mainevent" }),
   ge({ id: "cardclash", category: "strategy", order: 10,
     name: "Card Clash", subtitle: "Snap-style card battler",
-    description: "3 locations, 6 turns, simultaneous reveal — win 2 of 3. 40 original cards.",
+    description: "3 locations, 6 turns, simultaneous reveal â€” win 2 of 3. 40 original cards.",
     emoji: "\u{1F0CF}", accent: "#a78bfa", status: "New",
     bg: "linear-gradient(135deg, rgba(25,15,40,0.95), rgba(8,4,18,0.85))",
     route: "/cardclash" }),
@@ -262,7 +268,7 @@ export const GAMES: GameEntry[] = [
     route: "/classics/style" }),
   ge({ id: "monsterforge", category: "create", order: 30,
     name: "Monster Forge", subtitle: "3D modular monster builder",
-    description: "Assemble original monsters from real CC0 3D parts. Pick a body, layer horns/wings/tails/spikes/eyes, recolor, save to your Lab. Three.js live preview — rotate, pinch, zoom. Phase 1 of a multi-session build (potions + powers + battles arrive in later sessions).",
+    description: "Assemble original monsters from real CC0 3D parts. Pick a body, layer horns/wings/tails/spikes/eyes, recolor, save to your Lab. Three.js live preview â€” rotate, pinch, zoom. Phase 1 of a multi-session build (potions + powers + battles arrive in later sessions).",
     emoji: "\u{1F479}", accent: "#fda4af", status: "Phase 1 \u{00B7} 3D builder",
     bg: "linear-gradient(135deg, rgba(60,8,30,0.95), rgba(20,5,20,0.85))",
     route: "/monster-forge" }),
@@ -296,7 +302,7 @@ export const GAMES: GameEntry[] = [
     route: "/crew" }),
   ge({ id: "odd", category: "party", order: 10,
     name: "Odd One Out", subtitle: "Social deduction \u{00B7} 3-8 players",
-    description: "Everyone gets the same secret word — except one. Vote out the impostor.",
+    description: "Everyone gets the same secret word â€” except one. Vote out the impostor.",
     emoji: "\u{1F575}\u{FE0F}", accent: "#fbbf24", status: "Online",
     bg: "linear-gradient(135deg, rgba(40,20,4,0.95), rgba(20,10,2,0.85))",
     route: "/odd" }),
@@ -317,7 +323,7 @@ export function gamesIn(category: Category): GameEntry[] {
     .sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 }
 
-/** Game count per category — for the folder badge. */
+/** Game count per category â€” for the folder badge. */
 export function countIn(category: Category): number {
   return gamesIn(category).length;
 }
