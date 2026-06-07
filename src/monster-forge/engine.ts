@@ -376,23 +376,23 @@ export function findHeadTipBone(body: THREE.Object3D): THREE.Object3D | null {
  */
 export function computeHeadSocketY(body: THREE.Object3D, bbox: THREE.Box3): number {
   const size = new THREE.Vector3(); bbox.getSize(size);
-  // Bbox-based fallback — always at least this high, so accessories can never
-  // be buried inside the body (e.g. Mushnub where the "Head" bone is in the
-  // middle of the stem under the cap).
-  const fallbackY = bbox.min.y + size.y * 0.92;
   const bone = findHeadTipBone(body);
   if (bone) {
     const worldPos = new THREE.Vector3();
     bone.getWorldPosition(worldPos);
-    // If the bone is named "Head_End/top/tip", treat its position as authoritative.
-    // Otherwise it's likely the head BASE — nudge up by ~12% of body height.
     const isTip = /end|top|tip/i.test(bone.name);
-    const bonedY = isTip ? worldPos.y : worldPos.y + size.y * 0.12;
-    // Never below the bbox fallback — bodies whose head bone lies inside
-    // the mesh (Mushnub) would otherwise bury the accessory.
-    return Math.max(bonedY, fallbackY);
+    if (isTip) return worldPos.y; // Head_End / Head_Top — trust directly.
+    // Non-tip "Head" bone: trust it only when it's in the upper half of the
+    // body. Some Quaternius rigs put "Head" at the neck/shoulder joint of a
+    // stylized mushroom-cap body — using that position would bury the
+    // accessory inside the cap mesh.
+    const relativeY = (worldPos.y - bbox.min.y) / Math.max(size.y, 1e-6);
+    if (relativeY > 0.55) return worldPos.y + size.y * 0.08;
   }
-  return fallbackY;
+  // Fallback: top of bbox. Correct for biped/quadruped/blob/floating bodies
+  // whose head IS the topmost feature. The bone path above catches winged/
+  // serpentine bodies whose bbox.max.y overshoots into wings/tendrils.
+  return bbox.max.y;
 }
 
 // ── Build a full monster (returns a Group) ─────────────────────────────
