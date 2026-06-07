@@ -1,12 +1,12 @@
 // Versus Mode — match setup hub. Two-player match: pick the sport,
-// the play mode (Pass & Play this session; Online coming next), each
-// player's profile and team. Once locked in, route into the game.
+// the play mode (Pass & Play, vs CPU, or Online), each player's
+// profile and team. Once locked in, route into the game.
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ArrowLeft, Users } from "lucide-react";
-import type { Sport, PlayMode, VersusPlayer } from "../types";
+import type { Sport, PlayMode, VersusPlayer, CpuDifficulty } from "../types";
 import { BASEBALL_TEAMS, FOOTBALL_TEAMS } from "../teams";
 import { useProfiles } from "../../profiles/store";
 
@@ -17,6 +17,8 @@ interface Pending {
   quarters: number;
   /** Optional pick timer (seconds). 0 = off. */
   pickTimerSec: number;
+  /** Difficulty when mode === "cpu". */
+  cpuDifficulty: CpuDifficulty;
   playerA?: VersusPlayer;
   playerB?: VersusPlayer;
 }
@@ -24,31 +26,24 @@ interface Pending {
 export default function VersusHub() {
   const navigate = useNavigate();
   const { profiles } = useProfiles();
-  const [p, setP] = useState<Pending>({ sport: "baseball", mode: "passplay", innings: 3, quarters: 2, pickTimerSec: 0 });
+  const [p, setP] = useState<Pending>({ sport: "baseball", mode: "passplay", innings: 3, quarters: 2, pickTimerSec: 0, cpuDifficulty: "normal" });
 
   const teams = p.sport === "baseball" ? BASEBALL_TEAMS : FOOTBALL_TEAMS;
   const accent = p.sport === "baseball" ? "#fbbf24" : "#FFB81C";
 
-  // Online mode jumps to a lobby — no need to pre-pick local players or teams.
-  const ready = p.mode === "online" || (
-    !!p.playerA && !!p.playerB &&
-    p.playerA.profileId !== p.playerB.profileId &&
-    !!p.playerA.teamId && !!p.playerB.teamId
-  );
+  const ready = p.mode === "online" || (p.mode === "cpu"
+    ? !!p.playerA && !!p.playerA.teamId && !!p.playerB && !!p.playerB.teamId
+    : !!p.playerA && !!p.playerB && p.playerA.profileId !== p.playerB.profileId && !!p.playerA.teamId && !!p.playerB.teamId);
 
   function start() {
     if (p.mode === "online") {
-      // Online mode — bypass the rest of this setup (lobby handles
-      // sport/teams/players from a different flow). Pre-seed the
-      // lobby's sport pick via query param.
       navigate("/versus/online");
       return;
     }
     if (!ready) return;
-    // Pass & Play: store setup in sessionStorage — game pages read it on mount.
-    try {
-      sessionStorage.setItem("dd_versus_setup", JSON.stringify(p));
-    } catch { /* ignore */ }
+    // Pass & Play and vs-CPU both go through the local game pages,
+    // reading the setup blob from sessionStorage.
+    try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(p)); } catch { /* ignore */ }
     navigate(p.sport === "baseball" ? "/versus/baseball" : "/versus/football");
   }
 
@@ -86,18 +81,36 @@ export default function VersusHub() {
 
         {/* Mode */}
         <Section title="HOW ARE YOU PLAYING?" accent={accent}>
-          <div className="grid grid-cols-2 gap-2">
-            <PickButton selected={p.mode === "passplay"} accent="#86efac" emoji="📲"
-              label="PASS & PLAY" sub="One device, take turns"
+          <div className="grid grid-cols-3 gap-2">
+            <PickButton selected={p.mode === "passplay"} accent="#86efac" emoji="🎮"
+              label="PASS & PLAY" sub="One device · 2P"
               onClick={() => setP(s => ({ ...s, mode: "passplay" }))} />
+            <PickButton selected={p.mode === "cpu"} accent="#fbbf24" emoji="🤖"
+              label="VS CPU" sub="Adaptive AI"
+              onClick={() => setP(s => ({ ...s, mode: "cpu" }))} />
             <PickButton selected={p.mode === "online"} accent="#86efac" emoji="🌐"
-              label="ONLINE" sub="Two devices · room code"
+              label="ONLINE" sub="Two devices"
               onClick={() => setP(s => ({ ...s, mode: "online" }))} />
           </div>
         </Section>
 
-        {/* Match length — pass-and-play only. Online's host picks in the lobby. */}
-        {p.mode === "passplay" && (
+        {/* CPU difficulty */}
+        {p.mode === "cpu" && (
+          <Section title="CPU DIFFICULTY" accent={accent}>
+            <div className="grid grid-cols-3 gap-2">
+              {(["easy","normal","hard"] as CpuDifficulty[]).map(d => (
+                <PickButton key={d} selected={p.cpuDifficulty === d} accent={accent}
+                  emoji={d === "easy" ? "🐣" : d === "normal" ? "🎯" : "🔥"}
+                  label={d.toUpperCase()}
+                  sub={d === "easy" ? "more random" : d === "normal" ? "reads patterns" : "studies you"}
+                  onClick={() => setP(s => ({ ...s, cpuDifficulty: d }))} />
+              ))}
+            </div>
+          </Section>
+        )}
+
+        {/* Match length */}
+        {(p.mode === "passplay" || p.mode === "cpu") && (
           <Section title={p.sport === "baseball" ? "INNINGS" : "QUARTERS"} accent={accent}>
             <div className="grid grid-cols-3 gap-2">
               {(p.sport === "baseball" ? [3, 5, 9] : [1, 2, 4]).map(n => {
@@ -112,9 +125,8 @@ export default function VersusHub() {
           </Section>
         )}
 
-        {/* Pick timer — optional clock pressure. Off by default so chill
-            kids can think; turn on for fast-twitch family rounds. */}
-        {p.mode === "passplay" && (
+        {/* Pick timer */}
+        {(p.mode === "passplay" || p.mode === "cpu") && (
           <Section title="PICK TIMER (OPTIONAL)" accent={accent}>
             <div className="grid grid-cols-3 gap-2">
               {[0, 15, 30].map(n => (
@@ -126,27 +138,36 @@ export default function VersusHub() {
           </Section>
         )}
 
-        {/* Local player setup — pass-and-play only. Online uses the lobby. */}
-        {p.mode === "passplay" && (
+        {/* Players */}
+        {(p.mode === "passplay" || p.mode === "cpu") && (
           <>
             <PlayerPickerCard
-              label="PLAYER A"
+              label={p.mode === "cpu" ? "YOU" : "PLAYER A"}
               accent={p.playerA?.profileColor ?? "#fde047"}
               chosen={p.playerA}
-              opponentProfileId={p.playerB?.profileId}
+              opponentProfileId={p.mode === "cpu" ? undefined : p.playerB?.profileId}
               profiles={profiles}
               teams={teams}
               onChange={pa => setP(s => ({ ...s, playerA: pa }))}
             />
-            <PlayerPickerCard
-              label="PLAYER B"
-              accent={p.playerB?.profileColor ?? "#86efac"}
-              chosen={p.playerB}
-              opponentProfileId={p.playerA?.profileId}
-              profiles={profiles}
-              teams={teams}
-              onChange={pb => setP(s => ({ ...s, playerB: pb }))}
-            />
+            {p.mode === "cpu" ? (
+              <CpuTeamPicker
+                accent="#fbbf24"
+                chosen={p.playerB}
+                teams={teams}
+                onChange={pb => setP(s => ({ ...s, playerB: pb }))}
+              />
+            ) : (
+              <PlayerPickerCard
+                label="PLAYER B"
+                accent={p.playerB?.profileColor ?? "#86efac"}
+                chosen={p.playerB}
+                opponentProfileId={p.playerA?.profileId}
+                profiles={profiles}
+                teams={teams}
+                onChange={pb => setP(s => ({ ...s, playerB: pb }))}
+              />
+            )}
           </>
         )}
         {p.mode === "online" && (
@@ -171,9 +192,9 @@ export default function VersusHub() {
           <Users size={16} className="inline mr-2" /> START MATCH
         </button>
 
-        {!ready && (
+        {!ready && p.mode !== "online" && (
           <div className="text-center text-[11px] opacity-70" style={{ color: "rgba(229,231,235,0.7)" }}>
-            Pick a different profile + team for each player.
+            {p.mode === "cpu" ? "Pick your profile + team, then a CPU team to play against." : "Pick a different profile + team for each player."}
           </div>
         )}
       </main>
@@ -250,7 +271,6 @@ function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, 
         border: `1.5px solid ${chosen ? accent : "rgba(255,255,255,0.12)"}`,
       }}>
       <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: accent }}>{label}</div>
-      {/* Profile picker */}
       <div className="flex gap-1.5 flex-wrap mb-2">
         {profiles.map(p => {
           const sel = chosen?.profileId === p.id;
@@ -271,7 +291,6 @@ function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, 
           );
         })}
       </div>
-      {/* Team picker */}
       {chosen && (
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {teams.map(t => {
@@ -293,6 +312,56 @@ function PlayerPickerCard({ label, accent, chosen, opponentProfileId, profiles, 
           })}
         </div>
       )}
+    </section>
+  );
+}
+
+function CpuTeamPicker({ accent, chosen, teams, onChange }: {
+  accent: string;
+  chosen?: VersusPlayer;
+  teams: { id: string; name: string; emoji: string; primary: string; abbr: string }[];
+  onChange: (p: VersusPlayer | undefined) => void;
+}) {
+  function setTeam(teamId: string) {
+    onChange({ profileId: "__cpu__", profileName: "CPU", profileColor: accent, teamId });
+  }
+  return (
+    <section className="rounded-2xl p-3"
+      style={{
+        background: chosen
+          ? `linear-gradient(135deg, ${accent}1f, rgba(10,10,20,0.85))`
+          : "rgba(255,255,255,0.04)",
+        border: `1.5px solid ${chosen ? accent : "rgba(255,255,255,0.12)"}`,
+      }}>
+      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: accent }}>CPU OPPONENT</div>
+      <div className="flex items-center gap-2 mb-2">
+        <div className="text-2xl">🤖</div>
+        <div>
+          <div className="font-display tracking-widest text-[12px]" style={{ color: "#fef3c7" }}>CPU</div>
+          <div className="text-[10px] opacity-75" style={{ color: "rgba(229,231,235,0.7)" }}>
+            Adaptive AI — reads your patterns
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {teams.map(t => {
+          const sel = chosen?.teamId === t.id;
+          return (
+            <button key={t.id} onClick={() => setTeam(t.id)}
+              aria-pressed={sel}
+              className="shrink-0 rounded-lg px-2 py-1.5 pressable touch-target"
+              style={{
+                background: sel ? t.primary : "rgba(255,255,255,0.04)",
+                border: `1px solid ${sel ? t.primary : "rgba(255,255,255,0.12)"}`,
+                color: sel ? "#fef3c7" : "rgba(229,231,235,0.78)",
+                minWidth: 64,
+              }}>
+              <div className="text-lg leading-none">{t.emoji}</div>
+              <div className="text-[9px] tracking-widest mt-0.5 font-display">{t.abbr}</div>
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }

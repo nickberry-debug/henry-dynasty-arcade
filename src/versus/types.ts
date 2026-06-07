@@ -1,11 +1,12 @@
-// Sports Versus Mode — shared types.
+﻿// Sports Versus Mode â€” shared types.
 //
 // Two sports (baseball / football), two play modes (passplay / online),
 // one shared simultaneous-selection loop: each side locks in privately
-// → both reveals → engine resolves → repeat.
+// â†’ both reveals â†’ engine resolves â†’ repeat.
 
 export type Sport = "baseball" | "football";
-export type PlayMode = "passplay" | "online";
+export type PlayMode = "passplay" | "online" | "cpu";
+export type CpuDifficulty = "easy" | "normal" | "hard";
 
 /** Which side is the active "picker" right now. In Pass & Play we tick
  *  this between picks; the engine reads it to know whose turn it is to
@@ -25,14 +26,14 @@ export type VersusPhase =
   | "setup"     // selecting teams / mode / players
   | "pickA"     // Player A's hidden pick UI (B sees handoff in passplay)
   | "pickB"     // Player B's hidden pick UI (A sees handoff in passplay)
-  | "reveal"    // both locked — flip the cards
+  | "reveal"    // both locked â€” flip the cards
   | "resolve"   // animation + scoring
   | "between"   // brief pause / scoreboard update before next play
-  | "done";     // match over → winner screen
+  | "done";     // match over â†’ winner screen
 
-// ── BASEBALL ──────────────────────────────────────────────────────────
+// â”€â”€ BASEBALL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-/** 5-zone strike zone — simpler than 3x3 for kid play but still tactical. */
+/** 5-zone strike zone â€” simpler than 3x3 for kid play but still tactical. */
 export type PitchZone = "high" | "low" | "in" | "out" | "middle";
 export type PitchType = "fastball" | "curve" | "changeup" | "slider";
 export type BatType = "contact" | "balanced" | "power";
@@ -50,7 +51,7 @@ export interface BatterPick {
   swing: SwingChoice;
   /** Which zone the batter is sitting on. Ignored when swing === "take". */
   guess: PitchZone;
-  /** Bat type chosen pre-match — stays constant for the half-inning. */
+  /** Bat type chosen pre-match â€” stays constant for the half-inning. */
   bat: BatType;
 }
 
@@ -84,7 +85,7 @@ export interface BaseballState {
   innings: number;          // total innings to play
 }
 
-// ── FOOTBALL ──────────────────────────────────────────────────────────
+// â”€â”€ FOOTBALL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type OffensePlay =
   | "run_inside" | "run_outside"
@@ -129,7 +130,7 @@ export interface FootballState {
   lastEvent?: string;
 }
 
-// ── MATCH WRAPPER ─────────────────────────────────────────────────────
+// â”€â”€ MATCH WRAPPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface VersusMatch {
   id: string;
@@ -151,7 +152,7 @@ export interface VersusMatch {
   log: string[];
 }
 
-// ── STATS ─────────────────────────────────────────────────────────────
+// â”€â”€ STATS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Per-profile Versus stats blob. Stored at `versus_stats_v1` via
  *  cloudBlob so it syncs across the family devices. */

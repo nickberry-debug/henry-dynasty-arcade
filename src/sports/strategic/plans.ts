@@ -1,5 +1,6 @@
 ﻿// src/sports/strategic/plans.ts
 import type { GamePlan, PlanId } from "./types";
+export type { GamePlan, PlanId } from "./types";
 
 export const GAME_PLANS: Record<PlanId, GamePlan> = {
   aggressive: {

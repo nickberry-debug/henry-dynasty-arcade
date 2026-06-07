@@ -1,4 +1,4 @@
-// Baseball Versus — pitch-by-pitch duel. Player A pitches when their
+﻿// Baseball Versus â€” pitch-by-pitch duel. Player A pitches when their
 // team is on defense (top half = A's team batting, bottom half = B's
 // team batting). Hidden simultaneous selection per pitch.
 
@@ -16,26 +16,36 @@ import { resolvePitch } from "../engine";
 import { Handoff } from "../components/Handoff";
 import { PickTimer } from "../components/PickTimer";
 import { useVersusStats } from "../store";
+import { BASEBALL_RPS } from "../../sports/strategic";
+import type { MatchStrategicState, GamePlan } from "../../sports/strategic";
+import {
+  GAME_PLANS, newStrategicMatch, batterToAction, pitcherToAction,
+  cpuPickPitcher, cpuPickBatter, tickStrategic, postProcessPitch,
+} from "../strategic";
+import { PlanPickerScreen, StrategicBars, SignatureButton } from "../components/StrategicUI";
 
 interface Setup {
   sport: "baseball";
-  mode: "passplay";
+  mode: "passplay" | "cpu";
   innings: number;
   pickTimerSec?: number;
+  cpuDifficulty?: "easy" | "normal" | "hard";
   playerA: VersusPlayer;
   playerB: VersusPlayer;
 }
 
 type Phase =
+  | "handoff_planA" | "plan_pickA"
+  | "handoff_planB" | "plan_pickB"
   | "handoff_pitcher" | "pitcher_pick"
   | "handoff_batter"  | "batter_pick"
   | "reveal" | "between" | "done";
 
 const PITCHES: { id: PitchType; emoji: string; label: string }[] = [
-  { id: "fastball", emoji: "⚡", label: "Fastball" },
-  { id: "curve",    emoji: "🌀", label: "Curve" },
-  { id: "changeup", emoji: "🐢", label: "Changeup" },
-  { id: "slider",   emoji: "↗️", label: "Slider" },
+  { id: "fastball", emoji: "âš¡", label: "Fastball" },
+  { id: "curve",    emoji: "ðŸŒ€", label: "Curve" },
+  { id: "changeup", emoji: "ðŸ¢", label: "Changeup" },
+  { id: "slider",   emoji: "â†—ï¸", label: "Slider" },
 ];
 
 const ZONES: { id: PitchZone; label: string; row: number; col: number }[] = [
@@ -47,9 +57,9 @@ const ZONES: { id: PitchZone; label: string; row: number; col: number }[] = [
 ];
 
 const SWINGS: { id: SwingChoice; emoji: string; label: string; flavor: string }[] = [
-  { id: "take",    emoji: "🧘", label: "Take",    flavor: "Don't swing." },
-  { id: "contact", emoji: "🎯", label: "Contact", flavor: "Make contact." },
-  { id: "power",   emoji: "💥", label: "Power",   flavor: "Swing for the fence." },
+  { id: "take",    emoji: "ðŸ§˜", label: "Take",    flavor: "Don't swing." },
+  { id: "contact", emoji: "ðŸŽ¯", label: "Contact", flavor: "Make contact." },
+  { id: "power",   emoji: "ðŸ’¥", label: "Power",   flavor: "Swing for the fence." },
 ];
 
 const BATS: { id: BatType; label: string; flavor: string }[] = [
@@ -68,6 +78,7 @@ export default function BaseballVersus() {
       if (!raw) return null;
       const s = JSON.parse(raw);
       if (s.sport !== "baseball") return null;
+      if (s.mode !== "passplay" && s.mode !== "cpu") return null;
       return s as Setup;
     } catch { return null; }
   }, []);
@@ -77,10 +88,10 @@ export default function BaseballVersus() {
     bases: [false, false, false], score: [0, 0],
     innings: setup?.innings ?? 3,
   }));
-  const [phase, setPhase] = useState<Phase>("handoff_pitcher");
+  const [phase, setPhase] = useState<Phase>("handoff_planA");
   const [pitcherPick, setPitcherPick] = useState<PitcherPick | null>(null);
   const [batterPick, setBatterPick] = useState<BatterPick | null>(null);
-  // Bats persist per half — picked once on each player's first AB.
+  // Bats persist per half â€” picked once on each player's first AB.
   const [batA, setBatA] = useState<BatType>("balanced");
   const [batB, setBatB] = useState<BatType>("balanced");
   const [revealOutcome, setRevealOutcome] = useState<PitchOutcome | null>(null);
@@ -90,6 +101,19 @@ export default function BaseballVersus() {
   const [homersA, setHomersA] = useState(0);
   const [homersB, setHomersB] = useState(0);
   const [recorded, setRecorded] = useState(false);
+
+  // Strategic layer state. planA / planB are picked pre-match. strat
+  // holds momentum/stamina/recent-picks. We bump a counter to re-render
+  // when the mutable strat object changes in place.
+  const [planA, setPlanASt] = useState<GamePlan | null>(null);
+  const [planB, setPlanBSt] = useState<GamePlan | null>(null);
+  const [strat, setStrat] = useState<MatchStrategicState | null>(null);
+  const [, forceStratUpdate] = useState(0);
+  const bumpStrat = () => forceStratUpdate(x => x + 1);
+  const [aSigArmed, setASigArmed] = useState(false);
+  const [bSigArmed, setBSigArmed] = useState(false);
+  const isCpu = setup?.mode === "cpu";
+  const cpuDifficulty: "easy" | "normal" | "hard" = (setup?.cpuDifficulty ?? "normal") as "easy" | "normal" | "hard";
 
   // Top-half = A is batting (so A is batter, B is pitcher).
   const isABatting = state.topHalf;
@@ -122,10 +146,65 @@ export default function BaseballVersus() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, recorded]);
 
+  // CPU autopick: when current pick phase belongs to the CPU (player B
+  // in cpu mode), wait briefly then auto-lock its pick. CPU = B:
+  //   top half = A bats → B pitches → CPU is pitcher
+  //   bottom half = B bats → A pitches → CPU is batter
+  useEffect(() => {
+    if (!isCpu || !setup || !strat) return;
+    const cpuIsPitching = state.topHalf;
+    const cpuIsBatting  = !state.topHalf;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (phase === "handoff_pitcher" && cpuIsPitching) {
+      timer = setTimeout(() => setPhase("pitcher_pick"), 250);
+    } else if (phase === "pitcher_pick" && cpuIsPitching) {
+      timer = setTimeout(() => {
+        const cpuSide = strat.defender;
+        const humanSide = strat.attacker;
+        const picked = cpuPickPitcher(cpuSide, humanSide, cpuDifficulty);
+        if (picked.useSignature && cpuSide.momentum.value >= 100) setBSigArmed(true);
+        lockPitcher(picked.pick);
+      }, 700);
+    } else if (phase === "handoff_batter" && cpuIsBatting) {
+      timer = setTimeout(() => setPhase("batter_pick"), 250);
+    } else if (phase === "batter_pick" && cpuIsBatting) {
+      timer = setTimeout(() => {
+        const cpuSide = strat.attacker;
+        const humanSide = strat.defender;
+        const picked = cpuPickBatter(cpuSide, humanSide, cpuDifficulty);
+        if (picked.useSignature && cpuSide.momentum.value >= 100) setBSigArmed(true);
+        lockBatter(picked.pick);
+      }, 700);
+    }
+    return () => { if (timer) clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, isCpu, strat, state.topHalf, cpuDifficulty]);
+
   if (!setup || !batter || !pitcher || !batterTeam || !pitcherTeam) {
     return (
       <NoSetupFallback onBack={() => navigate("/versus")} />
     );
+  }
+
+  function lockPlanA(plan: GamePlan) {
+    setPlanASt(plan);
+    if (isCpu) {
+      const cpuPlan = cpuDifficulty === "hard" ? GAME_PLANS.aggressive
+                     : cpuDifficulty === "easy" ? GAME_PLANS.defensive
+                     : GAME_PLANS.balanced;
+      setPlanBSt(cpuPlan);
+      setStrat(newStrategicMatch(plan, cpuPlan));
+      setPhase("handoff_pitcher");
+    } else {
+      setPhase("handoff_planB");
+    }
+  }
+  function lockPlanB(plan: GamePlan) {
+    setPlanBSt(plan);
+    if (planA) {
+      setStrat(newStrategicMatch(planA, plan));
+      setPhase("handoff_pitcher");
+    }
   }
 
   function lockPitcher(pick: PitcherPick) {
@@ -135,10 +214,28 @@ export default function BaseballVersus() {
 
   function lockBatter(pick: BatterPick) {
     setBatterPick(pick);
-    // Resolve once both picks are in.
-    const outcome = resolvePitch(pitcherPick!, pick, pitcherTeam!, batterTeam!);
-    setRevealOutcome(outcome);
-    // Accuracy: count an "exact" zone read on contact swings as a hit.
+    const baseOutcome = resolvePitch(pitcherPick!, pick, pitcherTeam!, batterTeam!);
+
+    // Strategic post-process: map picks → RPS actions, run resolver,
+    // upgrade/downgrade outcome by the strategic tilt + signatures.
+    let finalOutcome = baseOutcome;
+    if (strat) {
+      const aAction = batterToAction(pick);
+      const dAction = pitcherToAction(pitcherPick!);
+      const batterIsAOnThisPitch = state.topHalf;
+      const aSig = batterIsAOnThisPitch ? aSigArmed : bSigArmed;
+      const dSig = batterIsAOnThisPitch ? bSigArmed : aSigArmed;
+      const resolved = tickStrategic(BASEBALL_RPS, aAction, dAction, strat, {
+        attackerSignature: aSig,
+        defenderSignature: dSig,
+      });
+      finalOutcome = postProcessPitch(baseOutcome, resolved);
+      setASigArmed(false);
+      setBSigArmed(false);
+      bumpStrat();
+    }
+
+    setRevealOutcome(finalOutcome);
     if (pick.swing !== "take") {
       setAccuracy(a => ({
         hits: a.hits + (pick.guess === pitcherPick!.zone ? 1 : 0),
@@ -146,7 +243,7 @@ export default function BaseballVersus() {
       }));
     }
     setPhase("reveal");
-    setTimeout(() => applyOutcome(outcome), 1400);
+    setTimeout(() => applyOutcome(finalOutcome), 1400);
   }
 
   function applyOutcome(o: PitchOutcome) {
@@ -216,7 +313,7 @@ export default function BaseballVersus() {
           next.bases = newBases;
           next.score[battingTeamIdx] += scored;
           next.balls = 0; next.strikes = 0;
-          next.lastEvent = (o.kind[0].toUpperCase() + o.kind.slice(1)) + (scored ? ` — ${scored} run${scored > 1 ? "s" : ""}!` : "!");
+          next.lastEvent = (o.kind[0].toUpperCase() + o.kind.slice(1)) + (scored ? ` â€” ${scored} run${scored > 1 ? "s" : ""}!` : "!");
           playSfx("impactHit", { volume: 0.7 });
           if (scored) playSfx("crowdCheer", { volume: 0.5 });
           break;
@@ -228,7 +325,7 @@ export default function BaseballVersus() {
           next.score[battingTeamIdx] += scored;
           next.bases = [false, false, false];
           next.balls = 0; next.strikes = 0;
-          next.lastEvent = `🚀 HOME RUN! ${scored} runs!`;
+          next.lastEvent = `ðŸš€ HOME RUN! ${scored} runs!`;
           playSfx("crowdCheer", { volume: 0.7 });
           playSfx("ding", { volume: 0.7, pitch: 1.6 });
           if (battingTeamIdx === 0) setHomersA(h => h + 1); else setHomersB(h => h + 1);
@@ -278,8 +375,8 @@ export default function BaseballVersus() {
     }, 900);
   }
 
-  // ── Render ─────────────────────────────────────────────────────────
-  const headerSummary = `${batterTeam.abbr} ${state.score[0]}  ·  ${pitcherTeam.abbr} ${state.score[1]}`;
+  // â”€â”€ Render â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const headerSummary = `${batterTeam.abbr} ${state.score[0]}  Â·  ${pitcherTeam.abbr} ${state.score[1]}`;
   const batterIsA = isABatting;
 
   return (
@@ -289,7 +386,7 @@ export default function BaseballVersus() {
           `radial-gradient(900px 600px at 50% 0%, ${batterTeam.primary}22, transparent 60%), ` +
           "linear-gradient(180deg, #0a0a14 0%, #050308 100%)",
       }}>
-      {/* Stadium scene — tiled grass with vignette at the bottom */}
+      {/* Stadium scene â€” tiled grass with vignette at the bottom */}
       <div aria-hidden="true" style={{
         position: "fixed", left: 0, right: 0, bottom: 0, height: 220, zIndex: 0,
         pointerEvents: "none",
@@ -318,6 +415,58 @@ export default function BaseballVersus() {
           aLabel={setup.playerA.profileName} aTeam={batterTeam.abbr}
           bLabel={setup.playerB.profileName} bTeam={pitcherTeam.abbr}
           batterIsA={batterIsA} />
+
+        {/* Plan pick A */}
+        {phase === "plan_pickA" && setup && (
+          <PlanPickerScreen
+            whoseName={setup.playerA.profileName}
+            whoseColor={setup.playerA.profileColor}
+            prompt="Your team's game plan for the match."
+            onLock={lockPlanA}
+          />
+        )}
+        {phase === "plan_pickB" && setup && !isCpu && (
+          <PlanPickerScreen
+            whoseName={setup.playerB.profileName}
+            whoseColor={setup.playerB.profileColor}
+            prompt="Your team's game plan."
+            onLock={lockPlanB}
+          />
+        )}
+
+        {/* Strategic bars during gameplay */}
+        {strat && phase !== "plan_pickA" && phase !== "plan_pickB" && phase !== "handoff_planA" && phase !== "handoff_planB" && setup && (
+          <StrategicBars
+            aLabel={setup.playerA.profileName + (state.topHalf ? " BAT" : " PIT")}
+            aColor={setup.playerA.profileColor}
+            aMomentum={state.topHalf ? strat.attacker.momentum.value : strat.defender.momentum.value}
+            aStamina={state.topHalf ? strat.attacker.stamina.value : strat.defender.stamina.value}
+            bLabel={setup.playerB.profileName + (state.topHalf ? " PIT" : " BAT")}
+            bColor={setup.playerB.profileColor}
+            bMomentum={state.topHalf ? strat.defender.momentum.value : strat.attacker.momentum.value}
+            bStamina={state.topHalf ? strat.defender.stamina.value : strat.attacker.stamina.value}
+          />
+        )}
+
+        {/* Signature button — batter side, human players only */}
+        {phase === "batter_pick" && strat && setup && (() => {
+          const batterIsA = state.topHalf;
+          const batterIsCpu = isCpu && !batterIsA;
+          if (batterIsCpu) return null;
+          const m = strat.attacker.momentum.value;
+          if (m < 100) return null;
+          const armed = batterIsA ? aSigArmed : bSigArmed;
+          return (
+            <SignatureButton
+              ready={true}
+              armed={armed}
+              label="GRAND-SLAM SWING"
+              flavor="Power swing with a tilt boost this pitch."
+              color="#fde047"
+              onToggle={() => batterIsA ? setASigArmed(v => !v) : setBSigArmed(v => !v)}
+            />
+          );
+        })()}
 
         {/* Pitcher pick */}
         {phase === "pitcher_pick" && (
@@ -375,19 +524,35 @@ export default function BaseballVersus() {
 
       {/* Handoffs */}
       <AnimatePresence>
-        {phase === "handoff_pitcher" && (
+        {phase === "handoff_planA" && setup && (
+          <Handoff
+            toName={setup.playerA.profileName}
+            toColor={setup.playerA.profileColor}
+            prompt="Pick your team's game plan — pre-match strategy."
+            onReady={() => setPhase("plan_pickA")}
+          />
+        )}
+        {phase === "handoff_planB" && setup && !isCpu && (
+          <Handoff
+            toName={setup.playerB.profileName}
+            toColor={setup.playerB.profileColor}
+            prompt="Pick your team's game plan — pre-match strategy."
+            onReady={() => setPhase("plan_pickB")}
+          />
+        )}
+        {phase === "handoff_pitcher" && !(isCpu && state.topHalf) && (
           <Handoff
             toName={pitcher.profileName}
             toColor={pitcher.profileColor}
-            prompt="Pick your pitch and where to throw it — keep it hidden!"
+            prompt="Pick your pitch and where to throw it â€” keep it hidden!"
             onReady={() => setPhase("pitcher_pick")}
           />
         )}
-        {phase === "handoff_batter" && (
+        {phase === "handoff_batter" && !(isCpu && !state.topHalf) && (
           <Handoff
             toName={batter.profileName}
             toColor={batter.profileColor}
-            prompt="Pick your swing and guess the zone — your call!"
+            prompt="Pick your swing and guess the zone â€” your call!"
             onReady={() => setPhase("batter_pick")}
           />
         )}
@@ -396,7 +561,7 @@ export default function BaseballVersus() {
   );
 }
 
-// ── Sub-components ────────────────────────────────────────────────────
+// â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Scoreboard({ state, aLabel, aTeam, bLabel, bTeam, batterIsA }: {
   state: BaseballState; aLabel: string; aTeam: string; bLabel: string; bTeam: string; batterIsA: boolean;
@@ -408,7 +573,7 @@ function Scoreboard({ state, aLabel, aTeam, bLabel, bTeam, batterIsA }: {
         <ScoreCell label={aLabel} team={aTeam} score={state.score[0]} active={batterIsA} />
         <div className="text-center">
           <div className="text-[9px] tracking-[0.3em]" style={{ color: "#fbbf24" }}>
-            INN {state.inning + 1}{state.topHalf ? " ▲" : " ▼"} · {state.outs} OUT
+            INN {state.inning + 1}{state.topHalf ? " â–²" : " â–¼"} Â· {state.outs} OUT
           </div>
           <div className="text-[11px] mt-0.5" style={{ color: "rgba(229,231,235,0.85)" }}>
             {state.balls}-{state.strikes}
@@ -472,7 +637,7 @@ function PitcherPickScreen({ pitcherName, pitcherColor, onLock, pickTimerSec, re
         <PickTimer durationSec={pickTimerSec} resetKey={resetKey}
           onExpire={() => onLock({ pitch, zone, intentionalBall: intentional })} />
       )}
-      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: pitcherColor }}>{pitcherName.toUpperCase()} · PITCHING</div>
+      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: pitcherColor }}>{pitcherName.toUpperCase()} Â· PITCHING</div>
       <div className="text-[10px] mb-1.5" style={{ color: "rgba(229,231,235,0.7)" }}>PITCH TYPE</div>
       <div className="grid grid-cols-4 gap-1.5 mb-3">
         {PITCHES.map(p => (
@@ -515,13 +680,13 @@ function PitcherPickScreen({ pitcherName, pitcherColor, onLock, pickTimerSec, re
           color: intentional ? "#0a0a14" : "#fef3c7",
           border: `1px solid ${intentional ? "#fbbf24" : "rgba(255,255,255,0.12)"}`,
         }}>
-        {intentional ? "🚫 INTENTIONAL BALL · ON" : "Pitch outside the zone? Tap for intentional ball"}
+        {intentional ? "ðŸš« INTENTIONAL BALL Â· ON" : "Pitch outside the zone? Tap for intentional ball"}
       </button>
 
       <button onClick={() => onLock({ pitch, zone, intentionalBall: intentional })}
         className="w-full mt-3 py-3 rounded-xl pressable touch-target font-display tracking-widest text-[13px]"
         style={{ background: pitcherColor, color: "#0a0a14", minHeight: 52 }}>
-        🔒 LOCK PITCH
+        ðŸ”’ LOCK PITCH
       </button>
     </section>
   );
@@ -547,7 +712,7 @@ function BatterPickScreen({ batterName, batterColor, currentBat, onChangeBat, on
         <PickTimer durationSec={pickTimerSec} resetKey={resetKey}
           onExpire={() => onLock({ swing, guess, bat: currentBat })} />
       )}
-      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: batterColor }}>{batterName.toUpperCase()} · AT BAT</div>
+      <div className="text-[10px] tracking-[0.3em] mb-2" style={{ color: batterColor }}>{batterName.toUpperCase()} Â· AT BAT</div>
 
       <div className="text-[10px] mb-1.5" style={{ color: "rgba(229,231,235,0.7)" }}>BAT</div>
       <div className="grid grid-cols-3 gap-1.5 mb-3">
@@ -608,7 +773,7 @@ function BatterPickScreen({ batterName, batterColor, currentBat, onChangeBat, on
       <button onClick={() => onLock({ swing, guess, bat: currentBat })}
         className="w-full mt-1 py-3 rounded-xl pressable touch-target font-display tracking-widest text-[13px]"
         style={{ background: batterColor, color: "#0a0a14", minHeight: 52 }}>
-        🔒 LOCK SWING
+        ðŸ”’ LOCK SWING
       </button>
     </section>
   );
@@ -634,15 +799,15 @@ function RevealCard({ pitcherPick, batterPick, outcome }: {
         <div>
           <div className="text-[9px] tracking-widest" style={{ color: "#fca5a5" }}>PITCHER THREW</div>
           <div style={{ color: "#fef3c7" }}>
-            {PITCHES.find(p => p.id === pitcherPick.pitch)?.emoji} {pitcherPick.pitch} ·
-            {pitcherPick.intentionalBall ? " 🚫 outside" : ` ${pitcherPick.zone}`}
+            {PITCHES.find(p => p.id === pitcherPick.pitch)?.emoji} {pitcherPick.pitch} Â·
+            {pitcherPick.intentionalBall ? " ðŸš« outside" : ` ${pitcherPick.zone}`}
           </div>
         </div>
         <div>
           <div className="text-[9px] tracking-widest" style={{ color: "#86efac" }}>BATTER PICKED</div>
           <div style={{ color: "#fef3c7" }}>
             {SWINGS.find(s => s.id === batterPick.swing)?.emoji} {batterPick.swing}
-            {batterPick.swing !== "take" && ` · ${batterPick.guess}`}
+            {batterPick.swing !== "take" && ` Â· ${batterPick.guess}`}
           </div>
         </div>
       </div>
@@ -666,7 +831,7 @@ function outcomeLabel(o: PitchOutcome): string {
     case "single": return "SINGLE!";
     case "double": return "DOUBLE!";
     case "triple": return "TRIPLE!";
-    case "homer": return "🚀 HOME RUN!";
+    case "homer": return "ðŸš€ HOME RUN!";
     case "hbp": return "HIT BY PITCH";
   }
 }
@@ -689,18 +854,18 @@ function FinalCard({ state, aName, aTeam, bName, bTeam, onPlayAgain, onSwitchSid
         {tied ? "TIE GAME" : `${aWon ? aName : bName} WINS!`}
       </div>
       <div className="text-[14px] mt-1" style={{ color: "#fef3c7" }}>
-        {aTeam} {state.score[0]} — {state.score[1]} {bTeam}
+        {aTeam} {state.score[0]} â€” {state.score[1]} {bTeam}
       </div>
       <div className="flex gap-2 justify-center mt-4 flex-wrap">
         <button onClick={onPlayAgain}
           className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
           style={{ background: "#fde047", color: "#0a0a14" }}>
-          🔁 REMATCH
+          ðŸ” REMATCH
         </button>
         <button onClick={onSwitchSides}
           className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
           style={{ background: "rgba(167,139,250,0.30)", border: "1px solid #a78bfa", color: "#a78bfa" }}>
-          🔄 SWITCH SIDES
+          ðŸ”„ SWITCH SIDES
         </button>
         <button onClick={onHome}
           className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"

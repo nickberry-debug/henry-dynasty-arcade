@@ -55,6 +55,8 @@ export interface CpuChoiceOpts {
   difficulty?: "easy" | "normal" | "hard";
   selfState?: SideState;
   opponentState?: SideState;
+  /** Legacy: signatureReady at the top level overrides selfState.momentum.signatureReady. */
+  signatureReady?: boolean;
   rng?: () => number;
 }
 
@@ -106,7 +108,7 @@ export function cpuPick(config: SportStrategyConfig, opts: CpuChoiceOpts): CpuCh
   else safe = rng() < 0.50;
   if (difficulty === "easy") safe = rng() < 0.5;
 
-  const sigReady = !!opts.selfState?.momentum.signatureReady;
+  const sigReady = opts.signatureReady !== undefined ? !!opts.signatureReady : !!opts.selfState?.momentum.signatureReady;
   let useSig = false;
   if (sigReady) {
     const opponentStamina = opts.opponentState?.stamina.value ?? 100;
