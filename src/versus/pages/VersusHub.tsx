@@ -14,6 +14,12 @@ import { useProfiles } from "../../profiles/store";
 import { SpriteBanner } from "../components/SpriteBanner";
 import { FamilyLeaderboard } from "../components/FamilyLeaderboard";
 import { unlockAudio, playFx } from "../audio";
+import {
+  buildChampionshipCampaign, buildStoryCampaign, writeActiveCampaign,
+  clearActiveCampaign, type BracketSize,
+} from "../campaign";
+
+type GameMode = "versus" | "championship" | "story";
 
 interface Pending {
   sport: Sport;
@@ -24,6 +30,10 @@ interface Pending {
   pickTimerSec: number;
   /** Difficulty when mode === "cpu". */
   cpuDifficulty: CpuDifficulty;
+  /** Combat-sports campaign type. "versus" is the default head-to-head. */
+  gameMode: GameMode;
+  /** Bracket size for championship mode. */
+  bracketSize: BracketSize;
   playerA?: VersusPlayer;
   playerB?: VersusPlayer;
 }
@@ -31,7 +41,14 @@ interface Pending {
 export default function VersusHub() {
   const navigate = useNavigate();
   const { profiles } = useProfiles();
-  const [p, setP] = useState<Pending>({ sport: "baseball", mode: "passplay", innings: 3, quarters: 2, pickTimerSec: 0, cpuDifficulty: "normal" });
+  const [p, setP] = useState<Pending>({
+    sport: "baseball", mode: "passplay",
+    innings: 3, quarters: 2,
+    pickTimerSec: 0, cpuDifficulty: "normal",
+    gameMode: "versus", bracketSize: 4,
+  });
+  const isCombatSport = p.sport === "boxing" || p.sport === "wrestling";
+  const isCampaign = isCombatSport && p.gameMode !== "versus";
 
   const teams = p.sport === "baseball" ? BASEBALL_TEAMS
               : p.sport === "football" ? FOOTBALL_TEAMS
@@ -42,7 +59,9 @@ export default function VersusHub() {
                : p.sport === "boxing"   ? "#f87171"
                :                          "#a78bfa";
 
-  const ready = p.mode === "online" || (p.mode === "cpu"
+  const ready = p.mode === "online" || (isCampaign
+    ? !!p.playerA && !!p.playerA.teamId
+    : p.mode === "cpu"
     ? !!p.playerA && !!p.playerA.teamId && !!p.playerB && !!p.playerB.teamId
     : !!p.playerA && !!p.playerB && p.playerA.profileId !== p.playerB.profileId && !!p.playerA.teamId && !!p.playerB.teamId);
 
@@ -57,9 +76,32 @@ export default function VersusHub() {
     // Phase 3: unlock Web Audio on this gesture so the first bell / hit
     // is actually audible (iOS Safari requires a user gesture to resume).
     try { unlockAudio(); if (p.sport === "boxing" || p.sport === "wrestling") playFx("bell"); } catch { /* ignore */ }
-    // Pass & Play and vs-CPU both go through the local game pages,
-    // reading the setup blob from sessionStorage.
-    try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(p)); } catch { /* ignore */ }
+
+    // Phase 4: stash an active campaign blob if the player picked
+    // championship or story for a combat sport. The first match's
+    // opponent is then forced to the bracket's / arc's prescribed
+    // fighter so the player progresses through the arc.
+    if (isCampaign && p.playerA) {
+      const fighterId = p.playerA.teamId;
+      const campaign = p.gameMode === "championship"
+        ? buildChampionshipCampaign(p.sport, p.playerA.profileId, fighterId, p.bracketSize)
+        : buildStoryCampaign(p.sport, p.playerA.profileId, fighterId);
+      writeActiveCampaign(campaign);
+      // Force the first opponent to match the campaign opener.
+      const firstOpponent = campaign.opponents[0];
+      const cpuAccent = p.sport === "boxing" ? "#60a5fa" : "#a78bfa";
+      const playerB: VersusPlayer = p.playerB
+        ? { ...p.playerB, teamId: firstOpponent }
+        : { profileId: "__cpu__", profileName: "CPU", profileColor: cpuAccent, teamId: firstOpponent };
+      const setupBlob = { ...p, mode: "cpu" as PlayMode, playerB };
+      try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(setupBlob)); } catch { /* ignore */ }
+    } else {
+      // Clear any leftover campaign blob so we don't accidentally enter
+      // a stale arc on a plain versus match.
+      clearActiveCampaign();
+      try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(p)); } catch { /* ignore */ }
+    }
+
     const route = p.sport === "baseball"  ? "/versus/baseball"
                 : p.sport === "football"  ? "/versus/football"
                 : p.sport === "boxing"    ? "/versus/boxing"
@@ -97,10 +139,10 @@ export default function VersusHub() {
           <div className="grid grid-cols-2 gap-2">
             <PickButton selected={p.sport === "baseball"} accent="#fbbf24" emoji="⚾"
               label="BASEBALL" sub="Batter vs Pitcher"
-              onClick={() => setP(s => ({ ...s, sport: "baseball" }))} />
+              onClick={() => setP(s => ({ ...s, sport: "baseball", gameMode: "versus" }))} />
             <PickButton selected={p.sport === "football"} accent="#FFB81C" emoji="🏈"
               label="FOOTBALL" sub="Tecmo play-calling"
-              onClick={() => setP(s => ({ ...s, sport: "football" }))} />
+              onClick={() => setP(s => ({ ...s, sport: "football", gameMode: "versus" }))} />
             <PickButton selected={p.sport === "boxing"} accent="#f87171" emoji="🥊"
               label="BOXING" sub="3 rounds · KO or judges"
               onClick={() => setP(s => ({ ...s, sport: "boxing", mode: s.mode === "online" ? "passplay" : s.mode }))} />
@@ -110,18 +152,50 @@ export default function VersusHub() {
           </div>
         </Section>
 
+        {/* Combat-sports game mode — Championship / Story / Versus */}
+        {isCombatSport && (
+          <Section title="GAME MODE" accent={accent}>
+            <div className="grid grid-cols-3 gap-2">
+              <PickButton selected={p.gameMode === "versus"} accent={accent} emoji="⚔️"
+                label="VERSUS" sub="Head-to-head"
+                onClick={() => setP(s => ({ ...s, gameMode: "versus" }))} />
+              <PickButton selected={p.gameMode === "championship"} accent="#fde047" emoji="🏆"
+                label="CHAMPIONSHIP" sub={p.bracketSize === 8 ? "8-fighter bracket" : "4-fighter bracket"}
+                onClick={() => setP(s => ({ ...s, gameMode: "championship", mode: "cpu" }))} />
+              <PickButton selected={p.gameMode === "story"} accent="#67e8f9" emoji="📖"
+                label="STORY" sub="5-match arc"
+                onClick={() => setP(s => ({ ...s, gameMode: "story", mode: "cpu" }))} />
+            </div>
+          </Section>
+        )}
+
+        {/* Championship bracket size */}
+        {isCombatSport && p.gameMode === "championship" && (
+          <Section title="BRACKET" accent={accent}>
+            <div className="grid grid-cols-2 gap-2">
+              <PickButton selected={p.bracketSize === 4} accent="#fde047" emoji="🏆"
+                label="4-FIGHTER" sub="2 matches to champ"
+                onClick={() => setP(s => ({ ...s, bracketSize: 4 }))} />
+              <PickButton selected={p.bracketSize === 8} accent="#fde047" emoji="🏆🏆"
+                label="8-FIGHTER" sub="3 matches to champ"
+                onClick={() => setP(s => ({ ...s, bracketSize: 8 }))} />
+            </div>
+          </Section>
+        )}
+
         {/* Mode */}
         <Section title="HOW ARE YOU PLAYING?" accent={accent}>
           <div className="grid grid-cols-3 gap-2">
             <PickButton selected={p.mode === "passplay"} accent="#86efac" emoji="🎮"
-              label="PASS & PLAY" sub="One device · 2P"
+              label="PASS & PLAY" sub={isCampaign ? "Versus only" : "One device · 2P"}
+              disabled={isCampaign}
               onClick={() => setP(s => ({ ...s, mode: "passplay" }))} />
             <PickButton selected={p.mode === "cpu"} accent="#fbbf24" emoji="🤖"
               label="VS CPU" sub="Adaptive AI"
               onClick={() => setP(s => ({ ...s, mode: "cpu" }))} />
             <PickButton selected={p.mode === "online"} accent="#86efac" emoji="🌐"
               label="ONLINE" sub={(p.sport === "boxing" || p.sport === "wrestling") ? "Coming soon" : "Two devices"}
-              disabled={p.sport === "boxing" || p.sport === "wrestling"}
+              disabled={p.sport === "boxing" || p.sport === "wrestling" || isCampaign}
               onClick={() => setP(s => ({ ...s, mode: "online" }))} />
           </div>
         </Section>
@@ -184,7 +258,19 @@ export default function VersusHub() {
               teamLabel={p.sport === "boxing" ? "FIGHTER" : p.sport === "wrestling" ? "WRESTLER" : "TEAM"}
               onChange={pa => setP(s => ({ ...s, playerA: pa }))}
             />
-            {p.mode === "cpu" ? (
+            {isCampaign ? (
+              <section className="rounded-2xl p-3"
+                style={{ background: "rgba(253,224,71,0.06)", border: "1px solid rgba(253,224,71,0.30)" }}>
+                <div className="text-[10px] tracking-[0.3em] mb-1.5" style={{ color: "#fde047" }}>
+                  {p.gameMode === "championship" ? "CHAMPIONSHIP BRACKET" : "STORY ARC"}
+                </div>
+                <p className="text-[11px] leading-snug" style={{ color: "rgba(229,231,235,0.85)" }}>
+                  {p.gameMode === "championship"
+                    ? `Beat ${p.bracketSize === 8 ? 3 : 2} CPU opponents in a single-elimination bracket. Win the final for the trophy.`
+                    : `Five matches. Each opponent gets tougher. Lose → restart the current match (kid-friendly). Win all 5 for the STORYBOOK badge.`}
+                </p>
+              </section>
+            ) : p.mode === "cpu" ? (
               <CpuTeamPicker
                 accent="#fbbf24"
                 chosen={p.playerB}
@@ -230,7 +316,11 @@ export default function VersusHub() {
 
         {!ready && p.mode !== "online" && (
           <div className="text-center text-[11px] opacity-70" style={{ color: "rgba(229,231,235,0.7)" }}>
-            {p.mode === "cpu"
+            {isCampaign
+              ? (p.gameMode === "championship"
+                ? "Pick your profile + fighter to start the bracket."
+                : "Pick your profile + fighter to begin the story.")
+              : p.mode === "cpu"
               ? (p.sport === "boxing" ? "Pick your profile + fighter, then a CPU fighter."
                  : p.sport === "wrestling" ? "Pick your profile + wrestler, then a CPU wrestler."
                  : "Pick your profile + team, then a CPU team to play against.")

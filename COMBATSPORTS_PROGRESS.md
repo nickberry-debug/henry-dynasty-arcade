@@ -289,3 +289,119 @@ JRPG agent: please replace those stubs with the real impls on your
 next push. Runtime is a no-op: Overdrive button does nothing,
 party-switch is a no-op, rewards step does nothing. Safe to release in
 the meantime.
+
+---
+
+## Phase 4 — RosterSelectScreen wire-in + Championship + Story — SHIPPED 2026-06-07
+
+### Sub-task A — RosterSelectScreen wired into both versus flows ✅
+
+`src/versus/pages/BoxingVersus.tsx` + `WrestlingVersus.tsx`:
+- New phase ladder steps added BEFORE plan pick:
+  `handoff_rosterA → roster_pickA → handoff_rosterB → roster_pickB`
+  (rosterB skipped in vs-CPU; CPU picks random fighter different from P1).
+- `USE_ROSTER_SELECT = true` feature flag at top of each file —
+  flip to `false` to fall back to the hub-side PlayerPickerCard chip pick.
+- Both files now hold the fighter ID in `useState` instead of deriving
+  from `setup.player*.teamId`, so RosterSelectScreen's confirm can
+  override the hub pick without round-tripping through sessionStorage.
+- Each roster screen renders FULL-BLEED (early-return) so the in-match
+  scoreboard / ring / arena canvas don't show beneath the picker.
+- Records integration unchanged — the chosen fighter still flows into
+  match state and the existing `recordMatch()` + records.ts blob.
+
+### Sub-task B — Real CC0 sprites: KEPT procedural ⚠️
+
+Verdict: did NOT pull a CC0 boxer / wrestler pack this push.
+- **Boxer**: OpenGameArt.org's "Boxer Game Character" CC0 pack
+  (https://opengameart.org/content/boxer-game-character) is a single
+  cartoon boxer with Idle / Walk / Punch×3 / Block / Hurt / Dizzy / KO
+  frames at ~6.4MB. Tagged as a Phase 5 candidate — recoloring a
+  single canonical boxer across 6 roster trunks may or may not beat
+  the current procedural recolor. Not a clear win; not pulled.
+- **Wrestler**: no good CC0 wrestler pack surfaced on the search.
+  Procedural stays for wrestling.
+- The in-app SpriteBanner stays as the honest placeholder note.
+
+### Sub-task C — Championship mode ✅
+### Sub-task D — Story mode ✅
+
+New module `src/versus/campaign.ts`:
+- `CampaignBlob` (type / sport / opponents / currentIdx / wins /
+  bracketSize / flavorByMatch) — stored in `sessionStorage` under
+  `dd_versus_campaign` so it survives the per-match `location.reload()`.
+- Per-profile permanent badges in `localStorage` key
+  `henry-versus-campaign-progress-v1`: `championshipWon`,
+  `championshipCount`, `bracketWon`, `storybook`, `storybookCount`.
+- `buildChampionshipCampaign(sport, profileId, fighterId, bracketSize)` —
+  4-bracket = 2 opponents (semifinal + final), 8-bracket = 3 opponents
+  (QF + SF + F). Opponents drawn random-without-repeat from roster.
+- `buildStoryCampaign(sport, profileId, fighterId)` — 5 matches, sorted
+  weakest → strongest by stat heuristic so the arc actually ramps.
+  Each match has a flavor blob (title + subtitle + quote) — boxing
+  arc is THE ROOKIE → THE COMER → THE BRAWLER → THE LEGEND → THE CHAMP;
+  wrestling is DEBUT NIGHT → MIDCARD WALL → THE CONTENDER → MAIN EVENT
+  → TITLE BOUT.
+- `advanceCampaign(c)` → on win, increments idx (or grants the trophy /
+  storybook + clears the campaign on final win).
+- `restartCurrent(c)` → on a story loss, re-fight the same match
+  (kid-friendly). Championship losses end the run.
+
+Hub UI (`src/versus/pages/VersusHub.tsx`):
+- New GAME MODE picker between Sport and Mode sections — only shown
+  when sport is boxing or wrestling. Buttons: VERSUS / CHAMPIONSHIP /
+  STORY. Picking championship or story force-flips Mode to CPU.
+- Championship adds a BRACKET picker (4-FIGHTER vs 8-FIGHTER).
+- The CPU-team picker is replaced by a "CHAMPIONSHIP BRACKET" or
+  "STORY ARC" callout when campaign mode is active — the opponent
+  is bracket-prescribed, not user-picked.
+- `start()` builds + stores the campaign blob, then writes the FIRST
+  match's setup (with playerB.teamId = first bracket opponent) and
+  routes to the sport page. The sport page's `loadActiveCampaign()`
+  triggers a `campaign_intro` cinematic before each match.
+
+Per-match cinematic:
+- New `CampaignIntroScreen` component (defined locally in each
+  versus page) — 2.2s flavor-text intro screen with title, subtitle,
+  quote, "STEP INTO THE RING" / "MAKE THE WALK" continue button.
+- New `campaign_intro` phase added to both versus pages' Phase union.
+- ResultCard gained a `campaign` prop. When in campaign:
+  - Win → "▶ NEXT MATCH" (or "🏆 CHAMPION — HOME" / "📖 STORY COMPLETE — HOME" on final).
+  - Loss → "TRY AGAIN" (story, restarts current) or "END RUN" (championship, exits).
+  - On NEXT MATCH, the page rewrites `dd_versus_setup` with the next
+    opponent's ID and `location.reload()`s the sport page — full state
+    reset between matches, no leaked timers / animation state.
+
+FamilyLeaderboard (`src/versus/components/FamilyLeaderboard.tsx`):
+- Now shows 🏆 (championships won) + 📖 (storybooks cleared) next to
+  each profile's name. Caps display at 4 of each to keep the row tidy.
+
+Build: `npm run build` → green (42s). Bundle deltas (gz):
+- BoxingVersus chunk 10.17 KB → ~12 KB (campaign intro + result card).
+- WrestlingVersus chunk 12.01 KB → ~14 KB.
+
+Device-confirm checklist (iPad / iPhone size):
+- [ ] Wrestling tile → CHAMPIONSHIP → 4-FIGHTER → pick fighter → bracket runs
+      Bout 1/2 (semifinal) flavor intro → match → ResultCard "▶ NEXT MATCH"
+      → Bout 2/2 intro → final → 🏆 CHAMPION — HOME → returns to hub
+      → FamilyLeaderboard shows 🏆 next to profile.
+- [ ] Boxing tile → STORY → pick fighter → "THE ROOKIE" intro → match.
+      Lose → "TRY AGAIN" → same match again. Win → "THE COMER".
+      Win all 5 → 📖 STORY COMPLETE.
+- [ ] Plain VERSUS still works: pass-and-play 2P → handoff to A roster pick
+      → handoff to B roster pick → plan picks → match.
+- [ ] /versus/boxing and /versus/wrestling routes still load without setup
+      (NoSetupFallback) and old saves still record W/L correctly.
+
+## ⚠️ Open scope — Phase 5 candidates
+- OpenGameArt boxer pack integration (single-canonical-boxer × 6 trunk
+  recolor + frame extraction). Not clearly better than procedural; punted.
+- Wrestler CC0 pack (none found this pass).
+- 8-fighter bracket currently picks only 3 opponents because the roster
+  has 6 fighters total — minus the player's pick = 5 candidates. That's
+  fine for now but a future "expanded roster" would lift the cap.
+- Story arc flavor is static text; future polish could add per-opponent
+  dialogue or post-match victory blurbs.
+- Online mode for boxing / wrestling is still disabled (passplay / CPU
+  only). Combat sports online needs the same lobby + matchmaking flow
+  the baseball / football online stack uses.

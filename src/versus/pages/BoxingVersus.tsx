@@ -24,6 +24,11 @@ import { getBoxingFighter } from "../boxers";
 import { PlanPickerScreen, StrategicBars } from "../components/StrategicUI";
 import type { GamePlan, PlanId } from "../../sports/strategic";
 import { GAME_PLANS } from "../../sports/strategic";
+import { RosterSelectScreen } from "../components/RosterSelectScreen";
+import {
+  loadActiveCampaign, advanceCampaign, restartCurrent,
+  flavorForCurrent, isFinalMatchOfCampaign,
+} from "../campaign";
 
 import {
   newMatch, applyDecision, advanceClock, cpuDecide,
@@ -35,9 +40,14 @@ import {
   STRIKE_META, DEFENSE_META,
   type StrikeId, type DefenseId, type TargetZone,
 } from "../../combat-sports/boxing/rps";
-import { boxerById } from "../../combat-sports/boxing/fighters";
+import { boxerById, BOXERS } from "../../combat-sports/boxing/fighters";
 import { drawProceduralBoxer, DEST_W, DEST_H } from "../../combat-sports/boxing/proceduralBoxer";
 import type { BoxerStateId } from "../../combat-sports/boxing/boxerState";
+
+/** Phase 4 feature flag — wire RosterSelectScreen as the in-versus roster picker.
+ *  If RosterSelectScreen ever regresses, set to false to fall back to the
+ *  hub-side PlayerPickerCard team-row chip selection. */
+const USE_ROSTER_SELECT = true;
 
 interface Setup {
   sport: "boxing";
@@ -49,6 +59,9 @@ interface Setup {
 }
 
 type Phase =
+  | "campaign_intro"
+  | "handoff_rosterA" | "roster_pickA"
+  | "handoff_rosterB" | "roster_pickB"
   | "handoff_planA" | "plan_pickA"
   | "handoff_planB" | "plan_pickB"
   | "handoff_attack" | "attack_pick"
@@ -73,11 +86,31 @@ export default function BoxingVersus() {
     } catch { return null; }
   }, []);
 
-  // Map VersusPlayer → boxer def. Red corner = A, Blue corner = B.
-  const boxerA = setup ? boxerById(setup.playerA.teamId) : null;
-  const boxerB = setup ? boxerById(setup.playerB.teamId) : null;
+  // Active campaign (championship / story) if any — drives flavor intros
+  // and the multi-match auto-progression on win.
+  const campaign = useMemo(() => loadActiveCampaign("boxing"), []);
 
-  const [phase, setPhase] = useState<Phase>("handoff_planA");
+  // Roster picks — fighter IDs. Initialized from setup.playerA.teamId /
+  // setup.playerB.teamId so the existing hub-side pick is the default.
+  // RosterSelectScreen can overwrite these on confirm.
+  const [fighterIdA, setFighterIdA] = useState<string>(setup?.playerA.teamId ?? BOXERS[0].id);
+  const [fighterIdB, setFighterIdB] = useState<string>(
+    // For campaigns, B is always the campaign-prescribed opponent (CPU).
+    (campaign && campaign.sport === "boxing")
+      ? (campaign.opponents[campaign.currentIdx] ?? setup?.playerB.teamId ?? BOXERS[1].id)
+      : (setup?.playerB.teamId ?? BOXERS[1].id)
+  );
+  const boxerA = boxerById(fighterIdA);
+  const boxerB = boxerById(fighterIdB);
+
+  // Initial phase: campaign_intro if a fresh story/champ match, else
+  // roster pick if the feature flag is on, else jump to plan pick.
+  const initialPhase: Phase =
+    campaign && campaign.sport === "boxing" ? "campaign_intro"
+    : USE_ROSTER_SELECT ? "handoff_rosterA"
+    : "handoff_planA";
+
+  const [phase, setPhase] = useState<Phase>(initialPhase);
   const [planA, setPlanA] = useState<GamePlan | null>(null);
   const [planB, setPlanB] = useState<GamePlan | null>(null);
   const [match, setMatch] = useState<MatchState | null>(null);
@@ -89,6 +122,31 @@ export default function BoxingVersus() {
 
   const isCpu = setup?.mode === "cpu";
   const cpuDifficulty: "easy" | "normal" | "hard" = (setup?.cpuDifficulty ?? "normal") as "easy" | "normal" | "hard";
+
+  // ── Roster lock-ins ────────────────────────────────────────────────
+  function pickRandomCpuFighter(excludeId: string): string {
+    const pool = BOXERS.filter(b => b.id !== excludeId);
+    return pool[Math.floor(Math.random() * pool.length)].id;
+  }
+  function lockRosterA(fighterId: string) {
+    setFighterIdA(fighterId);
+    if (isCpu) {
+      // Campaign-side: opponent is fixed by the bracket / story arc.
+      if (campaign && campaign.sport === "boxing") {
+        // Already set in initial state — don't randomize over a campaign opponent.
+        setPhase("handoff_planA");
+      } else {
+        setFighterIdB(pickRandomCpuFighter(fighterId));
+        setPhase("handoff_planA");
+      }
+    } else {
+      setPhase("handoff_rosterB");
+    }
+  }
+  function lockRosterB(fighterId: string) {
+    setFighterIdB(fighterId);
+    setPhase("handoff_planA");
+  }
 
   // ── Plan lock-ins → start match ───────────────────────────────────
   function lockPlanA(plan: GamePlan) {
@@ -200,6 +258,27 @@ export default function BoxingVersus() {
     return () => clearTimeout(t);
   }, [phase]);
 
+  // ── Campaign intro → flow into roster (player picks once at start
+  //    of arc) or plan (after the player picked + we're between matches). ─
+  useEffect(() => {
+    if (phase !== "campaign_intro" || !campaign) return;
+    // First match of an arc → player gets to pick their fighter once;
+    // subsequent matches keep that fighter. We detect "first match"
+    // by the campaign's pickedPlayerFighterId not yet being committed
+    // OR currentIdx === 0 and we haven't latched it.
+    const isFirst = campaign.currentIdx === 0 && !campaign.playerFighterId;
+    const t = setTimeout(() => {
+      if (isFirst) setPhase(USE_ROSTER_SELECT ? "handoff_rosterA" : "handoff_planA");
+      else {
+        // Player keeps their chosen fighter through the whole arc.
+        if (campaign.playerFighterId) setFighterIdA(campaign.playerFighterId);
+        setPhase("handoff_planA");
+      }
+    }, 2200);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, campaign]);
+
   // ── Stats record on done ──────────────────────────────────────────
   useEffect(() => {
     if (phase !== "done" || recorded || !setup || !match) return;
@@ -220,8 +299,77 @@ export default function BoxingVersus() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, recorded]);
 
+  // ── Campaign progression on match end ──────────────────────────────
+  function onCampaignContinue() {
+    if (!campaign || !setup) return;
+    // Tag the player's fighter so it persists for the next match.
+    if (!campaign.playerFighterId) campaign.playerFighterId = fighterIdA;
+    const playerWon = match?.winnerIdx === 0;
+    if (playerWon) {
+      const next = advanceCampaign(campaign);
+      if (!next) {
+        // Final — clear and home.
+        navigate("/versus");
+        return;
+      }
+      // Next opponent → write next match setup blob and reload page.
+      const nextSetup: Setup = {
+        ...setup,
+        playerB: {
+          ...setup.playerB,
+          teamId: next.opponents[next.currentIdx],
+        },
+      };
+      try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(nextSetup)); } catch { /* ignore */ }
+      location.reload();
+    } else {
+      // Loss — story restarts current; championship ends the run.
+      if (campaign.type === "story") {
+        restartCurrent(campaign);
+        try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(setup)); } catch { /* ignore */ }
+        location.reload();
+      } else {
+        // Championship loss — clear campaign and home.
+        navigate("/versus");
+      }
+    }
+  }
+
   if (!setup || !boxerA || !boxerB) {
     return <NoSetupFallback onBack={() => navigate("/versus")} />;
+  }
+
+  // Roster-pick screens render full-bleed (no scoreboard / ring above) —
+  // return early so the rest of the layout isn't visible behind them.
+  if (phase === "roster_pickA") {
+    return (
+      <RosterSelectScreen
+        sport="boxing"
+        initialId={fighterIdA}
+        onCancel={() => navigate("/versus")}
+        onConfirm={lockRosterA}
+      />
+    );
+  }
+  if (phase === "roster_pickB" && !isCpu) {
+    return (
+      <RosterSelectScreen
+        sport="boxing"
+        initialId={fighterIdB}
+        onCancel={() => setPhase("handoff_rosterA")}
+        onConfirm={lockRosterB}
+      />
+    );
+  }
+  if (phase === "campaign_intro" && campaign) {
+    return <CampaignIntroScreen campaign={campaign} onSkip={() => {
+      const isFirst = campaign.currentIdx === 0 && !campaign.playerFighterId;
+      if (isFirst) setPhase(USE_ROSTER_SELECT ? "handoff_rosterA" : "handoff_planA");
+      else {
+        if (campaign.playerFighterId) setFighterIdA(campaign.playerFighterId);
+        setPhase("handoff_planA");
+      }
+    }} />;
   }
 
   const activeBoxer = match ? match.boxers[match.activeIdx] : null;
@@ -345,6 +493,7 @@ export default function BoxingVersus() {
         {phase === "done" && match && (
           <ResultCard match={match}
             aName={setup.playerA.profileName} bName={setup.playerB.profileName}
+            campaign={campaign}
             onPlayAgain={() => {
               try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(setup)); } catch {}
               location.reload();
@@ -355,12 +504,29 @@ export default function BoxingVersus() {
               location.reload();
             }}
             onHome={() => navigate("/versus")}
+            onCampaignContinue={onCampaignContinue}
           />
         )}
       </main>
 
       {/* Handoffs */}
       <AnimatePresence>
+        {phase === "handoff_rosterA" && (
+          <Handoff
+            toName={setup.playerA.profileName}
+            toColor={setup.playerA.profileColor}
+            prompt="Pick your fighter — full roster view. Don't peek at the other player's pick."
+            onReady={() => setPhase("roster_pickA")}
+          />
+        )}
+        {phase === "handoff_rosterB" && !isCpu && (
+          <Handoff
+            toName={setup.playerB.profileName}
+            toColor={setup.playerB.profileColor}
+            prompt="Pick your fighter — full roster view."
+            onReady={() => setPhase("roster_pickB")}
+          />
+        )}
         {phase === "handoff_planA" && (
           <Handoff
             toName={setup.playerA.profileName}
@@ -723,9 +889,11 @@ function DefensePicker({ who, passiveName, passiveColor, incomingMaskedTarget, o
   );
 }
 
-function ResultCard({ match, aName, bName, onPlayAgain, onSwitchSides, onHome }: {
+function ResultCard({ match, aName, bName, campaign, onPlayAgain, onSwitchSides, onHome, onCampaignContinue }: {
   match: MatchState; aName: string; bName: string;
+  campaign: ReturnType<typeof loadActiveCampaign>;
   onPlayAgain: () => void; onSwitchSides: () => void; onHome: () => void;
+  onCampaignContinue: () => void;
 }) {
   const winnerIdx = match.winnerIdx;
   const hasWinner = winnerIdx === 0 || winnerIdx === 1;
@@ -739,6 +907,17 @@ function ResultCard({ match, aName, bName, onPlayAgain, onSwitchSides, onHome }:
     : `${winnerName.toUpperCase()} WINS BY DECISION`;
   const winner = hasWinner ? match.boxers[winnerIdx as 0 | 1] : undefined;
   const loser = hasWinner ? match.boxers[(1 - (winnerIdx as 0 | 1)) as 0 | 1] : undefined;
+
+  const inCampaign = !!campaign;
+  const playerWon = winnerIdx === 0;
+  const isFinal = campaign ? isFinalMatchOfCampaign(campaign) : false;
+  const campaignContinueLabel = !inCampaign ? ""
+    : !playerWon
+    ? (campaign.type === "story" ? "TRY AGAIN" : "END RUN")
+    : isFinal
+    ? (campaign.type === "story" ? "📖 STORY COMPLETE — HOME" : "🏆 CHAMPION — HOME")
+    : "▶ NEXT MATCH";
+
   return (
     <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
       className="rounded-2xl p-6 text-center"
@@ -755,17 +934,33 @@ function ResultCard({ match, aName, bName, onPlayAgain, onSwitchSides, onHome }:
             : `Judges: ${winner.def.name} ${winner.hitsLanded} hits / ${winner.powerShotsLanded} power shots — vs ${loser.def.name} ${loser.hitsLanded} / ${loser.powerShotsLanded}.`}
         </div>
       )}
+      {inCampaign && (
+        <div className="text-[11px] mt-2 font-mono opacity-85"
+          style={{ color: campaign.type === "story" ? "#67e8f9" : "#fde047" }}>
+          {campaign.type === "story" ? "STORY MODE" : "CHAMPIONSHIP"} · Bout {campaign.currentIdx + 1} / {campaign.opponents.length}
+        </div>
+      )}
       <div className="flex gap-2 justify-center mt-4 flex-wrap">
-        <button onClick={onPlayAgain}
-          className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
-          style={{ background: winnerColor, color: "#0a0a14" }}>
-          🔁 REMATCH
-        </button>
-        <button onClick={onSwitchSides}
-          className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
-          style={{ background: "rgba(167,139,250,0.30)", border: "1px solid #a78bfa", color: "#a78bfa" }}>
-          🔄 SWITCH CORNERS
-        </button>
+        {inCampaign ? (
+          <button onClick={onCampaignContinue}
+            className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
+            style={{ background: winnerColor, color: "#0a0a14" }}>
+            {campaignContinueLabel}
+          </button>
+        ) : (
+          <>
+            <button onClick={onPlayAgain}
+              className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
+              style={{ background: winnerColor, color: "#0a0a14" }}>
+              🔁 REMATCH
+            </button>
+            <button onClick={onSwitchSides}
+              className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
+              style={{ background: "rgba(167,139,250,0.30)", border: "1px solid #a78bfa", color: "#a78bfa" }}>
+              🔄 SWITCH CORNERS
+            </button>
+          </>
+        )}
         <button onClick={onHome}
           className="px-4 py-3 rounded-full pressable touch-target font-display tracking-widest text-[11px]"
           style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.18)", color: "#fef3c7" }}>
@@ -773,6 +968,51 @@ function ResultCard({ match, aName, bName, onPlayAgain, onSwitchSides, onHome }:
         </button>
       </div>
     </motion.section>
+  );
+}
+
+/** Pre-match cinematic for story / championship — flavor text intro. */
+function CampaignIntroScreen({ campaign, onSkip }: {
+  campaign: NonNullable<ReturnType<typeof loadActiveCampaign>>;
+  onSkip: () => void;
+}) {
+  const f = flavorForCurrent(campaign);
+  const accent = campaign.type === "story" ? "#67e8f9" : "#fde047";
+  const label = campaign.type === "story" ? "STORY MODE" : "CHAMPIONSHIP";
+  return (
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-6 text-center"
+      style={{
+        background:
+          `radial-gradient(900px 600px at 50% 0%, ${accent}25, transparent 60%), ` +
+          "linear-gradient(180deg, #08081a 0%, #050308 100%)",
+      }}>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className="max-w-sm"
+      >
+        <div className="text-[10px] tracking-[0.3em] mb-2 font-mono" style={{ color: accent }}>
+          {label} · BOUT {campaign.currentIdx + 1} / {campaign.opponents.length}
+        </div>
+        <div className="font-display text-3xl tracking-wider mb-2" style={{ color: "#fde047" }}>
+          {f.title}
+        </div>
+        {f.subtitle && (
+          <div className="text-[11px] mb-3" style={{ color: "#fef3c7" }}>{f.subtitle}</div>
+        )}
+        {f.flavor && (
+          <p className="text-[13px] leading-snug opacity-85 mb-4" style={{ color: "#fef3c7" }}>
+            "{f.flavor}"
+          </p>
+        )}
+        <button onClick={onSkip}
+          className="mt-2 px-6 py-3 rounded-full pressable touch-target font-display tracking-widest text-[12px]"
+          style={{ background: accent, color: "#0a0a14" }}>
+          STEP INTO THE RING
+        </button>
+      </motion.div>
+    </div>
   );
 }
 
