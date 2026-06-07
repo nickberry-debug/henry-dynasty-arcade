@@ -95,7 +95,7 @@ export interface MonsterRecord {
   ko: number;
 }
 
-export type HabitatId = "ember_cavern" | "crystal_grotto" | "sky_garden" | "void_realm";
+export type HabitatId = "ember_cavern" | "crystal_grotto" | "sky_garden" | "void_realm" | "cozy_den";
 
 export interface SavedMonster {
   id: string;

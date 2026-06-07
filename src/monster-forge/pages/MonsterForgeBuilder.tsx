@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import * as THREE from "three";
-import { ArrowLeft, Save, Shuffle, Loader2, X, FlaskConical, Lock } from "lucide-react";
+import { ArrowLeft, Save, Shuffle, Loader2, X, FlaskConical, Lock, Camera, Volume2, VolumeX } from "lucide-react";
 import {
   assembleMonster, loadSaved, newId, upsertMonster,
 } from "../engine";
@@ -40,6 +40,13 @@ import {
 import { applyPotionsToMonster } from "../engine/effects";
 import { buildIdleAnimator, type IdleAnimator } from "../engine/animations";
 import { powersFor, buildPowerEffect, type ActiveEffect, type Power } from "../engine/powers";
+import { HABITATS, HABITAT_LIST } from "../engine/habitats";
+import type { HabitatId } from "../partsManifest";
+import { isEvolved, evolutionSource } from "../engine/evolution";
+import { roarFor, isMuted, setMuted } from "../engine/audio";
+import { snapshot, downloadDataUrl, savePhoto } from "../engine/photos";
+import { randomIdleText } from "../engine/idleText";
+import { unlockAchievement } from "../engine/achievements";
 
 type Tab = "body" | "head" | "horns" | "wings" | "tail" | "spikes" | "eyes" | "color" | "potions";
 
@@ -88,10 +95,32 @@ export default function MonsterForgeBuilder() {
   const [craftSlotA, setCraftSlotA] = useState<string | null>(null);
   const [craftSlotB, setCraftSlotB] = useState<string | null>(null);
   const [craftMessage, setCraftMessage] = useState<{ kind: "ok" | "fail"; text: string } | null>(null);
+  // Phase 5
+  const [habitat, setHabitat] = useState<HabitatId>("ember_cavern");
+  const [sizeMul, setSizeMul] = useState<number>(1.0);
+  const [muted, setMutedState] = useState<boolean>(false);
+  const [idleText, setIdleText] = useState<string>("");
+  const habitatGroupRef = useRef<THREE.Group | null>(null);
+  const habitatDisposeRef = useRef<(() => void) | null>(null);
+  const habitatParticlesRef = useRef<THREE.Group | null>(null);
 
   useEffect(() => {
     setDiscovered(loadDiscovered());
+    setMutedState(isMuted());
   }, []);
+
+  // Personality idle text — random phrase every 8-12s
+  useEffect(() => {
+    if (!manifest || !config) return;
+    const bt = manifest.parts.body.find(b => b.id === config.body)?.bodyType ?? "biped";
+    const tick = () => {
+      setIdleText(randomIdleText(bt));
+      setTimeout(() => setIdleText(""), 3000);
+    };
+    tick();
+    const iv = setInterval(tick, 9000 + Math.random() * 3000);
+    return () => clearInterval(iv);
+  }, [manifest, config?.body]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,6 +133,8 @@ export default function MonsterForgeBuilder() {
           setConfig(existing.config);
           setActivePotions(existing.activePotions ?? []);
           setName(existing.name);
+          if (existing.habitat) setHabitat(existing.habitat);
+          if (typeof existing.sizeMul === "number") setSizeMul(existing.sizeMul);
           return;
         }
       }
@@ -333,6 +364,14 @@ export default function MonsterForgeBuilder() {
       }
       sceneRef.current.add(am.root);
       monsterRootRef.current = am.root;
+      // Apply size slider + evolution glow
+      am.root.scale.multiplyScalar(sizeMul);
+      if (isEvolved(activePotions)) {
+        const glow = new THREE.PointLight(0xb39ddb, 1.4, 4.0);
+        glow.position.set(0, am.bodyHeight * 0.5, 0);
+        glow.name = "evolution-glow";
+        am.root.add(glow);
+      }
       setBusy(false);
     }).catch(err => {
       console.error("[monster-forge] assemble failed", err);
@@ -340,6 +379,42 @@ export default function MonsterForgeBuilder() {
     });
     return () => { cancelled = true; };
   }, [config, manifest, activePotions]);
+
+  // Phase 5: Apply size slider live without rebuilding
+  useEffect(() => {
+    const root = monsterRootRef.current;
+    if (!root) return;
+    // Find base scale (was multiplied by sizeMul at build time). Read back
+    // and reapply: simplest is to set scale to sizeMul if root is normalized,
+    // but because assembleMonster targetHeight already normalizes via body
+    // scaling, we keep root scale == sizeMul.
+    root.scale.setScalar(sizeMul);
+  }, [sizeMul]);
+
+  // Phase 5: Swap habitat group when habitat changes
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    // Remove previous habitat updates from the render loop
+    if (habitatParticlesRef.current) {
+      const prev = habitatParticlesRef.current as unknown as { __update?: (t: number) => void };
+      auraUpdatesRef.current = auraUpdatesRef.current.filter(u => u !== prev.__update);
+    }
+    if (habitatGroupRef.current) {
+      sceneRef.current.remove(habitatGroupRef.current);
+      try { habitatDisposeRef.current?.(); } catch { /* */ }
+    }
+    const def = HABITATS[habitat];
+    const built = def.build();
+    habitatGroupRef.current = built.group;
+    habitatParticlesRef.current = built.particles ?? null;
+    habitatDisposeRef.current = built.dispose;
+    sceneRef.current.add(built.group);
+    if (built.particles) {
+      const upd = (built.particles as unknown as { __update?: (t: number) => void }).__update;
+      if (upd) auraUpdatesRef.current = [...auraUpdatesRef.current, upd];
+    }
+    return () => { /* cleanup handled on next swap or unmount */ };
+  }, [habitat]);
 
   // ── Part-picker action handlers ───────────────────────────────────────
   const update = (k: keyof MonsterConfig, v: string) => {
@@ -430,12 +505,16 @@ export default function MonsterForgeBuilder() {
     const id = savedId ?? newId();
     const trimmed = (name || "").trim() || "Untitled Monster";
     const now = Date.now();
+    const evolved = isEvolved(activePotions);
     const monster: SavedMonster = {
       id,
       name: trimmed,
       config,
       activePotions,
       stats,
+      habitat,
+      sizeMul,
+      evolved,
       createdAt: savedId ? (loadSaved().find(m => m.id === id)?.createdAt ?? now) : now,
       updatedAt: now,
     };
@@ -443,7 +522,38 @@ export default function MonsterForgeBuilder() {
     setSavedId(id);
     setSavedToast(`Saved "${trimmed}"`);
     setTimeout(() => setSavedToast(""), 2000);
+    // Achievements
+    if (loadSaved().length === 1) unlockAchievement("first_build");
+    if (loadSaved().length >= 5) unlockAchievement("mad_scientist");
+    if (evolved) unlockAchievement("evolutionary");
   };
+
+  // Phase 5: Photo capture
+  const takePhoto = () => {
+    const r = rendererRef.current, sc = sceneRef.current, cam = cameraRef.current;
+    if (!r || !sc || !cam || !config) return;
+    const data = snapshot(r, sc, cam, 1024);
+    const safe = (name || "monster").replace(/[^a-zA-Z0-9_-]/g, "_");
+    downloadDataUrl(data, `${safe}.png`);
+    savePhoto(savedId ?? "unsaved", name || "Monster", data);
+    setSavedToast("📸 Photo saved");
+    setTimeout(() => setSavedToast(""), 1800);
+  };
+
+  // Phase 5: Mute toggle
+  const toggleMute = () => {
+    const next = !muted;
+    setMuted(next);
+    setMutedState(next);
+  };
+
+  // Phase 5: Roar when body changes (feature 19)
+  useEffect(() => {
+    if (!config || !manifest) return;
+    const bt = manifest.parts.body.find(b => b.id === config.body)?.bodyType ?? "biped";
+    roarFor(bt, config.body);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.body]);
 
   // ── Render ────────────────────────────────────────────────────────────
   // IMPORTANT: render the host div unconditionally — the Three.js bootstrap
@@ -511,6 +621,62 @@ export default function MonsterForgeBuilder() {
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)", color: "#fef3c7" }}>
             <Loader2 size={20} className="animate-spin" />&nbsp; Loading parts…
+          </div>
+        )}
+
+        {/* Phase 5: habitat picker + photo + mute (top-right) */}
+        <div className="absolute top-2 right-2 flex items-center gap-1.5 px-1.5 py-1 rounded-full pointer-events-auto"
+          style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <select value={habitat} onChange={e => setHabitat(e.target.value as HabitatId)}
+            disabled={loading}
+            className="bg-transparent text-[10px] font-display tracking-wider outline-none"
+            style={{ color: "#fde047", maxWidth: 110 }}>
+            {HABITAT_LIST.map(h => (
+              <option key={h.id} value={h.id} style={{ background: "#1a0a20", color: "#fde047" }}>
+                {h.emoji} {h.label}
+              </option>
+            ))}
+          </select>
+          <button onClick={takePhoto} title="Take photo" disabled={loading}
+            className="w-7 h-7 rounded-full flex items-center justify-center pressable touch-target"
+            style={{ background: "rgba(125,80,180,0.30)", border: "1px solid rgba(180,80,200,0.4)" }}>
+            <Camera size={12} style={{ color: "#fde047" }} />
+          </button>
+          <button onClick={toggleMute} title={muted ? "Unmute" : "Mute"} disabled={loading}
+            className="w-7 h-7 rounded-full flex items-center justify-center pressable touch-target"
+            style={{ background: muted ? "rgba(180,80,80,0.30)" : "rgba(34,197,94,0.20)", border: "1px solid rgba(255,255,255,0.15)" }}>
+            {muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
+          </button>
+        </div>
+
+        {/* Phase 5: Idle personality text bubble */}
+        {idleText && (
+          <div className="absolute left-1/2 -translate-x-1/2 px-3 py-1 rounded-2xl text-[11px] font-display tracking-wider pointer-events-none animate-idleBubble"
+            style={{
+              top: "20%", background: "rgba(255,255,255,0.85)", color: "#1a0820",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+            }}>
+            {idleText}
+          </div>
+        )}
+
+        {/* Phase 5: Size slider (bottom-center of preview) */}
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1.5 rounded-full pointer-events-auto"
+          style={{ background: "rgba(0,0,0,0.55)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <span className="text-[10px] font-display tracking-widest" style={{ color: "rgba(229,231,235,0.7)" }}>SIZE</span>
+          <input type="range" min={0.5} max={2.0} step={0.05} value={sizeMul}
+            onChange={e => setSizeMul(parseFloat(e.target.value))}
+            disabled={loading}
+            className="w-32 accent-purple-400"
+            style={{ accentColor: "#c084fc" }} />
+          <span className="text-[10px] font-display tracking-widest tabular-nums" style={{ color: "#fde047", width: 32, textAlign: "right" }}>{sizeMul.toFixed(2)}×</span>
+        </div>
+
+        {/* Phase 5: Evolution badge */}
+        {isEvolved(activePotions) && (
+          <div className="absolute top-12 left-2 px-2 py-1 rounded-full text-[9px] font-display tracking-widest pointer-events-none"
+            style={{ background: "rgba(124,77,255,0.85)", color: "#fff", border: "1px solid rgba(254,240,138,0.5)" }}>
+            ✨ EVOLVED ({evolutionSource(activePotions)?.toUpperCase()})
           </div>
         )}
         {!loading && busy && (
@@ -593,6 +759,15 @@ export default function MonsterForgeBuilder() {
           )
         )}
       </div>
+      <style>{`
+        @keyframes idleBubble {
+          0%   { opacity: 0; transform: translate(-50%, 8px) scale(0.85); }
+          15%  { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+          85%  { opacity: 1; transform: translate(-50%, 0) scale(1); }
+          100% { opacity: 0; transform: translate(-50%, -8px) scale(0.95); }
+        }
+        .animate-idleBubble { animation: idleBubble 3s ease-out forwards; }
+      `}</style>
     </div>
   );
 }

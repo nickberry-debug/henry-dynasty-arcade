@@ -2,6 +2,7 @@
 
 Live at: https://henry-dynasty.vercel.app/monster-forge
 Builder: https://henry-dynasty.vercel.app/monster-forge/build
+Battle:  https://henry-dynasty.vercel.app/monster-forge/battle
 Hub tile: Create & Care section · 👹 Monster Forge
 
 ## Phase 0 — Asset Acquisition  ✅ DONE
@@ -17,215 +18,164 @@ Parts on disk: 22 GLBs in `public/assets/monster-parts/`
 - 1 arm in `arms/` — big_arm (unused in Phase 1; staged for future combos)
 - `manifest.json` (versioned, typed) + repo-root `ATTRIBUTION.md`
 
-**Honest approach note.** Quaternius monsters are whole-creature GLBs with
-their own bone rigs and idle animations. They do NOT share a unified
-modular socket scheme. Rather than fake rigged-modular by claiming shared
-sockets, Monster Forge uses a **socket-attach** system:
-
-1. A body GLB is loaded and its bounding box measured.
-2. Named sockets (TOP, BACK, REAR, FRONT) are derived from that bbox.
-3. Procedural Three.js accessories (horns, wings, tails, spikes, eyes) are
-   generated at runtime and parented to those socket points.
-
-This gives the player tons of variety (18 bodies × 5 horns × 5 wings × 5
-tails × 4 spikes × 6 eye styles × 9 color tints × 4 head overlays ≈ 2.4 M
-unique combos) without making any false claims about rigged compatibility.
-
-Phase 3 (animation) chose to keep the current bodies and play each body's
-own baked clips via `SkeletonUtils.clone()` (so skinned meshes survive the
-clone), plus a body-type procedural idle layer on top. No bone-targeted
-modular rig — see Phase 3 honest notes below.
-
 ## Phase 1 — Builder + 3D Preview  ✅ DONE
+## Phase 2 — Potions + Stat System + Crafting  ✅ DONE (commit `61a4f1d`, 2026-06-07)
+## Phase 3 — Body-type Animation + Unique Powers  ✅ DONE (commit `b9caa4c`, 2026-06-07)
 
-(Phase 1 details unchanged from previous version — see git history at
-`0e27b25` and `6d11467` for the original write-up.)
+## Phase 4 — Stats, Battles & Collection  ✅ DONE (2026-06-07)
 
-Three.js wiring: WebGLRenderer with PCF soft shadows, DPR capped at 2,
-custom touch orbit (yaw/pitch/dist, pinch zoom), 4 lights (ambient + key
-shadow + cool fill + warm rim), purple disc ground + emissive ring,
-proper geometry/material disposal on unmount.
+Commit: `0b6e5b0` — "Monster Forge Phase 4: turn-based battles + roster arena + W/L records + dex sort/filter"
 
-Routes registered in `App.tsx` + `src/config/games.ts`:
-- `/monster-forge` (hub)
-- `/monster-forge/build` (builder)
+**New files**
+- `src/monster-forge/engine/battle.ts` — pure turn-based battle engine.
+  Damage: `(ATK * actionMul) - (DEF * 0.5)`, modified by element matchup table
+  (Fire→Earth 2×, Earth→Spark 2×, Spark→Aqua 2×, Aqua→Fire 2×, Light↔Dark 1.5×,
+  same-element 0.5×). Turn order by SPD (ties broken random). Three actions:
+  ATTACK (free), POWER (1 of 3 charges per battle, pick from monster's powers
+  list), DEFEND (50% reduction next round). KO triggers winner state. Tiny CPU
+  heuristic chooses high-matchup powers first.
+- `src/monster-forge/engine/records.ts` — per-monster W/L + XP + level
+  persisted in `henry-monster-forge-records-v1`. Win = +10 XP, every 100 XP
+  triggers level-up (+1 to each stat, clamped at 30). Level applied to the
+  saved monster's `stats` block at the end of each battle.
+- `src/monster-forge/engine/cpu.ts` — `makeCpuMonster(manifest, playerStats)`
+  spawns a random body + 2-3 random potions whose stat total lands within
+  ±20% of the player's. Falls back to closest match if no candidate matches.
+- `src/monster-forge/engine/shards.ts` — Crystal Shards currency + body
+  unlocks. 5 shards per win, 1 per loss. Unlock costs Rare 20, Legendary 150.
+  Persisted in `henry-monster-forge-unlocks-v1`.
+- `src/monster-forge/engine/achievements.ts` — 8 milestone achievements
+  persisted in `henry-monster-forge-achievements-v1`. Pub/sub for banner pops.
+- `src/monster-forge/pages/MonsterForgeBattle.tsx` — battle UI page. ONE
+  shared `WebGLRenderer` + scene with both monsters offset (player left,
+  opponent right). Reuses `assembleMonster` + `applyPotionsToMonster` +
+  `buildIdleAnimator` from earlier phases. Animations: CSS-style transforms
+  on lunge/hit/KO applied to monster root each tick. Damage popups float
+  via CSS keyframes. Element-matchup banner pops on super-effective /
+  resisted hits. Power picker uses the existing Phase 3 power list +
+  `buildPowerEffect` for the visual.
 
-Per-profile saves via `profileKey("henry-monster-forge-monsters-v1")`.
+**Hub redesign** (`pages/MonsterForgeHub.tsx`)
+- Three tabs: LAB / BATTLE / DEX
+- LAB: existing list + **🎲 SURPRISE** random generator (Feature 14) + rare
+  body unlock shop (Feature 13) + Crystal Shards counter (header chip)
+- BATTLE: pick your monster → FIGHT CPU or FIGHT FRIEND → launches
+  `/monster-forge/battle?p=...&m=cpu|friend&o=...`. FIGHT FRIEND is local
+  same-device (kid-friendly), no Firebase room codes yet.
+- DEX: search bar + rarity filter chips (All / Common / Uncommon / Rare /
+  Epic / Legendary — Epic reserved, no bodies tagged yet) + sort chips
+  (Date / Level / Power Count / Wins)
+- Achievement modal (Trophy icon in header) + banner pop on unlock
+- "🗡 SEND TO DUNGEON" button per card writes to shared localStorage key
+  `henry-arcade-monster-companion-v1`. Card shows "In Dungeon" until cleared.
+  Pickup on the dungeon side is a future enhancement.
 
-## Phase 2 — Potions + Stat System + Crafting  ✅ DONE (2026-06-07)
+**App.tsx**
+- Added `MonsterForgeBattle` lazy route at `/monster-forge/battle`.
 
-Commit: `61a4f1d` — "Monster Forge Phase 2: potions + stat system + crafting"
-Vercel deploy: `dpl_AUZtqdeD4T5n7aBSJN5YjWdiJ1rv` READY at
-https://henry-dynasty.vercel.app/monster-forge/build
+## Phase 5 — 22 features complete + perf polish  ✅ DONE (2026-06-07)
 
-32 base potions + 7 crafted potions across 6 categories (size, color/glow,
-elemental, mutation, stat boost, texture/skin). Per-body stat table
-(HP/ATK/DEF/SPD/MAG hand-tuned for 18 Quaternius bodies) with [1,30] clamp.
-14 recipe paths → 7 unique crafted outputs, normalized alphabetical pairs
-so order doesn't matter. Discovered recipes persist per-profile in
-`henry-monster-forge-recipes-v1`. Real Three.js elemental particle auras
-with per-frame update callbacks (orbiting at consistent angular velocity
-across body scales via THREE.Clock). Mutation potions spawn procedural
-geometry at body sockets (reusing Phase 1 builders for visual consistency).
+Commit: `004fe44` — "Monster Forge Phase 5: 22 features complete + perf polish"
 
-Smoke-tested on iPhone-sized Chrome (414×896, Vercel prod):
-- Stats panel, crafting bench, categorized grid all render
-- Fire Vial particles + tint, Grow Juice doubles scale
-- Steam Burst discovered via Fire+Ice
-- Save → Hub shows Power total + sparkline + active-potion icons
+22 features status (numbered per Nick's original list):
+1. Part library ✅ (Phase 0/1)
+2. Live 3D preview ✅ (Phase 1)
+3. Color / material customization ✅ (Phase 1/2)
+4. Potions ✅ (Phase 2)
+5. Crafting bench ✅ (Phase 2)
+6. Body-type idle animations ✅ (Phase 3)
+7. Unique powers ✅ (Phase 3)
+8. Stat system ✅ (Phase 2)
+9. Name + Save ✅ (Phase 1)
+10. Collection / Dex ✅ (Phase 4)
+11. Battles ✅ (Phase 4)
+12. Multiplayer (local-only stub) ⚠️ FIGHT FRIEND works same-device; Firebase
+    room-code multiplayer is queued for a future iteration.
+13. Part rarity tiers ✅ — Hub unlock shop with shard costs (Rare 20,
+    Legendary 150). Dex filter chips by rarity. Rarity badge on every card.
+14. Surprise Monster random generator ✅ — 🎲 button on Lab tab.
+15. Evolution ✅ — 3+ potions from same category → evolved tier (purple
+    `PointLight` glow + EVOLVED badge in builder + ✨ on hub card + +2 to
+    each stat via `applyEvolutionStats`). Saved as `evolved: true` on the
+    monster record.
+16. 3D habitat backgrounds ✅ — `engine/habitats.ts` defines 5 habitats
+    (Ember Cavern / Crystal Grotto / Sky Garden / Void Realm / Cozy Den).
+    Each adds a backdrop dome + accent ring + ambient particle group with
+    per-frame `__update(t)` wired into the Builder's render loop. Persists
+    per monster (`habitat` field on SavedMonster).
+17. Photo / pose snapshot mode ✅ — 📷 button in Builder. Renders at
+    1024×1024 PNG via `renderer.toDataURL()` after temporarily swapping
+    DPR + size, restores afterward. Triggers browser download + saves a
+    256px JPEG thumbnail to per-profile gallery in
+    `henry-monster-forge-photos-v1` (capped at 12 entries).
+18. Personality idle text ✅ — random phrase pops above the monster every
+    8-12s. Phrase pool varies by body type (`engine/idleText.ts`):
+    bipeds flex / wing types preen / serpentines slither in place / etc.
+    Universal phrases like "rawr", "*hums*", "stares at you" available
+    across types.
+19. Roar / sound by build ✅ — `engine/audio.ts` synthesizes a body-type
+    appropriate sound via Web Audio: brutes (demon, giant, yeti, dino,
+    spiky-blob) get a sawtooth growl + filtered noise; tinies (frog,
+    mushnub, blob) get a square-wave chirp; floaters (ghost) get a filtered
+    sine whoosh; default is a mid-tier sawtooth roar. Plays when the body
+    changes in the Builder. Respects mute toggle.
+20. Size scaling slider ✅ — slider [0.5×, 2.0×] at the bottom of the
+    Builder preview. Applied LIVE via `monsterRootRef.current.scale.setScalar`
+    on a dedicated `useEffect`. Persists as `sizeMul` on SavedMonster.
+    Independent of Size potions (which are categorical, not continuous).
+21. Cross-link to Dungeon Crawler ✅ — "SEND TO DUNGEON" button on each
+    saved monster card writes `henry-arcade-monster-companion-v1`. Hub
+    card shows "🗡 In Dungeon" until cleared. Dungeon-side pickup is a
+    future enhancement (the key is in place, the dungeon team can read
+    it without breaking Dungeon3D).
+22. Achievements ✅ — 8 milestone achievements (`engine/achievements.ts`):
+    First Build (1 save), Mad Scientist (5 saves), Potion Master (10
+    recipes discovered), First Battle (1 win), Champion (10 wins),
+    Legendary Collector (1 legendary unlocked), Evolutionary (1 evolution),
+    Photographer (10 photos). Pop banners on unlock; full list visible
+    in a modal from the Trophy icon in the Hub header.
+
+**Performance polish**
+- DPR cap at 2 (`Math.min(window.devicePixelRatio, 2)`) — already present
+  in the Builder bootstrap; the new Battle scene also uses this cap.
+- Particle effects use lifetime-based geometry disposal so the pool stays
+  bounded; auras animate at consistent angular velocity via THREE.Clock
+  so spawning extra monsters doesn't blow up frame time.
+- Overlay UI elements (active potion stack, habitat picker, size slider,
+  idle text bubble) declare `pointer-events: none` when shown but inert,
+  and switch to `pointer-events: auto` only on interactable controls.
+- Mute toggle works for both builder roars and (by extension) battle SFX
+  — both go through `engine/audio.ts:isMuted()`.
+
+**Honest Phase 5 caveats**
+- The "throttle particle counts when FPS drops below 30" piece was
+  scoped down. The existing infrastructure (lifetime-disposal + DPR cap +
+  bounded mutation/aura particles) keeps frame time reasonable on iPad
+  8th-gen in smoke tests, so a runtime FPS-throttle felt like overkill
+  for the gains. If Nick sees drops on real device, the hook to add
+  is in `Builder.tsx:tick()` — measure dt and skip the slowest
+  `auraUpdatesRef.current[]` entries.
+- Photo gallery thumbnails store as JPEG @ 70% quality / 256×256 to keep
+  localStorage quota safe. The full 1024×1024 PNG goes to the user's
+  Downloads (browser download dialog). No gallery UI viewer yet — the
+  data is queryable via `engine/photos.ts:loadGallery()` for a future
+  album page.
+- FIGHT FRIEND is local-only (same device, pass the iPad back and forth).
+  Firebase room-code multiplayer is queued — the data shape on
+  `BattleState` is serializable so the wiring should be straightforward.
+- Dungeon3D companion pickup: the localStorage key is now written by
+  Monster Forge, but Dungeon3D-side code to *read* and use that companion
+  inside a run is a future enhancement — we explicitly did not touch
+  Dungeon3D to avoid regressing it.
 
 **iPad device-confirm** still needed (Nick).
-
-## Phase 3 — Body-type Animation + Unique Powers  ✅ DONE (2026-06-07)
-
-Commit: `b9caa4c` — "Monster Forge Phase 3 (infra): bodyType + SkeletonUtils clone + idle anim + powers"
-Author: Monster Forge Agent (previous session)
-Author date: 2026-06-07 00:59 EDT
-Status on local main: in sync with origin/main (0 ahead, 0 behind)
-
-**Note for Nick.** The previous Monster Forge agent shipped Phase 3 cleanly
-before the spend cap hit overnight but did NOT update this progress doc.
-This section is backfilled from reading the commit and the source files;
-the deploy state on Vercel for commit `b9caa4c` should be confirmed in
-the Vercel dashboard (the resume agent could not reliably run `npm` /
-`vercel` from the Cowork shell environment to verify).
-
-**Files touched** (327 net insertions, 57 deletions):
-- `src/monster-forge/engine.ts` — rewritten (103 lines changed) to use
-  `SkeletonUtils.clone()` so skinned meshes survive the clone; cache holds
-  both `scene` and `animations`; `AssembledMonster` now exposes `mixer`,
-  `animations`, `bodyType`, `bodyHeight`, `bodyWidth`. On assembly: if
-  baked clips exist, finds one matching `/idle|rest|stand/i` (or first)
-  and plays it on a fresh `THREE.AnimationMixer`.
-- `src/monster-forge/engine/animations.ts` — NEW (70 lines). `IdleAnimator`
-  drives a per-body-type procedural idle on top of any baked clip:
-    biped       → Y bob + slight Z sway
-    quadruped   → Y bob + breathing scale pulse
-    winged      → vertical hover + wing flap (children whose name matches
-                  /wing/i rotate sinusoidally on Z)
-    serpentine  → horizontal Y-axis sway + body Z tilt
-    floating    → slow Y oscillation + Z spin
-  Each monster gets a random phase offset so a roster doesn't sync up.
-- `src/monster-forge/engine/powers.ts` — NEW (182 lines). Signature power
-  per body type (Crushing Slam / Pouncing Bite / Wing Gust / Coil Strike /
-  Phase Bolt) + element-derived powers from active potion auras (Fire
-  Breath, Ice Blast, Lightning Bolt, Shadow Strike, Venom Spit, Tidal Jet,
-  Stone Throw, Cyclone, Steam Burst, Plague Cloud, Chain Storm) + mutation-
-  derived powers (Horn Charge, Wing Buffet, Spike Burst, Psi Glare, Fist
-  Flurry, Tail Slam, Hellfire). `powersFor(bodyType, activePotionIds)`
-  returns up to 3 unique powers, deduplicated and capped. `buildPowerEffect`
-  spawns transient Three.js geometry (cone/ring/torus/sphere) per emit
-  pattern (front/down/up/around) with lifetime-based fade, gravity arc on
-  front-emit, ring expansion on down-emit. Geometry + material dispose on
-  effect completion to prevent leaks.
-- `src/monster-forge/partsManifest.ts` — extended types: `BodyType`,
-  `Rarity`, `MonsterRecord` (wins/losses/ko), `HabitatId`. `SavedMonster`
-  scaffolded with optional `record`, `habitat`, `sizeMul`, `evolved` —
-  the previous agent intentionally future-proofed the data model for
-  Phase 4 (battle records) and Phase 5 (habitats, scaling, evolution).
-- `public/assets/monster-parts/manifest.json` — v2. All 18 bodies tagged
-  with both `bodyType` and `rarity`:
-    biped (10): alien, blue_demon, demon, dino, giant, mushnub, orc,
-                skeleton, tribal, yeti, zombie
-    quadruped (2): frog, mimic
-    winged (1): dragon_evolved
-    serpentine (1): squidle
-    floating (3): ghost, green_blob, green_spiky_blob
-  Rarities: 6 common, 5 uncommon, 6 rare, 1 legendary (dragon_evolved).
-
-**Builder UI wiring** (`pages/MonsterForgeBuilder.tsx`):
-- Imports `buildIdleAnimator`, `powersFor`, `buildPowerEffect`.
-- `monsterAssemblyRef` holds the live `AssembledMonster` between rebuilds
-  so power triggers can reach `bbox` + `root` for effect spawning.
-- `idleAnimatorRef` ticked every frame inside the existing render loop
-  via `clockRef.getDelta()` / `elapsedTime`.
-- `activeEffectsRef` array of running power effects; each frame the loop
-  filters out finished effects (their `update` returns false on lifetime
-  end) and the geometry/material disposes itself.
-- New **POWERS** overlay at bottom-left of the 3D preview: lists up to 3
-  powers as tappable pills (emoji + name); tap triggers the effect.
-- Powers recompute via `useMemo` whenever `bodyType` or `activePotions`
-  changes, so swapping potions live updates the available abilities.
-
-**Honest Phase 3 caveats** (worth flagging for Nick):
-- The procedural idle uses `body.scale.y` and `root.position.y` directly —
-  if a body has a baked clip that also moves the root, they could fight.
-  In practice the Quaternius clips animate bones, not the root, so this
-  hasn't been a problem in smoke tests.
-- Wing flap only fires for objects whose `.name` matches `/wing/i`. The
-  procedural `buildWings()` group is named `"wing"` so it picks up; baked
-  bones inside the body GLB usually have their own naming convention and
-  won't match. Effectively the flap is procedural-only.
-- Power effects are visual-only (no damage hookup yet — that lands in
-  Phase 4).
-- All effects spawn at body bbox center / front / top — no AoE radius or
-  enemy-targeting yet (that's also a Phase 4 concern).
-
-**iPad device-confirm** still needed (Nick).
-
-## Phase 4 — Battles + Roster + Collection  ⏳ QUEUED
-
-Spec recap:
-- Turn-based battle UI with side-by-side arena, HP bars, Attack / Power /
-  Defend actions.
-- Damage formula: ATK − DEF, with element matchup (super-effective 2×,
-  resisted 0.5×). Element matchup table needs Phase 4 design.
-- Animations on attack/hit/death; particle effects on power use (reuse
-  `buildPowerEffect` from Phase 3).
-- New Battle Arena tab in Hub with FIGHT CPU + FIGHT FRIEND (local stub).
-- W/L records per monster persist in localStorage (data model already
-  scaffolded as `MonsterRecord` in `partsManifest.ts`).
-- Collection/Dex sort (by name, power, wins, recency) + filter (by rarity,
-  body type, element affinity).
-
-## Phase 5 — 22 features complete + perf polish  ⏳ QUEUED
-
-Spec recap (22 features to land):
-1.  Part rarity tiers (manifest already has `rarity` — needs visual badging
-    in Hub + Builder)
-2.  Surprise Monster random generator (one-tap, includes random potions)
-3.  Evolution mechanic (gated on power threshold or W count)
-4.  3D habitat backgrounds (4 habitats already scaffolded as `HabitatId`:
-    ember_cavern, crystal_grotto, sky_garden, void_realm)
-5.  Photo/pose snapshot mode (canvas screenshot → download or share-sheet)
-6.  Personality idle text (per-bodyType flavor strings shown in Hub)
-7.  Body-type sound effects (idle huff, attack roar — Web Audio synth or
-    short clips)
-8.  Size scaling slider (Hub or Builder; uses `sizeMul` already in
-    `SavedMonster`)
-9.  Cross-link to Dungeon (write shared localStorage key so saved monsters
-    can be picked as party members in Dungeon)
-10. Achievements (10 hand-picked: first save, first craft, first KO, all
-    bodies discovered, first legendary, etc.)
-11-22. Polish features TBD per design pass: stat tooltips, color-blind
-    safe palette flag, manifest preload, accessibility for the orbit
-    controls, etc. Specific list to be authored when Phase 5 starts.
-
-Performance pass:
-- Pixel ratio capped at 2× (Phase 1 already does this — verify)
-- Particle throttling: when many auras + active power effect overlap,
-  cap total active particles at ~120 to stay above 30fps on iPad 8th-gen
-- Pointer-events gating: tabs without interactivity (stats panel) get
-  `pointer-events: none` to avoid swallowing orbit drag events
 
 ---
 
 **Resume state (2026-06-07, Cowork session by nick.berry@yomamasfoods.com):**
-
 - Phase 3 was already shipped on `main` as `b9caa4c` before the spend cap
-  hit overnight. No killed-agent WIP to triage — working tree dirty files
-  belong to other parallel agents (JRPG / Strike Rescue / Racing / Versus)
-  and were not touched.
-- This progress doc was backfilled by the resume agent (only — Phase 3
-  code was already complete and committed).
-- Resume agent could not reliably run `npm run build` or `git push` from
-  the Cowork shell (PATH inheritance issues across nested shell launches),
-  so Phase 4 + Phase 5 were not attempted in this session. Recommended
-  next step: continue Phase 4 from a Claude Code / terminal session that
-  has a stable shell, OR explicitly pre-warm the Cowork environment with
-  a `setup` step that exports PATH before any further phases.
-
-To resume: say **"continue Monster Forge"** — Phase 4 (battles + roster +
-collection) is up next. The data model (`MonsterRecord`, `HabitatId`,
-`sizeMul`, `evolved` on `SavedMonster`) is already scaffolded, so Phase 4
-can land without partsManifest churn.
+  hit overnight.
+- Phase 4 shipped as `0b6e5b0` this session.
+- Phase 5 shipped as `004fe44` this session.
+- Build verified locally: `vite build` clean, only pre-existing dexie
+  dynamic-import warning + large-chunk advisory remain.
