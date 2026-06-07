@@ -19,8 +19,10 @@ import {
   isCellVisible,
   CLASS_DEFS, RARITY_COLORS, RARITY_HEX, recomputePlayerStats,
   ABILITY_DEFS, META_UNLOCKS, getAbilityDef, applyAbilityChoice,
+  BOSS_DEFS,
   type Game, type InputState, type ClassId, type Item, type Rarity,
   type AbilityDef,
+  type Boss, type BossKind, type Telegraph,
 } from "../engine";
 import {
   loadModel, preloadCriticalModels, DUNGEON_MODELS, CHARACTER_MODELS, ENEMY_VARIANTS, tintModel,
@@ -29,7 +31,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-06T23:58:00Z";  // HOTFIX_CAMERA_DIAL_BACK
+const BUILD_STAMP = "2026-06-07T00:30:00Z";  // PHASE6_BOSSES
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
@@ -165,6 +167,9 @@ export default function Dungeon3DRun() {
     playerMixer: THREE.AnimationMixer | null;
     playerActions: { idle?: THREE.AnimationAction; walk?: THREE.AnimationAction; attack?: THREE.AnimationAction };
     enemyObjs: Map<string, { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }>;
+    bossObj: THREE.Object3D | null;
+    bossMixer: THREE.AnimationMixer | null;
+    telegraphObjs: Map<string, THREE.Mesh>;
     dungeonGroup: THREE.Group;
     coinGroup: THREE.Group;
     chestGroup: THREE.Group;
@@ -459,6 +464,9 @@ export default function Dungeon3DRun() {
         playerMixer: playerRes.mixer,
         playerActions: { idle: playerRes.actions.idle, walk: playerRes.actions.walk, attack: playerRes.actions.attack },
         enemyObjs,
+        bossObj: null,
+        bossMixer: null,
+        telegraphObjs: new Map<string, THREE.Mesh>(),
         dungeonGroup,
         coinGroup,
         chestGroup,
@@ -468,6 +476,25 @@ export default function Dungeon3DRun() {
           if (renderer.domElement.parentElement === container) container.removeChild(renderer.domElement);
         },
       };
+      // Phase 6: load boss mesh if this floor spawned one (newGame populates g.boss).
+      if (gameRef.current!.boss) {
+        const _b = gameRef.current!.boss;
+        const _bdef = BOSS_DEFS[_b.kind];
+        const _bres = await loadCharacter(_bdef.modelUrl, _bdef.tint);
+        if (!cancelled) {
+          _bres.obj.scale.setScalar(0.9 * _bdef.scale);
+          _bres.obj.position.set(_b.x, 0, _b.z);
+          if (_bdef.emissive) {
+            _bres.obj.traverse(o => {
+              const m = (o as THREE.Mesh).material as any;
+              if (m && m.emissive) { m.emissive.setHex(_bdef.emissive); m.emissiveIntensity = 0.7; }
+            });
+          }
+          scene.add(_bres.obj);
+          threeRef.current!.bossObj = _bres.obj;
+          threeRef.current!.bossMixer = _bres.mixer;
+        }
+      }
       setLoading(false);
 
       // â”€â”€ Game loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -604,6 +631,77 @@ export default function Dungeon3DRun() {
               (pmesh.geometry as THREE.BufferGeometry).dispose();
               (pmesh.material as THREE.Material).dispose();
               projectileMeshes.delete(pid);
+            }
+          }
+
+          // ── Phase 6: Boss mesh sync ──
+          if (t3.bossObj && g.boss) {
+            t3.bossObj.position.set(g.boss.x, 0, g.boss.z);
+            t3.bossObj.rotation.y = g.boss.facing + Math.PI;
+            t3.bossObj.visible = !g.boss.tpHidden;
+            if (t3.bossMixer) t3.bossMixer.update(dt);
+            if (g.boss.flashT > 0) {
+              t3.bossObj.traverse(o => {
+                const m = (o as THREE.Mesh).material as any;
+                if (m && m.emissive) m.emissive.setHex(0xff5050);
+              });
+            } else {
+              const _def = BOSS_DEFS[g.boss.kind];
+              t3.bossObj.traverse(o => {
+                const m = (o as THREE.Mesh).material as any;
+                if (m && m.emissive) m.emissive.setHex(_def.emissive ?? 0x000000);
+              });
+            }
+          } else if (t3.bossObj && !g.boss) {
+            // Boss died — drop the mesh.
+            t3.scene.remove(t3.bossObj);
+            t3.bossObj = null;
+            t3.bossMixer = null;
+          }
+
+          // ── Phase 6: Telegraph meshes (circles + expanding rings) ──
+          {
+            const tMap = t3.telegraphObjs;
+            const liveTIds = new Set<string>();
+            for (const tg of g.telegraphs) {
+              const tid = (tg as any).__id ?? ((tg as any).__id = `t_${Date.now()}_${Math.random().toString(36).slice(2,6)}`);
+              liveTIds.add(tid);
+              let tm = tMap.get(tid);
+              if (!tm) {
+                let tgeo: THREE.BufferGeometry;
+                if (tg.shape === "ring") {
+                  tgeo = new THREE.RingGeometry(Math.max(0.05, tg.innerRadius ?? tg.radius - 0.4), tg.radius, 36);
+                } else {
+                  tgeo = new THREE.CircleGeometry(tg.radius, 36);
+                }
+                const tmat = new THREE.MeshBasicMaterial({
+                  color: tg.color,
+                  transparent: true,
+                  opacity: 0.55,
+                  side: THREE.DoubleSide,
+                  blending: THREE.AdditiveBlending,
+                  depthWrite: false,
+                });
+                tm = new THREE.Mesh(tgeo, tmat);
+                tm.rotation.x = -Math.PI / 2;
+                t3.scene.add(tm);
+                tMap.set(tid, tm);
+              }
+              if (tg.shape === "ring") {
+                (tm.geometry as THREE.BufferGeometry).dispose();
+                tm.geometry = new THREE.RingGeometry(Math.max(0.05, tg.innerRadius ?? tg.radius - 0.4), tg.radius, 36);
+              }
+              tm.position.set(tg.x, 0.05, tg.z);
+              const _delayFrac = tg.delay > 0 ? Math.min(1, tg.delay / 0.8) : 1.0;
+              (tm.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.45 * (1 - _delayFrac);
+            }
+            for (const [tid, tm] of Array.from(tMap.entries())) {
+              if (!liveTIds.has(tid)) {
+                t3.scene.remove(tm);
+                (tm.geometry as THREE.BufferGeometry).dispose();
+                (tm.material as THREE.Material).dispose();
+                tMap.delete(tid);
+              }
             }
           }
 
@@ -837,6 +935,14 @@ export default function Dungeon3DRun() {
     t3.scene.remove(t3.chestGroup);
     for (const handle of t3.enemyObjs.values()) t3.scene.remove(handle.obj);
     t3.enemyObjs.clear();
+    // Phase 6: drop the previous-floor boss mesh + any telegraph meshes.
+    if (t3.bossObj) { t3.scene.remove(t3.bossObj); t3.bossObj = null; t3.bossMixer = null; }
+    for (const tm of t3.telegraphObjs.values()) {
+      t3.scene.remove(tm);
+      (tm.geometry as THREE.BufferGeometry).dispose();
+      (tm.material as THREE.Material).dispose();
+    }
+    t3.telegraphObjs.clear();
 
     gameRef.current = nextGame;
     // Reposition player at new spawn (mesh stays mounted).
@@ -855,6 +961,23 @@ export default function Dungeon3DRun() {
       res.obj.scale.setScalar(0.9);
       t3.scene.add(res.obj);
       t3.enemyObjs.set(e.id, { obj: res.obj, mixer: res.mixer });
+    }
+    // Phase 6: load boss for the new floor (descendLevel populates g.boss).
+    if (nextGame.boss) {
+      const _b = nextGame.boss;
+      const _bdef = BOSS_DEFS[_b.kind];
+      const _bres = await loadCharacter(_bdef.modelUrl, _bdef.tint);
+      _bres.obj.scale.setScalar(0.9 * _bdef.scale);
+      _bres.obj.position.set(_b.x, 0, _b.z);
+      if (_bdef.emissive) {
+        _bres.obj.traverse(o => {
+          const m = (o as THREE.Mesh).material as any;
+          if (m && m.emissive) { m.emissive.setHex(_bdef.emissive); m.emissiveIntensity = 0.7; }
+        });
+      }
+      t3.scene.add(_bres.obj);
+      t3.bossObj = _bres.obj;
+      t3.bossMixer = _bres.mixer;
     }
   }
 
@@ -1270,6 +1393,83 @@ export default function Dungeon3DRun() {
             );
           })}
         </div>
+
+        {/* Phase 6: Boss HP bar with phase markers at 66%/33%. */}
+        {g.boss && (
+          <div style={{
+            position: "absolute", left: "50%", top: 8,
+            transform: "translateX(-50%)",
+            pointerEvents: "none",
+            width: "min(420px, 88%)",
+            fontFamily: "monospace",
+            color: "#fef3c7",
+            zIndex: 10,
+          }}>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "baseline",
+              fontSize: 10, letterSpacing: 2, marginBottom: 3,
+              textShadow: "0 0 6px rgba(0,0,0,0.85)",
+            }}>
+              <span style={{ color: g.boss.kind === "iron_tyrant" ? "#ff7766"
+                              : g.boss.kind === "hexblade" ? "#c8a0ff" : "#e0c8ff" }}>
+                {g.boss.name}
+              </span>
+              <span style={{ opacity: 0.7 }}>{Math.max(0, Math.ceil(g.boss.hp))} / {g.boss.maxHp}</span>
+            </div>
+            <div style={{
+              height: 10, background: "rgba(0,0,0,0.75)",
+              border: "1px solid rgba(254,243,199,0.35)",
+              borderRadius: 4, overflow: "hidden", position: "relative",
+            }}>
+              <div style={{
+                width: `${Math.max(0, (g.boss.hp / g.boss.maxHp) * 100)}%`,
+                height: "100%",
+                background: g.boss.kind === "iron_tyrant" ? "#ff5544"
+                          : g.boss.kind === "hexblade" ? "#9b59ff" : "#c060ff",
+                transition: "width 0.18s ease",
+              }} />
+              {[0.66, 0.33].map(pp => (
+                <div key={pp} style={{
+                  position: "absolute", left: `${pp * 100}%`, top: 0, bottom: 0,
+                  width: 2, background: "rgba(254,243,199,0.7)",
+                }} />
+              ))}
+            </div>
+            <div style={{ fontSize: 9, opacity: 0.55, marginTop: 2, letterSpacing: 1 }}>
+              PHASE {g.boss.phase} / 3
+            </div>
+          </div>
+        )}
+        {g.bossBannerT > 0 && g.boss && (
+          <div style={{
+            position: "absolute", left: 0, right: 0, top: "38%",
+            pointerEvents: "none",
+            textAlign: "center", fontFamily: "monospace",
+            color: "#fef3c7", fontSize: 28, letterSpacing: 4,
+            textShadow: "0 0 18px rgba(255,80,40,0.9)",
+            opacity: Math.min(1, g.bossBannerT / 0.6),
+            zIndex: 10,
+          }}>
+            {g.boss.name}
+          </div>
+        )}
+        {g.bossPhaseToastT > 0 && g.boss && (
+          <div style={{
+            position: "absolute", left: "50%", top: 90,
+            transform: "translateX(-50%)",
+            pointerEvents: "none",
+            fontFamily: "monospace", color: "#ffe9a8",
+            fontSize: 14, letterSpacing: 4,
+            padding: "6px 14px",
+            background: "rgba(40,10,20,0.85)",
+            border: "1px solid rgba(255,200,120,0.6)",
+            borderRadius: 6,
+            opacity: Math.min(1, g.bossPhaseToastT / 0.6),
+            zIndex: 10,
+          }}>
+            BOSS PHASE {g.bossPhaseToastN} / 3
+          </div>
+        )}
 
         {/* Phase 4: pickup toast — fades via g.toast.ttl. */}
         {g.toast && (

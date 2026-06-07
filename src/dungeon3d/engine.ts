@@ -18,8 +18,12 @@ export const WORLD_H = ROWS * CELL;  // 56
 
 export type Tile = "wall" | "floor" | "stairs" | "door";
 
+export type FloorKind = "normal" | "boss";
+
 export interface DungeonLevel {
   depth: number;
+  /** Phase 6: normal explorable floors vs single-room boss arenas. */
+  floorKind: FloorKind;
   grid: Tile[][];
   spawn: { x: number; z: number };
   stairs: { x: number; z: number };
@@ -345,6 +349,109 @@ export interface Projectile {
   radius?: number;
 }
 
+// ── Phase 6: Boss types ───────────────────────────────────────────
+export type BossKind = "iron_tyrant" | "hexblade" | "hollowmage";
+
+export interface Telegraph {
+  shape: "circle" | "ring";
+  x: number; z: number;
+  radius: number;
+  innerRadius?: number;
+  /** Total lifetime in seconds (also caps how long the visual stays). */
+  ttl: number;
+  /** Delay before the hit lands (counts down). For "ring" shockwaves
+   *  we use a continuous expand model instead and leave delay at 0. */
+  delay: number;
+  dmg: number;
+  color: number;
+  source: "tyrant_slam" | "tyrant_shockwave" | "hexblade_slash" | "hollow_meteor" | "hollow_blackhole";
+  /** For shockwaves: expansion speed in world units per second. */
+  ringSpeed?: number;
+}
+
+export interface BossDef {
+  kind: BossKind;
+  name: string;
+  modelUrl: string;
+  scale: number;
+  baseHp: number;
+  speed: number;
+  tint?: number;
+  emissive?: number;
+}
+
+export const BOSS_DEFS: Record<BossKind, BossDef> = {
+  iron_tyrant: {
+    kind: "iron_tyrant",
+    name: "THE IRON TYRANT",
+    modelUrl: "/assets/kenney/blocky-characters/Models/GLB%20format/character-p.glb",
+    scale: 2.5,
+    baseHp: 2000,
+    speed: 4.5,
+    tint: 0xff5544,
+  },
+  hexblade: {
+    kind: "hexblade",
+    name: "THE HEXBLADE",
+    modelUrl: "/assets/kenney/blocky-characters/Models/GLB%20format/character-k.glb",
+    scale: 2.0,
+    baseHp: 1500,
+    speed: 7.5,
+    tint: 0x9b59ff,
+  },
+  hollowmage: {
+    kind: "hollowmage",
+    name: "THE HOLLOWMAGE",
+    modelUrl: "/assets/kenney/blocky-characters/Models/GLB%20format/character-e.glb",
+    scale: 2.0,
+    baseHp: 1200,
+    speed: 3.5,
+    tint: 0xc8a0ff,
+    emissive: 0x8a3ffa,
+  },
+};
+
+/** Boss kind for depth — floors 5,10,15 → tyrant, hexblade, hollowmage; 20,25,30 again, … */
+export function bossKindForDepth(depth: number): BossKind | null {
+  if (depth <= 0 || depth % 5 !== 0) return null;
+  const slot = ((depth / 5) - 1) % 3;
+  if (slot === 0) return "iron_tyrant";
+  if (slot === 1) return "hexblade";
+  return "hollowmage";
+}
+
+/** How many times this boss kind has appeared by this depth (0-indexed). */
+export function bossFloorIdx(depth: number, kind: BossKind): number {
+  if (depth <= 0 || depth % 5 !== 0) return 0;
+  const cycle = depth / 5;
+  if (kind === "iron_tyrant") return Math.floor((cycle - 1) / 3);
+  if (kind === "hexblade")    return Math.floor((cycle - 2) / 3);
+  return Math.floor((cycle - 3) / 3);
+}
+
+export interface Boss {
+  kind: BossKind;
+  name: string;
+  phase: 1 | 2 | 3;
+  hp: number;
+  maxHp: number;
+  speed: number;
+  x: number; z: number;
+  facing: number;
+  flashT: number;
+  attackCd: number;
+  floorIdx: number;
+  /** Hexblade phase-2 teleport state. */
+  tpT: number;
+  tpHidden: boolean;
+  /** Hollowmage phase-3 black-hole pull state. */
+  blackHoleT: number;
+  blackHoleX: number;
+  blackHoleZ: number;
+  /** Hexblade phase-3 shadow clones alive. */
+  cloneIds: string[];
+}
+
 export interface Game {
   level: DungeonLevel;
   depth: number;
@@ -373,6 +480,19 @@ export interface Game {
   runShardsEarned: number;
   /** Set to true after death so the UI can show the banner once. */
   runEnded: boolean;
+  // ── Phase 6 ─────────────────────────────
+  /** Active boss, null on normal floors / after boss death. */
+  boss: Boss | null;
+  /** Active boss telegraphs (incoming AoEs the player can dodge). */
+  telegraphs: Telegraph[];
+  /** Boss spawn banner timer (>0 = freeze step + show banner). */
+  bossBannerT: number;
+  /** Phase-transition toast timer. */
+  bossPhaseToastT: number;
+  /** Phase shown in the toast (2 or 3). */
+  bossPhaseToastN: 2 | 3 | 0;
+  /** True once boss has been defeated this floor (gates the stairs). */
+  bossDefeated: boolean;
 }
 
 // ── Random utilities ─────────────────────────────────────────────────
@@ -386,6 +506,8 @@ function dist2(a: { x: number; z: number }, b: { x: number; z: number }) {
 // ── Dungeon generation ───────────────────────────────────────────────
 
 export function genLevel(depth: number): DungeonLevel {
+  // Phase 6: boss floors every 5th — single 10×10 (40u × 40u) rect arena.
+  if (depth > 0 && depth % 5 === 0) return genBossLevel(depth);
   const grid: Tile[][] = Array.from({ length: ROWS }, () =>
     Array.from({ length: COLS }, () => "wall" as Tile));
 
@@ -469,7 +591,9 @@ export function genLevel(depth: number): DungeonLevel {
     }
   }
   return {
-    depth, grid, spawn,
+    depth,
+    floorKind: "normal",
+    grid, spawn,
     stairs: {
       x: (last.cx + 0.5) * CELL - WORLD_W / 2,
       z: (last.cz + 0.5) * CELL - WORLD_H / 2,
@@ -478,6 +602,47 @@ export function genLevel(depth: number): DungeonLevel {
     rooms: rooms.map(r => ({ x: r.x, z: r.z, w: r.w, h: r.h })),
     visited,
     visitedRooms,
+  };
+}
+
+/** Phase 6: boss floor generator. 10×10 grid-cell arena centered in the world.
+ *  Stairs sit in the center but the step() descend check gates on
+ *  g.boss === null so they only become a valid exit after the boss dies. */
+function genBossLevel(depth: number): DungeonLevel {
+  const grid: Tile[][] = Array.from({ length: ROWS }, () =>
+    Array.from({ length: COLS }, () => "wall" as Tile));
+  const rw = 10, rh = 10;
+  const rx = Math.floor((COLS - rw) / 2);  // 4
+  const rz = Math.floor((ROWS - rh) / 2);  // 2
+  for (let zz = rz; zz < rz + rh; zz++) {
+    for (let xx = rx; xx < rx + rw; xx++) grid[zz][xx] = "floor";
+  }
+  const cx = rx + Math.floor(rw / 2);
+  const cz = rz + Math.floor(rh / 2);
+  grid[cz][cx] = "stairs";
+  const wallOrientation = computeWallOrientations(grid);
+  const spawn = {
+    x: (cx + 0.5) * CELL - WORLD_W / 2,
+    z: (rz + rh - 1.5) * CELL - WORLD_H / 2,
+  };
+  const visited = new Set<string>();
+  for (let zz = rz; zz < rz + rh; zz++) {
+    for (let xx = rx; xx < rx + rw; xx++) visited.add(`${xx},${zz}`);
+  }
+  return {
+    depth,
+    floorKind: "boss",
+    grid, spawn,
+    stairs: {
+      x: (cx + 0.5) * CELL - WORLD_W / 2,
+      z: (cz + 0.5) * CELL - WORLD_H / 2,
+    },
+    enemies: [],
+    chests: [],
+    wallOrientation,
+    rooms: [{ x: rx, z: rz, w: rw, h: rh }],
+    visited,
+    visitedRooms: new Set<number>([0]),
   };
 }
 
@@ -606,7 +771,7 @@ export function newGame(depth = 1, classId: ClassId = "warrior", metaUnlocks: st
   // Phase 5: recompute stats once so any % bumps are reflected on frame 1.
   recomputePlayerStats(player);
   const enemies: Enemy[] = level.enemies.map(mkEnemy);
-  return {
+  const _g: Game = {
     level, depth, player,
     enemies, coins: [], projectiles: [],
     state: "playing",
@@ -614,7 +779,12 @@ export function newGame(depth = 1, classId: ClassId = "warrior", metaUnlocks: st
     hitStop: 0, elapsed: 0, runCoins: 0, runKills: 0,
     items: [], toast: null, nearestPickable: null,
     pendingLevelUp: false, levelUpChoices: [], runShardsEarned: 0, runEnded: false,
+    boss: null, telegraphs: [], bossBannerT: 0, bossPhaseToastT: 0, bossPhaseToastN: 0,
+    bossDefeated: false,
   };
+  // Phase 6: if this is a boss floor, spawn the boss + freeze banner.
+  spawnBossIfNeeded(_g);
+  return _g;
 }
 
 function mkEnemy(s: { kind: EnemyKind; x: number; z: number }): Enemy {
@@ -646,7 +816,7 @@ export function descendLevel(g: Game): Game {
     next.spawn.z + (Math.random() - 0.5) * 2,
     pickRarityMin("uncommon"),
   );
-  return {
+  const _next: Game = {
     level: next, depth: g.depth + 1, player,
     enemies: next.enemies.map(mkEnemy),
     coins: [], projectiles: [],
@@ -658,7 +828,12 @@ export function descendLevel(g: Game): Game {
     // Phase 5: carry over the level-up + shards bookkeeping (game-level).
     pendingLevelUp: g.pendingLevelUp, levelUpChoices: g.levelUpChoices,
     runShardsEarned: g.runShardsEarned, runEnded: g.runEnded,
+    boss: null, telegraphs: [], bossBannerT: 0, bossPhaseToastT: 0, bossPhaseToastN: 0,
+    bossDefeated: false,
   };
+  // Phase 6: if this floor is a boss floor, spawn the boss + freeze banner.
+  spawnBossIfNeeded(_next);
+  return _next;
 }
 
 // ── Collision ────────────────────────────────────────────────────────
@@ -845,6 +1020,317 @@ export function applyAbilityChoice(p: Player, abilityId: string) {
   recomputePlayerStats(p);
 }
 
+// ── Phase 6: Boss spawn / step helpers ──────────────────────────────
+/** Spawn the boss for this floor (if it's a boss floor). Adds the spawn banner. */
+export function spawnBossIfNeeded(g: Game) {
+  if (g.level.floorKind !== "boss") return;
+  const kind = bossKindForDepth(g.depth);
+  if (!kind) return;
+  const def = BOSS_DEFS[kind];
+  const fIdx = bossFloorIdx(g.depth, kind);
+  const maxHp = Math.round(def.baseHp * (1 + fIdx * 0.6));
+  g.boss = {
+    kind, name: def.name, phase: 1,
+    hp: maxHp, maxHp,
+    speed: def.speed,
+    x: 0, z: -2,
+    facing: 0,
+    flashT: 0,
+    attackCd: 1.5,
+    floorIdx: fIdx,
+    tpT: 0, tpHidden: false,
+    blackHoleT: 0, blackHoleX: 0, blackHoleZ: 0,
+    cloneIds: [],
+  };
+  g.telegraphs = [];
+  g.bossBannerT = 1.2;
+  g.bossDefeated = false;
+}
+
+/** Boss-death payout: guaranteed legendary, 200×depth XP, +100 shards, slow-mo. */
+function _bossDeathRewards(g: Game) {
+  if (!g.boss) return;
+  const drop = rollLoot(g.boss.x + 1.0, g.boss.z, "legendary");
+  g.items.push(drop);
+  const p = g.player;
+  p.xp += 200 * g.depth;
+  while (p.xp >= p.xpToNext) {
+    p.xp -= p.xpToNext;
+    p.level += 1;
+    p.xpToNext = xpForLevel(p.level);
+    g.pendingLevelUp = true;
+    g.levelUpChoices = pickLevelUpChoices(p);
+  }
+  g.runShardsEarned += 100;
+  g.hitStop = 0.4;
+  for (let k = 0; k < 12; k++) {
+    g.coins.push({
+      id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${k}`,
+      x: g.boss.x + (Math.random() - 0.5) * 2,
+      z: g.boss.z + (Math.random() - 0.5) * 2,
+      y: 0.5,
+      vx: (Math.random() - 0.5) * 4,
+      vz: (Math.random() - 0.5) * 4,
+      vy: 3 + Math.random() * 2,
+      ttl: 16,
+    });
+  }
+}
+
+/** Apply boss-attack damage through the player damage pipeline (evasion / mana_shield / dmgTakenMult). */
+function _applyBossHit(g: Game, dmg: number) {
+  const p = g.player;
+  if (p.iframes > 0) return;
+  let _incoming = dmg * (p.dmgTakenMult ?? 1);
+  let _negated = false;
+  if (p.abilities.includes("evasion") && Math.random() < 0.25) {
+    _incoming = 0; _negated = true;
+    p.iframes = 0.4; p.flashT = 0.12;
+  } else if (p.abilities.includes("mana_shield") && !p.manaShieldUsedThisFloor) {
+    _incoming = 0; _negated = true;
+    p.manaShieldUsedThisFloor = true;
+    p.iframes = 0.5; p.flashT = 0.24;
+  }
+  p.hp -= _incoming;
+  if (!_negated) p.flashT = 0.32;
+  p.iframes = Math.max(p.iframes, 0.7);
+  g.hitStop = Math.max(g.hitStop, 0.08);
+  if (p.hp <= 0) {
+    if (!g.runEnded) {
+      g.runShardsEarned = g.runKills + g.depth * 5;
+      g.runEnded = true;
+    }
+    p.hp = 0; p.iframes = 999;
+    g.state = "cleared";
+  }
+}
+
+function _telegraphHits(g: Game, t: Telegraph): boolean {
+  const p = g.player;
+  const dx = p.x - t.x, dz = p.z - t.z;
+  const d = Math.hypot(dx, dz);
+  if (t.shape === "ring") {
+    const inner = t.innerRadius ?? Math.max(0, t.radius - 0.6);
+    return d > inner && d < t.radius;
+  }
+  return d < t.radius;
+}
+
+function _spawnTelegraph(g: Game, t: Telegraph) { g.telegraphs.push(t); }
+
+function _stepBoss(g: Game, dt: number) {
+  const b = g.boss;
+  if (!b) return;
+  const p = g.player;
+  // Phase transitions on HP thresholds.
+  const hpFrac = b.hp / b.maxHp;
+  if (b.phase === 1 && hpFrac <= 0.66) {
+    b.phase = 2;
+    g.bossPhaseToastT = 1.8; g.bossPhaseToastN = 2;
+    b.attackCd = 0.8;
+  } else if (b.phase === 2 && hpFrac <= 0.33) {
+    b.phase = 3;
+    g.bossPhaseToastT = 1.8; g.bossPhaseToastN = 3;
+    b.attackCd = 0.8;
+  }
+  if (g.bossPhaseToastT > 0) g.bossPhaseToastT = Math.max(0, g.bossPhaseToastT - dt);
+  if (b.flashT > 0) b.flashT = Math.max(0, b.flashT - dt);
+
+  const dpx = p.x - b.x, dpz = p.z - b.z;
+  const dToPlayer = Math.hypot(dpx, dpz) || 1;
+  b.facing = Math.atan2(dpx, dpz);
+
+  // ── Iron Tyrant ──
+  if (b.kind === "iron_tyrant") {
+    const speedMul = b.phase >= 3 ? 1.5 : 1.0;
+    const cdMul = b.phase >= 3 ? 0.67 : 1.0;
+    if (!b.tpHidden) {
+      const sp = b.speed * speedMul * dt;
+      tryMove(g.level, b, (dpx / dToPlayer) * sp, (dpz / dToPlayer) * sp, ENEMY_R * 1.6);
+    }
+    b.attackCd = Math.max(0, b.attackCd - dt);
+    if (b.attackCd <= 0) {
+      if (b.phase === 1) {
+        _spawnTelegraph(g, {
+          shape: "circle", x: p.x, z: p.z, radius: 3.5,
+          ttl: 0.8, delay: 0.8, dmg: 25, color: 0xff4040,
+          source: "tyrant_slam",
+        });
+        b.attackCd = 4.0 * cdMul;
+      } else {
+        _spawnTelegraph(g, {
+          shape: "ring", x: b.x, z: b.z, radius: 1.0,
+          innerRadius: 0.4,
+          ttl: 2.5, delay: 0, dmg: 30, color: 0xffaa44,
+          source: "tyrant_shockwave",
+          ringSpeed: 6.0,
+        });
+        b.attackCd = 6.0 * cdMul;
+        if (b.phase >= 3) {
+          _spawnTelegraph(g, {
+            shape: "circle", x: p.x, z: p.z, radius: 3.5,
+            ttl: 0.7, delay: 0.7, dmg: 25, color: 0xff4040,
+            source: "tyrant_slam",
+          });
+        }
+      }
+    }
+  }
+  // ── Hexblade ──
+  else if (b.kind === "hexblade") {
+    if (!b.tpHidden) {
+      const sp = b.speed * dt;
+      tryMove(g.level, b, (dpx / dToPlayer) * sp, (dpz / dToPlayer) * sp, ENEMY_R * 1.3);
+    }
+    if (b.phase >= 2 && b.tpHidden && b.tpT > 0) {
+      b.tpT = Math.max(0, b.tpT - dt);
+      if (b.tpT <= 0) {
+        // Reappear behind the player using -facing direction.
+        const bx = p.x - Math.sin(p.facing) * 1.6;
+        const bz = p.z - Math.cos(p.facing) * 1.6;
+        b.x = bx; b.z = bz;
+        b.tpHidden = false;
+        b.facing = Math.atan2(p.x - b.x, p.z - b.z);
+        _spawnTelegraph(g, {
+          shape: "circle",
+          x: b.x + Math.sin(b.facing) * 1.2,
+          z: b.z + Math.cos(b.facing) * 1.2,
+          radius: 1.8,
+          ttl: 0.3, delay: 0.3, dmg: 22, color: 0xb060ff,
+          source: "hexblade_slash",
+        });
+      }
+    }
+    b.attackCd = Math.max(0, b.attackCd - dt);
+    if (b.attackCd <= 0 && !b.tpHidden) {
+      if (dToPlayer < 2.4) {
+        _spawnTelegraph(g, {
+          shape: "circle",
+          x: b.x + Math.sin(b.facing) * 1.4,
+          z: b.z + Math.cos(b.facing) * 1.4,
+          radius: 1.7,
+          ttl: 0.25, delay: 0.25, dmg: 22, color: 0xb060ff,
+          source: "hexblade_slash",
+        });
+        b.attackCd = 1.4;
+      } else if (b.phase >= 2) {
+        b.tpHidden = true; b.tpT = 0.8;
+        b.attackCd = 7.0;
+      } else {
+        const hop = 1.2;
+        tryMove(g.level, b, (dpx / dToPlayer) * hop, (dpz / dToPlayer) * hop, ENEMY_R * 1.3);
+        b.attackCd = 0.4;
+      }
+    }
+    if (b.phase === 3 && b.cloneIds.length < 2) {
+      for (let k = b.cloneIds.length; k < 2; k++) {
+        const ang = Math.random() * Math.PI * 2;
+        const e: Enemy = {
+          id: `clone_${Date.now()}_${k}_${Math.random().toString(36).slice(2, 5)}`,
+          kind: "scout",
+          x: b.x + Math.cos(ang) * 2.5,
+          z: b.z + Math.sin(ang) * 2.5,
+          hp: 1, hpMax: 1, facing: 0,
+          state: "chase", atkCd: 0.5, flashT: 0, deathT: 0,
+          hitStun: 0, kbX: 0, kbZ: 0,
+        };
+        g.enemies.push(e);
+        b.cloneIds.push(e.id);
+      }
+    }
+    b.cloneIds = b.cloneIds.filter(id => g.enemies.some(e => e.id === id && e.deathT === 0));
+  }
+  // ── Hollowmage ──
+  else if (b.kind === "hollowmage") {
+    const desired = 6.5;
+    const sgn = dToPlayer > desired ? 1 : -1;
+    const sp = b.speed * dt * sgn;
+    tryMove(g.level, b, (dpx / dToPlayer) * sp, (dpz / dToPlayer) * sp, ENEMY_R * 1.3);
+    b.attackCd = Math.max(0, b.attackCd - dt);
+    if (b.attackCd <= 0) {
+      if (b.phase === 1) {
+        const baseAng = Math.atan2(dpx, dpz);
+        for (let k = -2; k <= 2; k++) {
+          const a = baseAng + k * 0.18;
+          g.projectiles.push({
+            id: `orb_${Date.now()}_${Math.random().toString(36).slice(2,5)}_${k}`,
+            x: b.x + Math.sin(a) * 0.8,
+            z: b.z + Math.cos(a) * 0.8,
+            vx: Math.sin(a) * 4.5,
+            vz: Math.cos(a) * 4.5,
+            ttl: 3.0, damage: 18, radius: 0.55,
+          });
+        }
+        b.attackCd = 5.0;
+      } else if (b.phase === 2) {
+        _spawnTelegraph(g, {
+          shape: "circle", x: p.x, z: p.z, radius: 2.0,
+          ttl: 1.2, delay: 1.2, dmg: 40, color: 0xc8a0ff,
+          source: "hollow_meteor",
+        });
+        b.attackCd = 4.5;
+      } else {
+        b.blackHoleT = 3.0;
+        b.blackHoleX = 0; b.blackHoleZ = 0;
+        _spawnTelegraph(g, {
+          shape: "circle", x: 0, z: 0, radius: 3.5,
+          ttl: 3.0, delay: 999, dmg: 0, color: 0x8030ff,
+          source: "hollow_blackhole",
+        });
+        b.attackCd = 6.0;
+      }
+    }
+    if (b.blackHoleT > 0) {
+      b.blackHoleT = Math.max(0, b.blackHoleT - dt);
+      const dx = b.blackHoleX - p.x, dz = b.blackHoleZ - p.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.1 && d < 3.5) {
+        const pull = 2.5 * dt;
+        tryMove(g.level, p, (dx / d) * pull, (dz / d) * pull, PLAYER_R);
+        const _save = p.iframes;
+        p.iframes = 0;
+        _applyBossHit(g, 6 * dt);
+        p.iframes = Math.max(p.iframes, _save);
+      }
+    }
+  }
+
+  // ── Telegraph step + hit resolution ──
+  for (let i = g.telegraphs.length - 1; i >= 0; i--) {
+    const t = g.telegraphs[i];
+    if (t.source === "tyrant_shockwave" && t.ringSpeed) {
+      const prevR = t.radius;
+      const newR = t.radius + t.ringSpeed * dt;
+      t.radius = newR;
+      t.innerRadius = Math.max(0, newR - 0.7);
+      const dx = g.player.x - t.x, dz = g.player.z - t.z;
+      const d = Math.hypot(dx, dz);
+      if (d >= prevR && d < newR && g.player.iframes <= 0) {
+        _applyBossHit(g, t.dmg);
+      }
+    }
+    if (t.source !== "tyrant_shockwave" && t.source !== "hollow_blackhole") {
+      t.delay = Math.max(0, t.delay - dt);
+      if (t.delay <= 0) {
+        if (_telegraphHits(g, t) && g.player.iframes <= 0) _applyBossHit(g, t.dmg);
+        g.telegraphs.splice(i, 1);
+        continue;
+      }
+    }
+    t.ttl -= dt;
+    if (t.ttl <= 0) { g.telegraphs.splice(i, 1); continue; }
+  }
+
+  // ── Death + rewards ──
+  if (b.hp <= 0 && !g.bossDefeated) {
+    g.bossDefeated = true;
+    _bossDeathRewards(g);
+    g.boss = null;
+    g.telegraphs = [];
+  }
+}
+
+
 
 // ── Step ─────────────────────────────────────────────────────────────
 
@@ -874,6 +1360,12 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   let dt = Number.isFinite(dtRaw) && dtRaw > 0 ? Math.min(dtRaw, 0.05) : 0;
   if (g.hitStop > 0) { g.hitStop = Math.max(0, g.hitStop - dt); dt *= 0.25; }
   if (g.state !== "playing") return;
+  // Phase 6: boss spawn banner freezes movement/AI for ~1.2s.
+  if (g.bossBannerT > 0) {
+    g.bossBannerT = Math.max(0, g.bossBannerT - dt);
+    g.elapsed += dt;
+    return;
+  }
   g.elapsed += dt;
   const p = g.player;
 
@@ -882,6 +1374,18 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   if (p.dashT > 0) {
     p.dashT = Math.max(0, p.dashT - dt);
     tryMove(g.level, p, p.dashVx * dt, p.dashVz * dt, PLAYER_R);
+    // Phase 6: dash contact damage on boss (once per dash via "BOSS" key).
+    if (g.boss && !p.dashHit.has("BOSS")) {
+      const _bdx = g.boss.x - p.x, _bdz = g.boss.z - p.z;
+      const _rs = PLAYER_R + ENEMY_R + 0.8;
+      if (_bdx * _bdx + _bdz * _bdz < _rs * _rs) {
+        p.dashHit.add("BOSS");
+        const _dmgB = p.attackDmg * 1.4;
+        g.boss.hp -= _dmgB;
+        g.boss.flashT = 0.18;
+        g.hitStop = Math.max(g.hitStop, 0.08);
+      }
+    }
     // Contact damage to enemies whose hitbox the dash crosses.
     for (const e of g.enemies) {
       if (e.deathT > 0) continue;
@@ -947,6 +1451,23 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   // ── Player attack ──
   if (input.attack && p.attackT <= 0 && p.iframes <= 0 && p.dashT <= 0) {
     p.attackT = p.attackDur;
+    // Phase 6: melee swing damage on boss (fires once per swing).
+    if (g.boss) {
+      const _isMage = p.classId === "mage";
+      const _ahead = p.attackRange * 0.5;
+      const _hbX2 = _isMage ? p.x : p.x + Math.sin(p.facing) * _ahead;
+      const _hbZ2 = _isMage ? p.z : p.z - Math.cos(p.facing) * _ahead;
+      const _bd = Math.hypot(g.boss.x - _hbX2, g.boss.z - _hbZ2);
+      if (_bd < p.attackRange + 1.0) {
+        const _mult = (p.hp < p.hpMax * 0.4) ? (p.meleeBelow40Mult ?? 1) : 1;
+        g.boss.hp -= p.attackDmg * _mult;
+        g.boss.flashT = 0.18;
+        g.hitStop = Math.max(g.hitStop, 0.07);
+        if (p.abilities.includes("vampiric") && !_isMage) {
+          p.hp = Math.min(p.hpMax, p.hp + p.attackDmg * _mult * 0.10);
+        }
+      }
+    }
     // Phase 5: cleave widens to a 90° cone; frost_nova_plus doubles nova hitstun.
     const isNova = p.classId === "mage";
     const hasCleave = p.abilities.includes("cleave") && !isNova;
@@ -1120,6 +1641,29 @@ export function step(g: Game, dtRaw: number, input: InputState) {
       g.projectiles.splice(i, 1);
       continue;
     }
+    // Phase 6: player projectile damages boss.
+    if (g.boss) {
+      const _pr = g.projectiles[i];
+      if (_pr) {
+        const _prR = _pr.radius ?? RANGED_RADIUS;
+        const _dxb = g.boss.x - _pr.x, _dzb = g.boss.z - _pr.z;
+        const _rs2 = _prR + ENEMY_R * 1.4;
+        if (_dxb * _dxb + _dzb * _dzb < _rs2 * _rs2) {
+          g.boss.hp -= _pr.damage;
+          g.boss.flashT = 0.18;
+          g.hitStop = Math.max(g.hitStop, 0.05);
+          const _hasPierce = g.player.abilities.includes("pierce");
+          if (!_hasPierce || (_pr as any).pierced) {
+            g.projectiles.splice(i, 1);
+            continue;
+          } else {
+            (_pr as any).pierced = true;
+            _pr.x += _pr.vx * 0.04;
+            _pr.z += _pr.vz * 0.04;
+          }
+        }
+      }
+    }
     // Enemy collision (squared distance, same pattern as melee).
     let hit = false;
     for (const e of g.enemies) {
@@ -1238,6 +1782,9 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   }
   g.enemies = g.enemies.filter(e => e.deathT > 0 || e.hp > 0);
 
+  // ── Phase 6: Boss AI + telegraph resolution ──
+  _stepBoss(g, dt);
+
   // ── Body-block / shoulder-bump ──
   // Player-enemy overlap pushes them apart. If either is mid-attack we
   // amplify the push and add a tiny hit-stop so contact has weight.
@@ -1306,7 +1853,8 @@ export function step(g: Game, dtRaw: number, input: InputState) {
   }
 
   // ── Stairs / descend ──
-  if (dist2(p, g.level.stairs) < 1.2) g.state = "descending";
+  // Phase 6: on boss floors, only allow descent once the boss is dead.
+  if (dist2(p, g.level.stairs) < 1.2 && g.boss === null) g.state = "descending";
 
   // ── Phase 4: nearest pickable + interact press ──
   {
