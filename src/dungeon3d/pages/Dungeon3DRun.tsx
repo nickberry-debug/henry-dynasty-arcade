@@ -45,7 +45,7 @@ import { getBossDialog, type BossDialog } from "../data/bossDialog";
 import { pickDeathBlurb, type DeathBlurb, type DeathCause } from "../data/deathVariants";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T14:30:00Z";  // CONTROLS_HOTFIX_v3 + ADVENTURE_CONTENT
+const BUILD_STAMP = "2026-06-07T09:13:39Z";  // CONTROLS_HOTFIX_v3 + ADVENTURE_CONTENT
 // Add ?dbg=facing to the URL to print per-second player.facing / rotation.y /
 // input.ax|az to the console.  Used to verify the controls regression fix.
 const DBG_FACING =
@@ -728,6 +728,117 @@ export default function Dungeon3DRun() {
       setLoading(false);
 
       // â”€â”€ Game loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── EMPIRICAL_INSTRUMENT v1 ───────────────────────────────────────────
+      // Exposes window.__d3d when ?dbg=facing is set so a headless harness
+      // can drive the game deterministically (RAF is throttled to 0 Hz when
+      // the tab is document.hidden, which it is in headless MCP Chrome).
+      // Production users never see this — gated on DBG_FACING.
+      if (DBG_FACING) {
+        const __D: any = {
+          cfg: {
+            inputRot: 'default',
+            facingFn: null as null | string,
+            offset:   null as null | number,
+          },
+          gameRef, threeRef, inputRef,
+          keys: keys.current, joyRef: joyRef.current,
+          MODEL_FACING_OFFSET, BUILD_STAMP,
+          tick(n: number = 1, dt: number = 1/60) {
+            const SQ_HALF = 0.70710678;
+            let lastRaw: any = null, lastWorld: any = null;
+            for (let i = 0; i < n; i++) {
+              const k = keys.current, j = joyRef.current;
+              let ax = 0, az = 0;
+              if (k.left)  ax -= 1;
+              if (k.right) ax += 1;
+              if (k.up)    az -= 1;
+              if (k.down)  az += 1;
+              if (j.active) {
+                const jx = j.x - j.cx, jy = j.y - j.cy;
+                const r = Math.hypot(jx, jy);
+                const t = Math.min(1, r/40);
+                if (r > 6) { ax += (jx/r)*t; az += (jy/r)*t; }
+              }
+              const mag = Math.hypot(ax, az);
+              if (mag > 1) { ax /= mag; az /= mag; }
+              const _ax = ax, _az = az;
+              let tx = ax, tz = az;
+              switch (__D.cfg.inputRot) {
+                case 'default':     tx = ( _ax + _az) * SQ_HALF; tz = (-_ax + _az) * SQ_HALF; break;
+                case 'opposite':    tx = ( _ax - _az) * SQ_HALF; tz = ( _ax + _az) * SQ_HALF; break;
+                case 'identity':    tx = _ax;                    tz = _az;                    break;
+                case 'negidentity': tx = -_ax;                   tz = -_az;                   break;
+                case 'negx':        tx = -_ax;                   tz =  _az;                   break;
+                case 'negz':        tx =  _ax;                   tz = -_az;                   break;
+                case 'swapxz':      tx =  _az;                   tz =  _ax;                   break;
+                case 'swapxz_neg':  tx = -_az;                   tz = -_ax;                   break;
+              }
+              ax = tx; az = tz;
+              inputRef.current.ax = ax;
+              inputRef.current.az = az;
+              inputRef.current.attack   = k.attack;
+              inputRef.current.ranged   = k.ranged;
+              inputRef.current.interact = k.interact;
+              const g = gameRef.current;
+              if (g) {
+                step(g, dt, inputRef.current);
+                if (__D.cfg.facingFn) {
+                  const a = ax, b = az;
+                  switch (__D.cfg.facingFn) {
+                    case 'ax_az':       g.player.facing = Math.atan2( a,  b); break;
+                    case 'ax_negaz':    g.player.facing = Math.atan2( a, -b); break;
+                    case 'negax_az':    g.player.facing = Math.atan2(-a,  b); break;
+                    case 'negax_negaz': g.player.facing = Math.atan2(-a, -b); break;
+                    case 'az_ax':       g.player.facing = Math.atan2( b,  a); break;
+                    case 'az_negax':    g.player.facing = Math.atan2( b, -a); break;
+                    case 'negaz_ax':    g.player.facing = Math.atan2(-b,  a); break;
+                    case 'negaz_negax': g.player.facing = Math.atan2(-b, -a); break;
+                  }
+                }
+              }
+              const t3 = threeRef.current;
+              if (t3 && t3.playerObj && g) {
+                t3.playerObj.position.set(g.player.x, 0, g.player.z);
+                const ofs = (__D.cfg.offset == null) ? MODEL_FACING_OFFSET : __D.cfg.offset;
+                t3.playerObj.rotation.y = g.player.facing + ofs;
+              }
+              if (i === n - 1) { lastRaw = { ax: _ax, az: _az }; lastWorld = { ax, az }; }
+            }
+            const p = gameRef.current && gameRef.current.player;
+            const obj = threeRef.current && threeRef.current.playerObj;
+            return p && obj ? {
+              raw: lastRaw, world: lastWorld,
+              player: { x: +p.x.toFixed(3), z: +p.z.toFixed(3), facing: +p.facing.toFixed(3) },
+              rotY: +obj.rotation.y.toFixed(3),
+              offs: ((__D.cfg.offset == null) ? MODEL_FACING_OFFSET : __D.cfg.offset),
+              cfg: { ...__D.cfg },
+            } : null;
+          },
+          snapshot() {
+            const p = gameRef.current && gameRef.current.player;
+            const obj = threeRef.current && threeRef.current.playerObj;
+            return p && obj ? {
+              player: { x: p.x, z: p.z, facing: p.facing },
+              rotY: obj.rotation.y,
+            } : null;
+          },
+          reset(x?: number, z?: number) {
+            const g = gameRef.current;
+            if (!g) return null;
+            const sx = (g.level && g.level.spawn && g.level.spawn.x) ?? 0;
+            const sz = (g.level && g.level.spawn && g.level.spawn.z) ?? 0;
+            g.player.x = (x === undefined) ? sx : x;
+            g.player.z = (z === undefined) ? sz : z;
+            g.player.facing = 0;
+            g.player.attackT = 0;
+            g.player.dashT = 0;
+            g.player.iframes = 0;
+            g.player.flashT = 0;
+            return { x: g.player.x, z: g.player.z };
+          },
+        };
+        (window as any).__d3d = __D;
+      }
       let last = performance.now();
       const loop = (now: number) => {
         raf = requestAnimationFrame(loop);
