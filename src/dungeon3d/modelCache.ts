@@ -168,10 +168,10 @@ export const ENEMY_VARIANTS = {
 // KayKit rigs are ~1.8 world units tall (vs Kenney's ~1.5).  We previously
 // applied a uniform 0.9 to Kenney rigs to make them fit in a 4-unit cell.
 // For v2, drop to ~0.55 so the new characters don't tower over walls.
-export const V2_PLAYER_SCALE = 0.55;
-export const V2_ENEMY_SCALE  = 0.55;
+export const V2_PLAYER_SCALE = 1.2;
+export const V2_ENEMY_SCALE  = 1.1;
 /** Apply this multiplier on top of BOSS_DEFS[kind].scale for v2 bosses. */
-export const V2_BOSS_SCALE_MULT = 0.55;
+export const V2_BOSS_SCALE_MULT = 1.6;
 
 /** v1 Kenney scaling, kept so feature-flag toggle returns to the
  *  exact pre-v2 sizing. */

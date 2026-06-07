@@ -33,7 +33,7 @@ import { useDungeon3D } from "../store";
 import { playSfx, unlockAudio, isMuted, setMuted } from "../../art";
 
 // BUILD_STAMP updated automatically by patch â€” confirms which build is live
-const BUILD_STAMP = "2026-06-07T02:00:00Z";  // PHASE1C_BIOMES_PHASE7_POLISH
+const BUILD_STAMP = "2026-06-07T01:55:31Z";  // HOTFIX_ZOOM_FACING_TUTORIAL_QUIT_BOSSHP
 
 // PHASE5_APPLIED — Phase 5 (XP + abilities + meta) ships in this build
 // ── Phase 5: localStorage meta progression ────────────────────
@@ -45,6 +45,17 @@ const BUILD_STAMP = "2026-06-07T02:00:00Z";  // PHASE1C_BIOMES_PHASE7_POLISH
 const TUT_KEY  = "henry-dungeon-tutorial-v1";
 const BEST_KEY = "henry-dungeon-best-v1";
 const AUDIO_FLAG_KEY = "henry-dungeon-audio-v1";  // {muted:boolean}
+// HOTFIX 06/06: KayKit (v2) GLBs have their local-forward 180° from the Kenney rigs,
+// so without an offset the body faces opposite to game-forward (p.facing) and sword
+// swings render BEHIND the visible character.  The trail anchor + projectile spawn
+// continue to use raw p.facing — only the visual rotation of the model is offset.
+const MODEL_FACING_OFFSET = USE_V2_CHARACTERS ? Math.PI : 0;
+
+// HOTFIX 06/06: tutorial system disabled per Nick request. Flip to true to re-enable
+// (requires fixing setTimeout dismissal + tap-anywhere-to-close first).
+// TODO: tutorial system needs proper fix - disabled per Nick request
+const SHOW_TUTORIAL = false;
+void SHOW_TUTORIAL;
 
 type TutorialId = "spawn" | "loot" | "levelup" | "boss";
 
@@ -193,7 +204,7 @@ export default function Dungeon3DRun() {
       const portrait = h > w;
       // HOTFIX_CAMERA_DIAL_BACK: dial back zoom (28->22, 1.35x->1.25x), center character
       // (per Nick: keep character at center, less empty space than the previous hotfix).
-      camTuningRef.current.d = portrait ? 22 * 1.25 : 22;
+      camTuningRef.current.d = portrait ? 15 * 1.2 : 15;
       camTuningRef.current.lookAtZ = 0;
       setViewport({ w, h });
     }
@@ -807,7 +818,13 @@ export default function Dungeon3DRun() {
           }
           _prev.runEnded = g.runEnded;
           // Tutorial triggers (only fire if not seen).
-          {
+          // HOTFIX 06/06: tutorial tooltips would not dismiss reliably on mobile
+          // (relied on game-loop re-renders to evaluate performance.now() < expiresAt,
+          // and the rAF closure captured a stale tutorial.seen so the toast re-triggered).
+          // Simplest fix per Nick: disable for now. Soul Forge / class-select are self-explanatory.
+          // TODO: revive with explicit setTimeout(dismiss, 4000) + tap-anywhere-to-close + immediate localStorage write.
+/*
+          if (false) {
             const _seenSet = new Set(tutorial.seen);
             const _push = (id: TutorialId, text: string) => {
               if (_seenSet.has(id)) return;
@@ -830,6 +847,7 @@ export default function Dungeon3DRun() {
               _push("boss", "Defeat the boss to descend.");
             }
           }
+*/
           // Minimap redraw every 4 frames.
           if ((frameRef.current & 3) === 0 && minimapRef.current) {
             const _ctx = minimapRef.current.getContext("2d");
@@ -945,7 +963,7 @@ export default function Dungeon3DRun() {
           // the blocky-characters GLB local-forward is 180° off from p.facing,
           // so we add PI to align the model with movement + the swing arc.
           t3.playerObj.position.set(g.player.x, 0, g.player.z);
-          t3.playerObj.rotation.y = g.player.facing;  // FACING_FIX: revert +PI; model now faces motion direction
+          t3.playerObj.rotation.y = g.player.facing + MODEL_FACING_OFFSET;  // HOTFIX 06/06: v2 KayKit rigs need +PI to face motion
           if (t3.playerMixer) t3.playerMixer.update(dt);
 
           // ── Projectile meshes ──
@@ -982,7 +1000,7 @@ export default function Dungeon3DRun() {
           // ── Phase 6: Boss mesh sync ──
           if (t3.bossObj && g.boss) {
             t3.bossObj.position.set(g.boss.x, 0, g.boss.z);
-            t3.bossObj.rotation.y = g.boss.facing;  // FACING_FIX: revert +PI
+            t3.bossObj.rotation.y = g.boss.facing + MODEL_FACING_OFFSET;  // HOTFIX 06/06: v2 KayKit rigs
             t3.bossObj.visible = !g.boss.tpHidden;
             if (t3.bossMixer) t3.bossMixer.update(dt);
             // v2.1: drive boss anim state.  Telegraphs schedule the attack
@@ -1106,7 +1124,7 @@ export default function Dungeon3DRun() {
             if (isAttacking && !t3.playerActions.attack) {
               const _atkProg = 1 - (g.player.attackT / g.player.attackDur);
               const _swing = Math.sin(_atkProg * Math.PI) * (20 * Math.PI / 180);
-              t3.playerObj.rotation.y = g.player.facing + _swing;
+              t3.playerObj.rotation.y = g.player.facing + MODEL_FACING_OFFSET + _swing;  // HOTFIX 06/06
             }
           }
 
@@ -1169,7 +1187,7 @@ export default function Dungeon3DRun() {
             if (!handle) continue;
             handle.obj.position.set(e.x, 0, e.z);
             // HOTFIX_FACING_INV_ZOOM: same +PI fix for enemies.
-            handle.obj.rotation.y = e.facing;  // FACING_FIX: revert +PI
+            handle.obj.rotation.y = e.facing + MODEL_FACING_OFFSET;  // HOTFIX 06/06: v2 KayKit rigs
             // Hide enemies whose current grid cell is not yet revealed.
             const egx = Math.floor((e.x + WORLD_W / 2) / CELL);
             const egz = Math.floor((e.z + WORLD_H / 2) / CELL);
@@ -1796,26 +1814,7 @@ export default function Dungeon3DRun() {
           zIndex: 10,
         }} aria-label="Minimap" />
         {/* Phase 7: Tutorial tooltip — fades over 4s on first occurrence. */}
-        {activeTutorial && performance.now() < activeTutorial.expiresAt && (
-          <div style={{
-            position: "absolute", left: "50%", top: "30%",
-            transform: "translateX(-50%)",
-            pointerEvents: "none",
-            background: "rgba(20,5,30,0.92)",
-            border: "1.5px solid rgba(253,224,71,0.65)",
-            color: "#fef3c7",
-            padding: "8px 14px",
-            borderRadius: 10,
-            fontSize: 11,
-            fontFamily: "monospace",
-            letterSpacing: 1,
-            maxWidth: "84%",
-            textAlign: "center",
-            opacity: Math.min(1, (activeTutorial.expiresAt - performance.now()) / 800),
-            zIndex: 12,
-            boxShadow: "0 6px 16px rgba(0,0,0,0.55)",
-          }}>{activeTutorial.text}</div>
-        )}
+        {/* HOTFIX 06/06: tutorial tooltip removed - see trigger block for reasoning. Re-enable with proper setTimeout dismissal. */}
         {/* Phase 7: Pause overlay. */}
         {paused && g.state === "playing" && (
           <div style={{
@@ -1826,12 +1825,16 @@ export default function Dungeon3DRun() {
             backdropFilter: "blur(6px)",
           }}>
             <div className="font-display tracking-[0.4em] text-[18px]" style={{ color: "#fde047" }}>PAUSED</div>
-            <button onClick={() => { const gg = gameRef.current; if (gg) { gg.paused = false; setPaused(false); } }}
+            <button
+              onClick={() => { const gg = gameRef.current; if (gg) { gg.paused = false; setPaused(false); } }}
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); const gg = gameRef.current; if (gg) { gg.paused = false; setPaused(false); } }}
               className="px-5 py-2 rounded-lg font-display text-[11px] tracking-widest pressable touch-target"
               style={{ background: "linear-gradient(135deg, #fde047, #f59e0b)", color: "#1a0505" }}>
               RESUME
             </button>
-            <button onClick={() => navigate("/dungeon3d")}
+            <button
+              onClick={() => { setPaused(false); navigate("/dungeon3d"); }}
+              onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setPaused(false); navigate("/dungeon3d"); }}
               className="px-5 py-2 rounded-lg font-display text-[11px] tracking-widest pressable touch-target"
               style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)", color: "#fef3c7" }}>
               QUIT TO HUB

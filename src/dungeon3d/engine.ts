@@ -398,7 +398,7 @@ export const BOSS_DEFS: Record<BossKind, BossDef> = {
     name: "THE IRON TYRANT",
     modelUrl: _bossUrl("iron_tyrant"),
     scale: 2.5,
-    baseHp: 2000,
+    baseHp: 800,  // HOTFIX 06/06: was 2000 - too tanky
     speed: 4.5,
     tint: 0xff5544,
   },
@@ -407,7 +407,7 @@ export const BOSS_DEFS: Record<BossKind, BossDef> = {
     name: "THE HEXBLADE",
     modelUrl: _bossUrl("hexblade"),
     scale: 2.0,
-    baseHp: 1500,
+    baseHp: 600,  // HOTFIX 06/06: was 1500
     speed: 7.5,
     tint: 0x9b59ff,
   },
@@ -416,7 +416,7 @@ export const BOSS_DEFS: Record<BossKind, BossDef> = {
     name: "THE HOLLOWMAGE",
     modelUrl: _bossUrl("hollowmage"),
     scale: 2.0,
-    baseHp: 1200,
+    baseHp: 500,  // HOTFIX 06/06: was 1200
     speed: 3.5,
     tint: 0xc8a0ff,
     emissive: 0x8a3ffa,
