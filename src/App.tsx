@@ -234,6 +234,8 @@ const Dungeon3DHub      = lz(() => import("./dungeon3d/pages/Dungeon3DHub"));
 const Dungeon3DRun      = lz(() => import("./dungeon3d/pages/Dungeon3DRun"));
 const MonsterForgeHub      = lz(() => import("./monster-forge/pages/MonsterForgeHub"));
 const MonsterForgeBuilder  = lz(() => import("./monster-forge/pages/MonsterForgeBuilder"));
+const HardballHub          = lz(() => import("./hardball/pages/HardballHub"));
+const HardballMatch        = lz(() => import("./hardball/pages/HardballMatch"));
 const JRPGHub              = lz(() => import("./jrpg/pages/JRPGHub"));
 const JRPGPlay             = lz(() => import("./jrpg/pages/JRPGPlay"));
 const JRPGBattle           = lz(() => import("./jrpg/pages/JRPGBattle"));
@@ -511,6 +513,8 @@ function Router() {
         <Route path="/dungeon3d/run" element={<R><Dungeon3DRun /></R>} />
         <Route path="/monster-forge" element={<R><MonsterForgeHub /></R>} />
         <Route path="/monster-forge/build" element={<R><MonsterForgeBuilder /></R>} />
+        <Route path="/hardball" element={<R><HardballHub /></R>} />
+        <Route path="/hardball/play" element={<R><HardballMatch /></R>} />
         <Route path="/jrpg" element={<R><JRPGHub /></R>} />
         <Route path="/jrpg/play" element={<R><JRPGPlay /></R>} />
         <Route path="/jrpg/battle" element={<R><JRPGBattle /></R>} />
