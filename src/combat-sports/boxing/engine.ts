@@ -10,9 +10,9 @@ import {
   resolveDecision, applyMomentumStamina,
 } from "../../sports/strategic/rps";
 import { pushRecent, cpuPick } from "../../sports/strategic/cpu";
-import { GAME_PLANS, type PlanId } from "../../sports/strategic/plans";
+import { GAME_PLANS } from "../../sports/strategic/plans";
 import { newSide } from "../../sports/strategic/match";
-import type { SideState } from "../../sports/strategic/types";
+import type { PlanId, SideState } from "../../sports/strategic/types";
 
 import { BOXING_RPS, STRIKE_META, type StrikeId, type DefenseId, type TargetZone } from "./rps";
 import type { BoxerDef } from "./fighters";
@@ -250,11 +250,17 @@ export function cpuDecide(
   const cpuSide = cpuIdx === state.activeIdx ? "attacker" : "defender";
   const me = state.boxers[cpuIdx];
   const opp = state.boxers[1 - cpuIdx];
+  // The shared strategic core reads signatureReady off selfState.momentum.signatureReady;
+  // mirror our boxing-side power meter into that flag so the adaptive CPU knows when
+  // to spend a Power Shot. We keep our authoritative powerMeter on the runtime; this
+  // is just a one-way mirror into the strategic-side state for the picker.
+  me.strategic.momentum.signatureReady = me.powerMeter >= POWER_TARGET_CHARGE;
   const choice = cpuPick(BOXING_RPS, {
     cpuSide,
     humanRecent: opp.strategic.recentPicks,
     difficulty,
-    signatureReady: me.powerMeter >= POWER_TARGET_CHARGE,
+    selfState: me.strategic,
+    opponentState: opp.strategic,
   });
   if (cpuSide === "attacker") {
     return {

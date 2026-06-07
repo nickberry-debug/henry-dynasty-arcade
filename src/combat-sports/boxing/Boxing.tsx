@@ -1,9 +1,9 @@
-// src/combat-sports/boxing/Boxing.tsx
+﻿// src/combat-sports/boxing/Boxing.tsx
 //
-// Boxing — head-to-head strategic boxing match. Side-view canvas with
+// Boxing â€” head-to-head strategic boxing match. Side-view canvas with
 // two boxer sprites; action-picker UI underneath. Phases progress as:
-//   setup → intro → decision → resolving → (knockdown) → roundEnd
-//        → decision → ... → matchEnd
+//   setup â†’ intro â†’ decision â†’ resolving â†’ (knockdown) â†’ roundEnd
+//        â†’ decision â†’ ... â†’ matchEnd
 // Modes: vs-CPU (Easy/Normal/Hard) and 2P (same device, sequential
 // pick reveal).
 
@@ -19,7 +19,8 @@ import {
   HP_MAX_HEAD, HP_MAX_BODY, ROUNDS,
   type MatchState, type PlayerDecision, type BoxerRuntime,
 } from "./engine";
-import { GAME_PLANS, type PlanId } from "../../sports/strategic/plans";
+import { GAME_PLANS } from "../../sports/strategic/plans";
+import type { PlanId } from "../../sports/strategic/types";
 import {
   getBoxerSheet, getStateDef, onBoxingSpritesReady, preloadBoxingSprites,
   DEST_W, DEST_H, type BoxerStateId,
@@ -76,7 +77,7 @@ export default function Boxing() {
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1">
-          <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: "#f87171" }}>🥊 COMBAT SPORTS</div>
+          <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: "#f87171" }}>ðŸ¥Š COMBAT SPORTS</div>
           <h1 className="font-display text-2xl tracking-wider" style={{ color: "#fef3c7" }}>BOXING</h1>
         </div>
       </header>
@@ -95,7 +96,7 @@ export default function Boxing() {
           border: "1px solid rgba(251,146,60,0.35)",
           color: "#fed7aa",
         }}>
-          ⚠️ Sprites are luizmelo Martial Hero (red/blue corner tinted) — no true CC0 boxing pack
+          âš ï¸ Sprites are luizmelo Martial Hero (red/blue corner tinted) â€” no true CC0 boxing pack
           was available. Gloves overlay + dedicated boxer art queued for Phase 3 polish.
         </div>
       </div>
@@ -104,9 +105,9 @@ export default function Boxing() {
 }
 
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // SETUP
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function SetupScreen({ setup, setSetup, onStart }: {
   setup: SetupConfig; setSetup: (s: SetupConfig) => void; onStart: (s: SetupConfig) => void;
@@ -120,9 +121,9 @@ function SetupScreen({ setup, setSetup, onStart }: {
     <main className="px-4 max-w-3xl mx-auto space-y-3">
       <div className="grid grid-cols-2 gap-2">
         <ModeCard active={setup.mode === "cpu"} onClick={() => set("mode", "cpu")}
-          label="VS CPU" sub="Adaptive AI" emoji="🤖" />
+          label="VS CPU" sub="Adaptive AI" emoji="ðŸ¤–" />
         <ModeCard active={setup.mode === "2p"} onClick={() => set("mode", "2p")}
-          label="2 PLAYER" sub="Same device" emoji="👥" />
+          label="2 PLAYER" sub="Same device" emoji="ðŸ‘¥" />
       </div>
 
       {setup.mode === "cpu" && (
@@ -203,7 +204,7 @@ function FighterPicker({ title, corner, selected, onSelect, disabledId }: {
               <div className="font-display text-[11px] truncate" style={{ color: "#fef3c7" }}>{b.name}</div>
               <div className="text-[9px] opacity-70 truncate" style={{ color: b.color }}>"{b.nickname}"</div>
               <div className="text-[8px] mt-1 font-mono opacity-80" style={{ color: "#fef3c7" }}>
-                PWR {b.stats.power} · SPD {b.stats.speed} · CHIN {b.stats.chin}
+                PWR {b.stats.power} Â· SPD {b.stats.speed} Â· CHIN {b.stats.chin}
               </div>
             </button>
           );
@@ -237,9 +238,9 @@ function PlanPicker({ title, selected, onSelect }: { title: string; selected: Pl
 }
 
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // MATCH SCREEN
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function MatchScreen({ initial, mode, difficulty, onRematch, onHome }: {
   initial: MatchState; mode: Mode; difficulty: Difficulty;
@@ -340,7 +341,7 @@ function MatchScreen({ initial, mode, difficulty, onRematch, onHome }: {
           incoming={pendingPick ?? undefined} onPick={onPassivePick}
           waiting={cpuIsActive && !pendingPick} />
       )}
-      {match.phase === "intro" && <Banner text={`ROUND ${match.round} — SECONDS OUT!`} color="#fde047" />}
+      {match.phase === "intro" && <Banner text={`ROUND ${match.round} â€” SECONDS OUT!`} color="#fde047" />}
       {match.phase === "roundEnd" && <Banner text={`END OF ROUND ${match.round - 1}`} color="#67e8f9" />}
       {match.phase === "knockdown" && (
         <Banner text={`COUNT: ${match.countdown ?? KD_COUNTDOWN_SECONDS}`} color="#f87171" />
@@ -351,9 +352,9 @@ function MatchScreen({ initial, mode, difficulty, onRematch, onHome }: {
 }
 
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Scoreboard + bars
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function Scoreboard({ match }: { match: MatchState }) {
   const [red, blue] = match.boxers;
@@ -379,7 +380,7 @@ function CornerName({ b, side, active }: { b: BoxerRuntime; side: "left" | "righ
   return (
     <div className={`flex-1 ${side === "right" ? "text-right" : "text-left"}`}>
       <div className="font-display text-[12px] truncate" style={{ color: b.def.color }}>
-        {active ? "▶ " : ""}{b.def.name}
+        {active ? "â–¶ " : ""}{b.def.name}
       </div>
       <div className="text-[9px] opacity-70 truncate" style={{ color: "#fef3c7" }}>"{b.def.nickname}"</div>
     </div>
@@ -441,9 +442,9 @@ function Banner({ text, color }: { text: string; color: string }) {
 }
 
 
-// ──────────────────────────────────────────────────────────────────────
-// Canvas — two boxers facing
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Canvas â€” two boxers facing
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function RingCanvas({ match }: { match: MatchState }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -570,14 +571,14 @@ function drawBoxer(
   if (stateId === "knockdown" || stateId === "ko") {
     ctx.font = "12px sans-serif";
     ctx.fillStyle = "#fde047";
-    ctx.fillText("✦ ★ ✦", baseX + 30, baseY + 28);
+    ctx.fillText("âœ¦ â˜… âœ¦", baseX + 30, baseY + 28);
   }
 }
 
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Action pickers
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function AttackPicker({ who, onPick }: {
   who: BoxerRuntime; onPick: (strike: StrikeId, target: TargetZone, spendPower: boolean) => void;
@@ -591,7 +592,7 @@ function AttackPicker({ who, onPick }: {
     }}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: who.def.color }}>
-          ▶ {who.def.name.toUpperCase()} ATTACKS
+          â–¶ {who.def.name.toUpperCase()} ATTACKS
         </div>
         <div className="flex gap-1">
           <button onClick={() => setTarget("head")}
@@ -618,7 +619,7 @@ function AttackPicker({ who, onPick }: {
           color: powerReady ? "#fde047" : "#9aa6bf",
           opacity: powerReady ? 1 : 0.5,
         }}>
-        ⚡ POWER SHOT {spendPower ? "(LOADED)" : powerReady ? "READY — TAP TO LOAD" : "BUILD UP METER"}
+        âš¡ POWER SHOT {spendPower ? "(LOADED)" : powerReady ? "READY â€” TAP TO LOAD" : "BUILD UP METER"}
       </button>
       <div className="grid grid-cols-2 gap-1.5">
         {(["jab", "cross", "hook", "uppercut"] as StrikeId[]).map(s => {
@@ -635,7 +636,7 @@ function AttackPicker({ who, onPick }: {
               }}>
               <div className="flex items-center justify-between">
                 <span className="text-2xl">{meta.emoji}</span>
-                <span className="text-[9px] font-mono opacity-70" style={{ color: "#fef3c7" }}>−{cost} GAS</span>
+                <span className="text-[9px] font-mono opacity-70" style={{ color: "#fef3c7" }}>âˆ’{cost} GAS</span>
               </div>
               <div className="font-display tracking-widest text-[11px] mt-1" style={{ color: "#fef3c7" }}>{meta.label}</div>
             </button>
@@ -658,17 +659,17 @@ function DefensePicker({ who, incoming, onPick, waiting }: {
     }}>
       <div className="flex items-center justify-between mb-2">
         <div className="text-[10px] tracking-[0.3em] font-display" style={{ color: who.def.color }}>
-          ▶ {who.def.name.toUpperCase()} DEFENDS
+          â–¶ {who.def.name.toUpperCase()} DEFENDS
         </div>
         {incoming && (
           <div className="text-[9px] font-mono opacity-90" style={{ color: "#fde047" }}>
-            INCOMING: {STRIKE_META[incoming.strike].label} → {incoming.target.toUpperCase()} {incoming.spendPower ? "⚡" : ""}
+            INCOMING: {STRIKE_META[incoming.strike].label} â†’ {incoming.target.toUpperCase()} {incoming.spendPower ? "âš¡" : ""}
           </div>
         )}
       </div>
       {waiting ? (
         <div className="text-center text-[11px] py-3 opacity-80" style={{ color: "#fef3c7" }}>
-          CPU is reading you…
+          CPU is reading youâ€¦
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-1.5">
@@ -686,7 +687,7 @@ function DefensePicker({ who, incoming, onPick, waiting }: {
                 }}>
                 <div className="text-2xl">{meta.emoji}</div>
                 <div className="font-display tracking-widest text-[11px] mt-1" style={{ color: "#fef3c7" }}>{meta.label}</div>
-                <div className="text-[9px] font-mono opacity-70 mt-0.5" style={{ color: "#fef3c7" }}>−{cost} GAS</div>
+                <div className="text-[9px] font-mono opacity-70 mt-0.5" style={{ color: "#fef3c7" }}>âˆ’{cost} GAS</div>
               </button>
             );
           })}
@@ -696,19 +697,21 @@ function DefensePicker({ who, incoming, onPick, waiting }: {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Result card
-// ──────────────────────────────────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ResultCard({ match, onRematch, onHome }: {
   match: MatchState; onRematch: () => void; onHome: () => void;
 }) {
   const winnerIdx = match.winnerIdx;
-  const winner = winnerIdx !== undefined && winnerIdx >= 0 ? match.boxers[winnerIdx] : undefined;
-  const loser = winnerIdx !== undefined && winnerIdx >= 0 ? match.boxers[1 - winnerIdx] : undefined;
+  const hasWinner = winnerIdx === 0 || winnerIdx === 1;
+  const winner = hasWinner ? match.boxers[winnerIdx as 0 | 1] : undefined;
+  const loserIdx: 0 | 1 | undefined = winnerIdx === 0 ? 1 : winnerIdx === 1 ? 0 : undefined;
+  const loser = loserIdx !== undefined ? match.boxers[loserIdx] : undefined;
   const method = match.endMethod ?? "decision";
   const headline = !winner
-    ? "DRAW — SPLIT DECISION"
+    ? "DRAW â€” SPLIT DECISION"
     : method === "ko"
     ? `${winner.def.name.toUpperCase()} WINS BY KO!`
     : `${winner.def.name.toUpperCase()} WINS BY DECISION`;
