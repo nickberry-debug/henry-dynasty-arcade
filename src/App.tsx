@@ -240,9 +240,6 @@ const StrikeRescueHub      = lz(() => import("./strike-rescue/pages/StrikeRescue
 const StrikeRescueMatch    = lz(() => import("./strike-rescue/pages/StrikeRescueMatch"));
 const HardballDerby        = lz(() => import("./hardball/pages/HardballDerby"));
 const HardballBracket      = lz(() => import("./hardball/pages/HardballBracket"));
-const JRPGHub              = lz(() => import("./jrpg/pages/JRPGHub"));
-const JRPGPlay             = lz(() => import("./jrpg/pages/JRPGPlay"));
-const JRPGBattle           = lz(() => import("./jrpg/pages/JRPGBattle"));
 const CreatureHub       = lz(() => import("./creature/pages/CreatureHub"));
 const CreatureWild      = lz(() => import("./creature/pages/CreatureWild"));
 const CreatureBattle    = lz(() => import("./creature/pages/CreatureBattle"));
@@ -533,9 +530,6 @@ function Router() {
         <Route path="/hardball/bracket" element={<R><HardballBracket /></R>} />
         <Route path="/strike-rescue" element={<R><StrikeRescueHub /></R>} />
         <Route path="/strike-rescue/play" element={<R><StrikeRescueMatch /></R>} />
-        <Route path="/jrpg" element={<R><JRPGHub /></R>} />
-        <Route path="/jrpg/play" element={<R><JRPGPlay /></R>} />
-        <Route path="/jrpg/battle" element={<R><JRPGBattle /></R>} />
         <Route path="/creature" element={<R><CreatureHub /></R>} />
         <Route path="/creature/wild" element={<R><CreatureWild /></R>} />
         <Route path="/creature/battle" element={<R><CreatureBattle /></R>} />

@@ -200,12 +200,6 @@ export const GAMES: GameEntry[] = [
     route: "/dungeon3d" }),
 
   // -- ADVENTURE & RPG ---------------------------------------------------
-  ge({ id: "jrpg", category: "adventure", order: 1,
-    name: "Aethersong", subtitle: "Original anime JRPG",
-    description: "A girl with an off-key voice. A silver lantern in a Hush-touched chapel. The world was sung into being - and someone is unsinging it. Cinematic side-view ATB battles, explore a coastal village, fight through the Silent Chapel, beat the chapter-1 boss. Phase 1 of a multi-session build.",
-    emoji: "\u{1F3B6}", accent: "#fbbf24", status: "Phase 1 \u{00B7} Chapter 1",
-    bg: "linear-gradient(135deg, rgba(40,20,60,0.95), rgba(12,6,28,0.85))",
-    route: "/jrpg" }),
   ge({ id: "olympus", category: "adventure", order: 0,
     name: "Olympus", subtitle: "AI Greek RPG",
     description: "Roll a hero, get a quest, AI narrates a Greek adventure. Roster persists across runs.",

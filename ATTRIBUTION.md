@@ -121,60 +121,6 @@ Dedicated boxing art (gloves overlay, trunks, boxer pose) is queued
 for **Phase 3 polish** of the Combat Sports work (see
 `COMBATSPORTS_PROGRESS.md`).
 
-## AETHERSONG — JRPG (Phase 0)
-
-The JRPG (route `/jrpg`) reuses several existing in-repo CC0 / CC-BY assets,
-organized under `public/assets/jrpg/`:
-
-### Battlers — LuizMelo (CC-BY 4.0)
-
-- `assets/jrpg/battlers/hero/*` — sourced from **LuizMelo Martial Hero**
-  (https://luizmelo.itch.io). 200x200 frames, anime side-view, 6 anims.
-- `assets/jrpg/battlers/enemies/{goblin,mushroom,skeleton,flying_eye}/*` —
-  sourced from **LuizMelo Monsters Creatures Fantasy**
-  (https://luizmelo.itch.io). 150x150 frames, same artist, same style —
-  cohesive battle visuals.
-- License: CC-BY 4.0. Attribution: **LuizMelo**, https://luizmelo.itch.io
-- License text: https://creativecommons.org/licenses/by/4.0/
-
-### Battle Parallax Backgrounds — Ansimuz (CC0)
-
-- `assets/jrpg/backgrounds/bg_*.png` — sourced from **Ansimuz Super
-  Mountain Dusk** asset pack (https://ansimuz.com). CC0 — public domain.
-  Credit retained: **Ansimuz**.
-
-### Music & SFX — Kenney (CC0)
-
-- `assets/jrpg/music/victory.ogg`, `assets/jrpg/music/fanfare.ogg` —
-  sourced from **Kenney Music Jingles** (CC0). Credit retained:
-  **Kenney**, https://kenney.nl.
-- Looping background tracks (town / dungeon / battle / boss) are
-  synthesized at runtime in `src/jrpg/engine/audio.ts` via Web Audio
-  oscillators. No remote assets used at runtime.
-
-### Generated / Synthesized
-
-- Overworld tiles (grass / path / water / stone / roof / sand) are
-  painted procedurally onto a canvas at build-init via
-  `src/jrpg/engine/tileset.ts`. Original work, no third-party assets.
-- Overworld character mini-sprites (24x24) are drawn procedurally via
-  `src/jrpg/engine/minisprite.ts`. Original work.
-
-### Honest cohesion note
-
-- Battle sprites: **cohesive** — all from LuizMelo, same artist, same era.
-- Battle background: **mostly cohesive** — Ansimuz parallax has a slight
-  resolution mismatch with the LuizMelo battlers (parallax layers are
-  ~320x180 native upscaled, battlers render at ~120 visible px). Reads
-  cinematic, not jarring.
-- Overworld vs battle: **stitched** — top-down view uses procedural
-  flat-color tiles + 24x24 mini-sprites. This is deliberately distinct
-  from the cinematic side-view battlers, which is how classic JRPGs
-  have always handled the mode switch.
-
-
----
-
 # Attribution — Hardball assets
 
 **Hardball** ships **zero third-party binary assets**. Phase 0 uses procedural
