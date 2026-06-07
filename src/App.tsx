@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from "react";
+﻿import { useEffect, useState, lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { MotionConfig } from "framer-motion";
 // Core layout + identity shell â€” kept eager because they're on the boot
@@ -236,6 +236,8 @@ const MonsterForgeHub      = lz(() => import("./monster-forge/pages/MonsterForge
 const MonsterForgeBuilder  = lz(() => import("./monster-forge/pages/MonsterForgeBuilder"));
 const HardballHub          = lz(() => import("./hardball/pages/HardballHub"));
 const HardballMatch        = lz(() => import("./hardball/pages/HardballMatch"));
+const StrikeRescueHub      = lz(() => import("./strike-rescue/pages/StrikeRescueHub"));
+const StrikeRescueMatch    = lz(() => import("./strike-rescue/pages/StrikeRescueMatch"));
 const HardballDerby        = lz(() => import("./hardball/pages/HardballDerby"));
 const HardballBracket      = lz(() => import("./hardball/pages/HardballBracket"));
 const JRPGHub              = lz(() => import("./jrpg/pages/JRPGHub"));
@@ -527,6 +529,8 @@ function Router() {
         <Route path="/monster-forge/build" element={<R><MonsterForgeBuilder /></R>} />
         <Route path="/hardball" element={<R><HardballHub /></R>} />
         <Route path="/hardball/play" element={<R><HardballMatch /></R>} />
+        <Route path="/strike-rescue" element={<R><StrikeRescueHub /></R>} />
+        <Route path="/strike-rescue/play" element={<R><StrikeRescueMatch /></R>} />
         <Route path="/jrpg" element={<R><JRPGHub /></R>} />
         <Route path="/jrpg/play" element={<R><JRPGPlay /></R>} />
         <Route path="/jrpg/battle" element={<R><JRPGBattle /></R>} />
