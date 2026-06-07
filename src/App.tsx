@@ -529,6 +529,8 @@ function Router() {
         <Route path="/monster-forge/build" element={<R><MonsterForgeBuilder /></R>} />
         <Route path="/hardball" element={<R><HardballHub /></R>} />
         <Route path="/hardball/play" element={<R><HardballMatch /></R>} />
+        <Route path="/hardball/derby" element={<R><HardballDerby /></R>} />
+        <Route path="/hardball/bracket" element={<R><HardballBracket /></R>} />
         <Route path="/strike-rescue" element={<R><StrikeRescueHub /></R>} />
         <Route path="/strike-rescue/play" element={<R><StrikeRescueMatch /></R>} />
         <Route path="/jrpg" element={<R><JRPGHub /></R>} />

@@ -133,6 +133,9 @@ export default function MonsterForgeBuilder() {
   const animFrameRef = useRef<number>(0);
   const clockRef = useRef<THREE.Clock>(new THREE.Clock());
   const auraUpdatesRef = useRef<((t: number) => void)[]>([]);
+  const idleAnimatorRef = useRef<IdleAnimator | null>(null);
+  const activeEffectsRef = useRef<ActiveEffect[]>([]);
+  const monsterAssemblyRef = useRef<import("../engine").AssembledMonster | null>(null);
   const orbitRef = useRef({ yaw: 0.6, pitch: 0.45, dist: 4.5, targetY: 0.8 });
 
   // Bootstrap renderer once
@@ -212,9 +215,21 @@ export default function MonsterForgeBuilder() {
         tz + o.dist * Math.cos(o.pitch) * Math.cos(o.yaw),
       );
       cam.lookAt(tx, ty, tz);
-      const t = clockRef.current.getElapsedTime();
+      // getDelta() advances internal clock — read elapsedTime *after* it
+      const dt = clockRef.current.getDelta();
+      const t = clockRef.current.elapsedTime;
       const updates = auraUpdatesRef.current;
       for (let i = 0; i < updates.length; i++) updates[i](t);
+      const idle = idleAnimatorRef.current;
+      if (idle) idle.update(t, dt);
+      const fx = activeEffectsRef.current;
+      if (fx.length > 0) {
+        const next: ActiveEffect[] = [];
+        for (const e of fx) {
+          if (e.update(t, dt)) next.push(e);
+        }
+        if (next.length !== fx.length) activeEffectsRef.current = next;
+      }
       renderer.render(scene, cam);
       animFrameRef.current = requestAnimationFrame(tick);
     };
@@ -301,8 +316,13 @@ export default function MonsterForgeBuilder() {
       if (cancelled || !sceneRef.current) return;
       // Apply potions (mutation geometry, auras, material mods, scale).
       const applied = applyPotionsToMonster(am, activePotions);
-      // Swap aura update callbacks before re-mounting the new root.
       auraUpdatesRef.current = applied.updates;
+      // Clear lingering power effects from previous build
+      for (const e of activeEffectsRef.current) e.group.parent?.remove(e.group);
+      activeEffectsRef.current = [];
+      // Phase 3: body-type-aware procedural idle animator + assembly ref
+      idleAnimatorRef.current = buildIdleAnimator(am);
+      monsterAssemblyRef.current = am;
       // Remove + dispose old monster
       if (monsterRootRef.current) {
         sceneRef.current.remove(monsterRootRef.current);
@@ -368,6 +388,22 @@ export default function MonsterForgeBuilder() {
     if (slot === "a") setCraftSlotA(null);
     else setCraftSlotB(null);
     setCraftMessage(null);
+  };
+
+  // ── Powers (Phase 3) ──────────────────────────────────────────────────
+  const bodyType = useMemo(() => {
+    if (!manifest || !config) return "biped" as const;
+    return manifest.parts.body.find(b => b.id === config.body)?.bodyType ?? "biped";
+  }, [manifest, config]);
+  const powers: Power[] = useMemo(
+    () => powersFor(bodyType, activePotions),
+    [bodyType, activePotions],
+  );
+  const triggerPower = (power: Power) => {
+    const am = monsterAssemblyRef.current;
+    if (!am) return;
+    const fx = buildPowerEffect(power, am);
+    activeEffectsRef.current = [...activeEffectsRef.current, fx];
   };
 
   const doCraft = () => {
@@ -489,8 +525,31 @@ export default function MonsterForgeBuilder() {
             ✓ {savedToast}
           </div>
         )}
+        {!loading && powers.length > 0 && (
+          <div className="absolute bottom-12 left-2 flex flex-col gap-1.5"
+            style={{ pointerEvents: "auto" }}>
+            <div className="text-[8px] tracking-[0.3em] font-display px-2 py-1 rounded"
+              style={{ color: "#fda4af", background: "rgba(0,0,0,0.45)", border: "1px solid rgba(180,80,80,0.35)" }}>
+              POWERS
+            </div>
+            {powers.map(p => (
+              <button key={p.id} onClick={() => triggerPower(p)} title={`${p.name} — ${p.description}`}
+                className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg pressable touch-target"
+                style={{
+                  background: "linear-gradient(135deg, rgba(125,80,180,0.32), rgba(0,0,0,0.55))",
+                  border: "1px solid rgba(180,80,200,0.5)",
+                  color: "#fef3c7",
+                  minWidth: 110,
+                  pointerEvents: "auto",
+                }}>
+                <span className="text-lg leading-none">{p.emoji}</span>
+                <span className="text-[10px] font-display tracking-wider">{p.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
         <div className="absolute bottom-2 right-2 text-[10px] opacity-60">
-          drag · pinch · scroll
+          drag · pinch · scroll · v0.3
         </div>
       </div>
 
