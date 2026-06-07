@@ -187,3 +187,42 @@ records (W/L, KOs/finishers), Family leaderboard + Roster Browser
 multiplayer hookup, sound, ring/arena backdrops, online mode for boxing
 + wrestling versus (mirror the existing baseball/football online lobby
 + matchmaking).
+
+---
+
+## Phase 2 â€” Pro Wrestling â€” SHIPPED 2026-06-07
+
+Files added/shipped:
+- src/combat-sports/wrestling/{engine.ts,proceduralWrestler.ts,rps.ts,wrestlers.ts,wrestlerState.ts}
+- src/versus/pages/WrestlingVersus.tsx (42KB)
+- src/versus/wrestlers.ts (versus-side wrapper)
+- src/versus/types.ts: `"wrestling"` added to Sport union; VersusStats gained wrestling + finishers
+- src/App.tsx: lazy WrestlingVersus route at /versus/wrestling already wired
+- src/versus/pages/VersusHub.tsx: wrestling tile in SPORT picker + accent #a78bfa
+
+Build: `npm run build` â†’ green (42.4s, WrestlingVersus chunk 37.6KB / gz 10.9KB).
+
+Roster (6 originals, no licensed names): Iron Maverick (Steel Press),
+Lyra Sparks (Electric Tornado), The Mountain Marshal (Crushing
+Earthquake), Spectre Lockdown (Phantom Hold), Ace Blaze (Sky Spiral),
+Captain Standard (All-Star Slam).
+
+RPS triangle: strike beats grapple, grapple beats reversal, reversal
+beats strike, plus rope move (high risk / high reward / stamina cost /
+fails on reversal). Hype meter 0-100 builds on offense, taunts give
+opponent free RPS strike. Finisher unlocks at 100 hype when opponent
+stamina <30. Pin attempt â†’ 0.8s mash window for KICK OUT. 3 pins or 1
+submission ends the match.
+
+Sprite approach: procedural canvas wrestlers (sibling to boxing). In-app
+banner asks for CC0 wrestler art at /public/assets/wrestling/ to upgrade.
+
+## âš ï¸ JRPG sibling-task breakage (NOT a combat-sports issue)
+
+Build was initially red because `src/jrpg/pages/JRPGBattle.tsx` was left
+truncated in an unstaged WIP state by the JRPG agent (Unexpected end of
+file at line 99 even though file is 360 lines â€” parser hit a
+syntax issue earlier). Stashed JRPG / strike-rescue / tsconfig WIP
+under stash msg `sibling-task-wip-jrpg-strike-rescue-tsconfig
+2026-06-07` so wrestling commit + build could ship. JRPG agent should
+`git stash list` â†’ pop â†’ resolve its own file before its next commit.

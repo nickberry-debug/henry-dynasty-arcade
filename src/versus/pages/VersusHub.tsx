@@ -9,6 +9,7 @@ import { ArrowLeft, Users } from "lucide-react";
 import type { Sport, PlayMode, VersusPlayer, CpuDifficulty } from "../types";
 import { BASEBALL_TEAMS, FOOTBALL_TEAMS } from "../teams";
 import { BOXING_FIGHTERS } from "../boxers";
+import { WRESTLING_FIGHTERS } from "../wrestlers";
 import { useProfiles } from "../../profiles/store";
 
 interface Pending {
@@ -31,10 +32,12 @@ export default function VersusHub() {
 
   const teams = p.sport === "baseball" ? BASEBALL_TEAMS
               : p.sport === "football" ? FOOTBALL_TEAMS
-              : BOXING_FIGHTERS;
+              : p.sport === "boxing"   ? BOXING_FIGHTERS
+              :                          WRESTLING_FIGHTERS;
   const accent = p.sport === "baseball" ? "#fbbf24"
                : p.sport === "football" ? "#FFB81C"
-               : "#f87171";
+               : p.sport === "boxing"   ? "#f87171"
+               :                          "#a78bfa";
 
   const ready = p.mode === "online" || (p.mode === "cpu"
     ? !!p.playerA && !!p.playerA.teamId && !!p.playerB && !!p.playerB.teamId
@@ -42,8 +45,8 @@ export default function VersusHub() {
 
   function start() {
     if (p.mode === "online") {
-      // Boxing online not implemented this iteration — pass-play / vs CPU only.
-      if (p.sport === "boxing") return;
+      // Boxing/Wrestling online not implemented — pass-play / vs CPU only.
+      if (p.sport === "boxing" || p.sport === "wrestling") return;
       navigate("/versus/online");
       return;
     }
@@ -51,9 +54,10 @@ export default function VersusHub() {
     // Pass & Play and vs-CPU both go through the local game pages,
     // reading the setup blob from sessionStorage.
     try { sessionStorage.setItem("dd_versus_setup", JSON.stringify(p)); } catch { /* ignore */ }
-    const route = p.sport === "baseball" ? "/versus/baseball"
-                : p.sport === "football" ? "/versus/football"
-                : "/versus/boxing";
+    const route = p.sport === "baseball"  ? "/versus/baseball"
+                : p.sport === "football"  ? "/versus/football"
+                : p.sport === "boxing"    ? "/versus/boxing"
+                :                           "/versus/wrestling";
     navigate(route);
   }
 
@@ -79,7 +83,7 @@ export default function VersusHub() {
       <main className="flex-1 px-4 pb-8 max-w-3xl mx-auto w-full space-y-4">
         {/* Sport */}
         <Section title="SPORT" accent={accent}>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <PickButton selected={p.sport === "baseball"} accent="#fbbf24" emoji="⚾"
               label="BASEBALL" sub="Batter vs Pitcher"
               onClick={() => setP(s => ({ ...s, sport: "baseball" }))} />
@@ -89,6 +93,9 @@ export default function VersusHub() {
             <PickButton selected={p.sport === "boxing"} accent="#f87171" emoji="🥊"
               label="BOXING" sub="3 rounds · KO or judges"
               onClick={() => setP(s => ({ ...s, sport: "boxing", mode: s.mode === "online" ? "passplay" : s.mode }))} />
+            <PickButton selected={p.sport === "wrestling"} accent="#a78bfa" emoji="🤼"
+              label="WRESTLING" sub="Hype · pin · finisher"
+              onClick={() => setP(s => ({ ...s, sport: "wrestling", mode: s.mode === "online" ? "passplay" : s.mode }))} />
           </div>
         </Section>
 
@@ -102,8 +109,8 @@ export default function VersusHub() {
               label="VS CPU" sub="Adaptive AI"
               onClick={() => setP(s => ({ ...s, mode: "cpu" }))} />
             <PickButton selected={p.mode === "online"} accent="#86efac" emoji="🌐"
-              label="ONLINE" sub={p.sport === "boxing" ? "Coming soon" : "Two devices"}
-              disabled={p.sport === "boxing"}
+              label="ONLINE" sub={(p.sport === "boxing" || p.sport === "wrestling") ? "Coming soon" : "Two devices"}
+              disabled={p.sport === "boxing" || p.sport === "wrestling"}
               onClick={() => setP(s => ({ ...s, mode: "online" }))} />
           </div>
         </Section>
@@ -125,7 +132,7 @@ export default function VersusHub() {
 
         {/* Match length — baseball uses innings, football uses quarters,
             boxing is fixed at 3 rounds (engine const). */}
-        {(p.mode === "passplay" || p.mode === "cpu") && p.sport !== "boxing" && (
+        {(p.mode === "passplay" || p.mode === "cpu") && p.sport !== "boxing" && p.sport !== "wrestling" && (
           <Section title={p.sport === "baseball" ? "INNINGS" : "QUARTERS"} accent={accent}>
             <div className="grid grid-cols-3 gap-2">
               {(p.sport === "baseball" ? [3, 5, 9] : [1, 2, 4]).map(n => {
