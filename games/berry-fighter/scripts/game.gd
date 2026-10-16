@@ -28,6 +28,7 @@ func _ready() -> void:
 	add_child(ui)
 	ui.action.connect(handle_action)
 	ui.touch_action.connect(func(value: String, down: bool) -> void: inputs.set_touch(value, down))
+	Input.joy_connection_changed.connect(controller_connection_changed)
 	touch_enabled = DisplayServer.is_touchscreen_available()
 	for name in ["hit", "jump", "block", "ko", "click"]:
 		var player: AudioStreamPlayer = AudioStreamPlayer.new()
@@ -52,7 +53,7 @@ func rebuild_fighters() -> void:
 func show_menu() -> void:
 	screen = "menu"
 	paused_match = false
-	inputs.reset()
+	inputs.reset(true)
 	sim.reset("training", 0)
 	sim.fighters[0].pos = Vector2(2.0, 0)
 	sim.fighters[1].pos = Vector2(9.0, 0)
@@ -67,7 +68,7 @@ func start_match(mode: String) -> void:
 	screen = "match"
 	paused_match = false
 	cpu = mode != "versus"
-	inputs.reset()
+	inputs.reset(true)
 	inputs.read(0)
 	inputs.read(1)
 	rebuild_fighters()
@@ -105,6 +106,11 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and screen == "match" and not paused_match:
 		toggle_pause()
 
+func controller_connection_changed(device: int, connected: bool) -> void:
+	if not connected and device in inputs.assigned_pads and screen == "match" and not paused_match:
+		toggle_pause()
+	if screen == "menu": ui.show_menu(selected, touch_enabled, Input.get_connected_joypads())
+
 func _input(event: InputEvent) -> void:
 	inputs.capture(event)
 	if event is InputEventKey and event.physical_keycode == KEY_ESCAPE and event.pressed and not event.echo:
@@ -117,6 +123,9 @@ func _physics_process(_delta: float) -> void:
 	if sim.finished:
 		screen = "result"
 		ui.show_result(sim)
+		return
+	if sim.hitstop > 0:
+		sim.step([{}, {}])
 		return
 	var one: Dictionary = inputs.read(0)
 	var two: Dictionary = sim.cpu_input(1) if cpu else inputs.read(1)

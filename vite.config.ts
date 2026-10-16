@@ -63,7 +63,7 @@ export default defineConfig({
     host: true,
     port: 5173,
     // Godot writes a temporary pack during export; Windows locks it.
-    watch: { ignored: ["**/public/games/**/*.tmp"] },
+    watch: { ignored: ["**/games/berry-fighter/**"] },
   },
   build: {
     target: "es2020",

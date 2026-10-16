@@ -90,5 +90,11 @@ func _initialize() -> void:
 	var frozen: Vector2 = sim.fighters[1].pos
 	sim.step([{}, {}])
 	expect(sim.fighters[1].pos == frozen, "hitstop freezes movement")
+	sim.reset("versus", 0)
+	for fighter in sim.fighters:
+		fighter.stocks = 1
+		fighter.pos = Vector2(0, -7)
+	sim.step([{}, {}])
+	expect(sim.finished and sim.winner == -1, "simultaneous final-stock ring-out is a draw")
 	print("SIMULATION: %d checks, %d failures" % [checks, failures])
 	quit(1 if failures else 0)

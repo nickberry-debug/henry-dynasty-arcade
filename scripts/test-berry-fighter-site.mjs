@@ -15,4 +15,5 @@ const config = read('vite.config.ts');
 assert.match(config, /navigateFallbackDenylist:[^\n]*games/, 'service worker excludes game navigation');
 assert.ok(existsSync(new URL('../public/games/berry-fighter/index.wasm', import.meta.url)), 'web export exists');
 assert.ok(existsSync(new URL('../public/downloads/berry-fighter-windows.zip', import.meta.url)), 'Windows download exists');
+assert.match(read('public/games/berry-fighter/index.service.worker.js'), /cache.addAll\(FULL_CACHE\)/, 'first install caches the engine and pack for offline use');
 console.log('Berry Fighter site integration checks PASS');

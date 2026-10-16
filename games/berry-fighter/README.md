@@ -20,7 +20,7 @@ iPad: open the full game URL in Safari, Share > Add to Home Screen. Let the firs
 | Drop through | S | Down | Stick down |
 | Pause | Esc | Esc | Start |
 
-Keyboard and controllers feed players 1/2. Press a controller button for browser detection. Toggle Touch in the menu for multi-finger controls. Training has a stationary dummy and unlimited stocks. CPU sparring/local versus use three stocks and a three-minute timer. Focus loss pauses combat.
+Keyboard and controllers feed players 1/2. Press a controller button for browser detection. Controller slots are assigned at match start. A disconnect pauses the match; reconnect the same device or return to the menu before starting a new match with different controllers. Toggle Touch for multi-finger controls. Training has a stationary dummy and unlimited stocks. CPU sparring/local versus use three stocks and a three-minute timer. Focus loss pauses combat.
 
 ## Edit and rebuild
 Open `project.godot` in Godot 4.7.2. Install matching standard export templates. Blender 5.2.2 models live in `assets/source`, ignored by Godot; runtime GLBs are in `assets`.
@@ -35,6 +35,7 @@ godot --headless --export-release Web
 godot --headless --export-release "Windows Desktop"
 ```
 From repo root: `node scripts/test-berry-fighter-site.mjs` and `npm run build`.
+After every Web export, run `node scripts/prepare-berry-fighter-web.mjs` from repo root before testing or committing. This precaches the engine/pack during first service-worker installation, enabling offline reopening after the initial cache completes. Test with a fresh browser profile.
 
 Rebuild models using `blender --background --python assets/create_characters.py`. ZIP the Windows executable with the README/license notices to `public/downloads/berry-fighter-windows.zip`. Both exports are defined in `export_presets.cfg`.
 

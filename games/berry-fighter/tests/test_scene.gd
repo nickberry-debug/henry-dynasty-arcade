@@ -35,6 +35,20 @@ func verify_scene() -> void:
 	assert(not game.cpu, "local versus uses human second player")
 	game.handle_action("restart")
 	assert(game.sim.fighters[0].stocks == 3, "restart resets stocks")
+	game.start_match("training")
+	game.sim.hitstop = 2
+	var tap: InputEventKey = InputEventKey.new()
+	tap.physical_keycode = KEY_J
+	tap.pressed = true
+	game.inputs.capture(tap)
+	game._physics_process(1.0 / 60)
+	game._physics_process(1.0 / 60)
+	game._physics_process(1.0 / 60)
+	assert(game.sim.fighters[0].attack == "light", "hitstop retains queued actions")
+	game.inputs.bind_controllers([3, 8])
+	game.controller_connection_changed(3, false)
+	assert(game.paused_match, "assigned controller disconnect pauses match")
+	assert(game.inputs.controller_for(1, [8]) == 8, "disconnect pause preserves other controller")
 	print("SCENE: menu, match, pause, results, selection, rematch PASS")
 	for player in game.sounds.values(): player.stop()
 	await create_timer(0.15).timeout

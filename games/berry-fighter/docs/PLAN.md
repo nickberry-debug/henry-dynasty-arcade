@@ -13,15 +13,17 @@ Disconnected controllers; held/quick inputs across menus; repeated hits in one s
 
 ## Task 1: Simulation
 - [x] Observe missing simulation failure, implement movement/combat/scoring.
-- [x] Verify 22 behavioral checks including hitstop after a failing test.
+- [x] Verify 23 behavioral checks including hitstop and simultaneous final-stock draws after failing tests.
 
 ## Task 2: Playable presentation
 - [x] Observe missing scene failure before implementing the scene.
 - [x] Create Blender source/GLBs for Pip and Bramble; add one level, views and UI.
 - [x] Verify menu/match/pause/results/selection/rematch; inspect native screenshots.
 - [x] Reproduce quick-tap loss, implement queued events and verify regression test.
+- [x] Preserve controller ownership across disconnect/pause; pause on assigned-device disconnect. Cover queued controller events and short touch taps.
 
 ## Task 3: Delivery
 - [ ] Export Windows executable, launch and verify logs; package editable source, controls, test runner and progress notes.
 - [ ] Commit to a feature branch of the existing arcade; upload and create a draft PR.
 - [ ] Review implementation and save verification evidence and remaining hardware tests.
+- [x] Independent review completed; controller ownership, simultaneous KOs, hitstop queue retention and first-load offline cache issues addressed with regressions.

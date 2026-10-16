@@ -54,7 +54,7 @@ export default function BerryFighter() {
           <div className="mt-7 grid gap-7 text-[#b9d5cd] sm:grid-cols-2">
             <div>
               <h3 className="mb-2 font-bold text-[#f7efd6]">iPad: add to your Home Screen</h3>
-              <p className="leading-relaxed">Open the game using the iPad link in Safari. Tap Share, then Add to Home Screen. Launch once online and let it finish loading before trying offline. Use landscape and turn on Touch in the game menu.</p>
+              <p className="leading-relaxed">Open the game using the iPad link in Safari. Tap Share, then Add to Home Screen. Launch online and wait for “Ready for offline play” before trying offline. Use landscape and turn on Touch in the game menu.</p>
               <p className="mt-3 text-sm">This is an installable web app. iPad performance and controller behavior still need a real-device playtest.</p>
             </div>
             <div>

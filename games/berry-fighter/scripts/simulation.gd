@@ -56,6 +56,10 @@ func step(inputs: Array) -> void:
 	for i in range(fighters.size()):
 		var command: Dictionary = inputs[i] if i < inputs.size() else {}
 		update_fighter(i, command)
+	# Both eliminations belong to this tick; neither player wins a double KO.
+	if fighters[0].stocks <= 0 and fighters[1].stocks <= 0:
+		finished = true
+		winner = -1
 	for i in range(fighters.size()):
 		var f: Dictionary = fighters[i]
 		if f.attack == "" or f.stocks <= 0: continue

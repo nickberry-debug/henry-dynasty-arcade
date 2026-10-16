@@ -4,6 +4,15 @@ var previous: Array = [{}, {}]
 var touch: Dictionary = {}
 var pad_names: String = "Keyboard ready"
 var queued: Array = [{}, {}]
+var assigned_pads: Array = [-1, -1]
+
+func bind_controllers(devices: Array) -> void:
+	assigned_pads = [-1, -1]
+	for i in range(mini(2, devices.size())): assigned_pads[i] = devices[i]
+
+func controller_for(player: int, connected: Array) -> int:
+	var device: int = assigned_pads[player]
+	return device if device in connected else -1
 
 func capture(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -13,8 +22,7 @@ func capture(event: InputEvent) -> void:
 		for player in range(2):
 			if keysets[player].has(event.physical_keycode): queued[player][keysets[player][event.physical_keycode]] = true
 	if event is InputEventJoypadButton and event.pressed:
-		var pads: Array[int] = Input.get_connected_joypads()
-		var player: int = pads.find(event.device)
+		var player: int = assigned_pads.find(event.device)
 		var mapping: Dictionary = {JOY_BUTTON_A: "jump", JOY_BUTTON_X: "light", JOY_BUTTON_Y: "heavy", JOY_BUTTON_B: "special", JOY_BUTTON_RIGHT_SHOULDER: "dodge"}
 		if player >= 0 and player < 2 and mapping.has(event.button_index): queued[player][mapping[event.button_index]] = true
 
@@ -22,10 +30,11 @@ func set_touch(action: String, down: bool) -> void:
 	touch[action] = down
 	if down: queued[0][action] = true
 
-func reset() -> void:
+func reset(rescan_controllers: bool = false) -> void:
 	previous = [{}, {}]
 	queued = [{}, {}]
 	touch.clear()
+	if rescan_controllers: bind_controllers(Input.get_connected_joypads())
 
 func read(player: int) -> Dictionary:
 	var keys: Dictionary = {"left": KEY_A, "right": KEY_D, "jump": KEY_SPACE, "down": KEY_S,
@@ -37,8 +46,8 @@ func read(player: int) -> Dictionary:
 	for action in keys:
 		raw[action] = Input.is_physical_key_pressed(keys[action]) or (player == 0 and touch.get(action, false))
 	var pads: Array[int] = Input.get_connected_joypads()
-	if pads.size() > player:
-		var device: int = pads[player]
+	var device: int = controller_for(player, pads)
+	if device >= 0:
 		var axis: float = Input.get_joy_axis(device, JOY_AXIS_LEFT_X)
 		raw.left = raw.left or axis < -0.22 or Input.is_joy_button_pressed(device, JOY_BUTTON_DPAD_LEFT)
 		raw.right = raw.right or axis > 0.22 or Input.is_joy_button_pressed(device, JOY_BUTTON_DPAD_RIGHT)
