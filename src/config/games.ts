@@ -150,6 +150,12 @@ export const GAMES: GameEntry[] = [
   // Versus (Sports -> Versus -> pick BOXING). Old route redirects to /versus.
 
   // -- ACTION & COMBAT ---------------------------------------------------
+  ge({ id: "berry-fighter", category: "action", order: -10,
+    name: "Berry Fighter", subtitle: "Original platform fighter",
+    description: "Two provisional fighters and one floating garden arena. CPU sparring, training, or two-player local versus. Touch, keyboard, and controllers.",
+    emoji: "\u{1F353}", accent: "#d0eb84", status: "Combat demo",
+    bg: "linear-gradient(135deg, rgba(34,75,71,0.95), rgba(10,28,36,0.95))",
+    route: "/berry-fighter" }),
   ge({ id: "battleforge", category: "action", order: 0,
     name: "Battle Forge", subtitle: "Tactical Character Combat",
     description: "Six fighters across five themed arenas. Auto-zoom camera. Cinematic AI duels.",

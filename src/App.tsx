@@ -279,6 +279,7 @@ const GlamStudioBuilder    = lz(() => import("./glam-studio/pages/GlamStudioBuil
 const SilentDepths         = lz(() => import("./classics/silentdepths/SilentDepthsSim"));
 const SilentDepthsArcade   = lz(() => import("./classics/silentdepths/SilentDepths"));
 const TankDuel             = lz(() => import("./tankduel/TankDuel"));
+const BerryFighter         = lz(() => import("./berry-fighter/BerryFighter"));
 const MathBlaster          = lz(() => import("./mathblaster/MathBlaster"));
 const SportsHub            = lz(() => import("./sportshub/SportsHub"));
 const SeasonSim            = lz(() => import("./sportshub/SeasonSim"));
@@ -599,6 +600,7 @@ function Router() {
         <Route path="/classics/depths"      element={<R><SilentDepths /></R>} />
         <Route path="/classics/depths-arcade" element={<R><SilentDepthsArcade /></R>} />
         <Route path="/tankduel"             element={<R><TankDuel /></R>} />
+        <Route path="/berry-fighter"        element={<R><BerryFighter /></R>} />
         <Route path="/mathblaster"          element={<R><MathBlaster /></R>} />
         <Route path="/sports"               element={<R><SportsHub /></R>} />
         <Route path="/sports/:sport"        element={<R><SeasonSim /></R>} />

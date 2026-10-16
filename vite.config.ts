@@ -51,14 +51,19 @@ export default defineConfig({
         clientsClaim: true,
         // Don't serve stale index.html — always go to the network first.
         navigateFallback: "index.html",
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/games\//, /^\/downloads\//],
+        // Godot's scoped PWA caches this game after the player launches it.
+        // Keep engine binaries and downloads out of the arcade boot cache.
+        globIgnores: ["games/**", "downloads/**"],
         cleanupOutdatedCaches: true,
       }
     })
   ],
   server: {
     host: true,
-    port: 5173
+    port: 5173,
+    // Godot writes a temporary pack during export; Windows locks it.
+    watch: { ignored: ["**/public/games/**/*.tmp"] },
   },
   build: {
     target: "es2020",
