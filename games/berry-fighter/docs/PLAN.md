@@ -23,7 +23,7 @@ Disconnected controllers; held/quick inputs across menus; repeated hits in one s
 - [x] Preserve controller ownership across disconnect/pause; pause on assigned-device disconnect. Cover queued controller events and short touch taps.
 
 ## Task 3: Delivery
-- [ ] Export Windows executable, launch and verify logs; package editable source, controls, test runner and progress notes.
-- [ ] Commit to a feature branch of the existing arcade; upload and create a draft PR.
-- [ ] Review implementation and save verification evidence and remaining hardware tests.
+- [x] Export Windows executable, launch and verify exit 0/render; package source, controls, test runner and progress notes.
+- [x] Upload `feat/berry-fighter` to the existing arcade and create draft PR #1.
+- [x] Verify native/browser render, input/pause, fresh-profile first-load/offline reopen with zero browser errors. Save remaining hardware checks in the progress report.
 - [x] Independent review completed; controller ownership, simultaneous KOs, hitstop queue retention and first-load offline cache issues addressed with regressions.
